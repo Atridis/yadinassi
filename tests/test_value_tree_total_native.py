@@ -6,10 +6,8 @@ Finite literal is captured native output, not generated expected behavior.
 import hashlib
 from pathlib import Path
 import unittest
-from unittest import mock
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
-from yadinassi.value_trees import BSLValueTreeRowCollection as Rows
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 from scripts.native_1c_tree_total_contract import validate_payload
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -54,20 +52,23 @@ class NativeTotalTests(unittest.TestCase):
                 self.assertEqual(('\n'.join(output)+'\n').encode(),NATIVE_RECORD)
 
     def test_complete_old1022_messages_unchanged_on_both_targets(self):
-        original=Rows.get_method
-        def missing(receiver,name):
-            if name.casefold() in ('total','итог'):raise ValueError('synthetic old missing method')
-            return original(receiver,name)
-        for target in (None,LINUX_8_3_27_1508):
+        complete = source()
+        start = '// Begin bounded ValueTree Total observations (measurement only; no native answers).'
+        prefix, separator, tail = complete.partition(start)
+        self.assertEqual(separator, start)
+        self.assertEqual(tail.splitlines()[1:], [
+            'Показать("TT", TreeTotalObservations());',
+            '// End bounded ValueTree Total observations.',
+        ])
+        for target in (None, LINUX_8_3_27_1508):
             with self.subTest(target=target):
-                outputs=[]
-                for old in (True,False):
-                    result=[];vm=Interpreter(result.append,**({} if target is None else {'native_target':target}))
-                    if old:
-                        with mock.patch.object(Rows,'get_method',missing):vm.execute(source())
-                    else:vm.execute(source())
+                outputs = []
+                for program in (prefix, complete):
+                    result = []
+                    vm = Interpreter(result.append, **({} if target is None else {"native_target": target}))
+                    vm.execute(program)
                     outputs.append(result)
-                self.assertEqual(len(outputs[0]),1023);self.assertEqual(len(outputs[1]),1023)
-                self.assertEqual(outputs[0][:1022],outputs[1][:1022])
-                self.assertEqual((outputs[0][-1]+'\n').encode(),b'TT: [1'+b'E'*32+b']\n')
-                self.assertEqual((outputs[1][-1]+'\n').encode(),NATIVE_RECORD)
+                before, after = outputs
+                self.assertEqual(len(before), 1022)
+                self.assertEqual(after[:-1], before)
+                self.assertEqual((after[-1] + '\n').encode(), NATIVE_RECORD)

@@ -11,12 +11,12 @@ import test_catalog_object_preparation as fixture
 from test_catalog_commit_cleanup_recovery import FaultConnection
 from test_sqlite_catalog_backend import configuration
 from yadinassi import BSLError, Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_object_preparation import (
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey
+from yadinassi.db.catalog.catalog_object_preparation import (
     CatalogWriteRefused, write_prepared_catalog_object)
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
-from yadinassi.unique_identifiers import BSLUUID
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.types.unique_identifiers import BSLUUID
 
 
 class CatalogObjectWriteTests(unittest.TestCase):
@@ -35,8 +35,8 @@ class CatalogObjectWriteTests(unittest.TestCase):
         with patch.object(self.context.backend, 'begin_write', begin):
             with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                 self.write()
-        self.assertIsNotNone(self.card._pending_write)
-        self.assertIsNotNone(self.card._pending_preparation)
+        self.assertTrue(self.card._uncertain_write)
+        self.assertIsNone(self.card._pending_write)
 
     def test_original_checks_and_real_save_reopen_with_references_and_rows(self):
         self.assertEqual(self.write(), ())
@@ -51,18 +51,34 @@ class CatalogObjectWriteTests(unittest.TestCase):
         self.assertEqual(vm.execute('Карточка.ВидНоменклатуры.Наименование'), 'Товары')
         self.assertEqual(vm.execute('Карточка.Склады.Получить(0).Склад.Наименование'), 'Основной')
 
-    def test_getobject_uses_writer_view_not_separate_backend_reads(self):
-        seen = []
-        original = _View.read_catalog
+    def reference_read_probes(self, observe):
+        read_catalog = _View.read_catalog
+        read_marks = _View._read_catalog_reference_marks
         def read(view, key):
-            seen.append((view, view._connection.in_transaction))
-            return original(view, key)
+            result = read_catalog(view, key)
+            observe(view, key)
+            return result
+        def marks(view, schema, identities):
+            result = read_marks(view, schema, identities)
+            for identity in identities:
+                observe(view, CatalogKey(view.database_id, schema.identity, identity))
+            return result
+        return patch.object(_View, 'read_catalog', read), patch.object(_View, '_read_catalog_reference_marks', marks)
+
+    def test_reference_reads_use_writer_view_not_separate_backend_reads(self):
+        seen = []
+        def observe(view, key):
+            seen.append((key, view, self.context.backend._active, view._connection.in_transaction))
+        read, marks = self.reference_read_probes(observe)
         with patch.object(self.context.backend, 'begin_read', side_effect=AssertionError('outside read')), \
-             patch.object(_View, 'read_catalog', read):
+             read, marks:
             self.write()
-        self.assertEqual(len(seen), 2)
-        self.assertIs(seen[0][0], seen[1][0])
-        self.assertTrue(all(active for _, active in seen))
+        self.assertCountEqual([key for key, *_ in seen],
+                              [self.vm.variables[name]._key for name in ('вид', 'склад')])
+        for _, view, active_view, in_transaction in seen:
+            self.assertIs(view, seen[0][1])
+            self.assertIs(view, active_view)
+            self.assertTrue(in_transaction)
 
     def test_missing_kind_and_empty_sections_refuse_without_write(self):
         self.vm.execute('Карточка.ВидНоменклатуры=Справочники.ВидыНоменклатуры.ПустаяСсылка(); Карточка.Склады.Очистить();')
@@ -99,20 +115,18 @@ class CatalogObjectWriteTests(unittest.TestCase):
         self.assertTrue(self.card.is_new())
 
     def test_writer_lock_prevents_reference_mark_between_check_and_save(self):
-        original = _View.read_catalog
         attempts = []
-        def read(view, key):
-            result = original(view, key)
+        def observe(view, key):
             with closing(sqlite3.connect(self.context.path, timeout=0)) as other:
                 table = self.context.backend._layout.table_name(key.catalog_id)
-                with self.assertRaises(sqlite3.OperationalError):
+                with self.assertRaisesRegex(sqlite3.OperationalError, 'locked'):
                     other.execute('UPDATE "' + table + '" SET deletion_mark=1 WHERE record_id=?',
                                   (str(key.record_id),))
             attempts.append(key)
-            return result
-        with patch.object(_View, 'read_catalog', read):
+        read, marks = self.reference_read_probes(observe)
+        with read, marks:
             self.write()
-        self.assertEqual(len(attempts), 2)
+        self.assertCountEqual(attempts, [self.vm.variables[name]._key for name in ('вид', 'склад')])
         self.assertFalse(self.card.is_new())
 
     def test_target_changed_before_begin_is_observed_in_writer_snapshot(self):
@@ -152,7 +166,8 @@ class CatalogObjectWriteTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('Карточка.Ссылка.ПолучитьОбъект().Наименование'), 'Другой')
 
     def test_error_after_buffer_change_rolls_back_transaction_not_candidate(self):
-        source = 'Процедура ПередЗаписью(Отказ) Наименование="Changed"; ЭтотОбъект.Записать(); КонецПроцедуры'
+        source = ('Процедура ПередЗаписью(Отказ) '
+                  'Наименование="Changed"; Ноль=0; Результат=1/Ноль; КонецПроцедуры')
         with patch.object(_View, 'create', side_effect=AssertionError('write')):
             with self.assertRaises(BSLError):
                 self.write(source)
@@ -160,70 +175,60 @@ class CatalogObjectWriteTests(unittest.TestCase):
         self.assertTrue(self.card.is_new())
         self.assertIsNone(self.context.backend._active)
 
-    def test_committed_receipt_resolution_never_reexecutes_preparation(self):
+    def test_uncertain_after_commit_never_reexecutes_preparation_or_commits_again(self):
         self.pending()
-        with patch('yadinassi.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')), \
+        with patch('yadinassi.db.catalog.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')), \
              patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
-            self.assertEqual(self.write(), ())
-        self.assertFalse(self.card.is_new())
-        self.assertIsNone(self.card._pending_preparation)
+            for write in (self.write, self.card.write):
+                with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+                    write()
+        self.assertTrue(self.card.is_new())
+        fresh = self.vm.execute('Справочники.Номенклатура.НайтиПоКоду("1").ПолучитьОбъект()')
+        self.assertEqual(fresh.get_member('Description'), 'Кабель USB-C')
+        self.assertEqual(len(fresh._sections['склады']._rows), 1)
 
-    def test_ordinary_write_can_resolve_retained_prepared_outcome(self):
-        self.pending()
-        with patch('yadinassi.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')):
-            self.assertIsNone(self.card.write())
-        self.assertFalse(self.card.is_new())
-
-    def test_absent_receipt_revalidates_frozen_intent_before_retry(self):
+    def test_uncertain_before_commit_rolls_back_and_fresh_request_revalidates(self):
         self.pending('before')
-        operation = self.card._pending_write[2]
-        self.assertIsNone(self.context.backend.committed_operation(operation))
+        self.assertTrue(self.vm.execute('Справочники.Номенклатура.НайтиПоКоду("1").Пустая()'))
         self.vm.execute('Вид.ПометкаУдаления=Истина; Вид.Записать();')
-        with self.assertRaises(CatalogWriteRefused):
+        with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             self.card.write()
         self.assertTrue(self.card.is_new())
-        self.assertIsNone(self.card._pending_write)
-        self.assertIsNone(self.card._pending_preparation)
-        self.assertIsNone(self.context.backend.committed_operation(operation))
+        fresh = self.vm.execute('''Новая=Справочники.Номенклатура.СоздатьЭлемент();
+            Новая.Код="1"; Новая.Наименование="Кабель USB-C"; Новая.ВидНоменклатуры=Вид.Ссылка;
+            Строка=Новая.Склады.Добавить(); Строка.Склад=Склад.Ссылка;
+            Новая''')
+        with self.assertRaises(CatalogWriteRefused):
+            write_prepared_catalog_object(fixture.SOURCE, fresh)
+        self.assertTrue(fresh.is_new())
 
-    def test_absent_receipt_valid_retry_preserves_exact_operation_and_sections(self):
-        self.pending('before')
-        intent = self.card._pending_write
-        self.write()
-        self.assertIsNotNone(self.context.backend.committed_operation(intent[2]))
-        self.assertEqual(self.vm.execute('Карточка.Ссылка.ПолучитьОбъект().Склады.Количество()'), 1)
-        self.assertFalse(self.card.is_new())
-
-    def test_pending_source_and_backend_cannot_be_replaced(self):
+    def test_uncertain_cannot_be_cleared_by_source_or_backend_replacement(self):
         self.pending()
-        intent = self.card._pending_write
         with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             self.write(fixture.SOURCE + '\n')
-        self.assertEqual(self.card._pending_write, intent)
         backend = self.context.backend
         replacement = SQLiteCatalogBackend(self.context.path)
         self.addCleanup(replacement.close)
         self.context._backend = replacement
         try:
-            with self.assertRaisesRegex(BackendError, 'schema_changed'):
+            with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                 self.write()
         finally:
             self.context._backend = backend
-        self.assertEqual(self.card._pending_write, intent)
-        self.write()
+        self.assertTrue(self.card._uncertain_write)
 
-    def test_preparation_cannot_relabel_an_ordinary_pending_write(self):
+    def test_preparation_cannot_relabel_an_ordinary_uncertain_write(self):
         original = _View.commit
-        def uncertain(view):
-            original(view)
+        def uncertain(view, **kwargs):
+            original(view, **kwargs)
             raise BackendError('uncertain_commit')
         with patch.object(_View, 'commit', uncertain), self.assertRaises(BackendError):
             self.card.write()
-        with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
-            self.write()
-        self.card.write()
+        for write in (self.write, self.card.write):
+            with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+                write()
 
-    def test_nonidempotent_repreparation_cannot_replace_frozen_retry_intent(self):
+    def test_nonidempotent_preparation_is_not_replayed_on_uncertain_write(self):
         source = 'Процедура ПередЗаписью(Отказ) Наименование=Наименование+"!"; КонецПроцедуры'
         original = self.context.backend.begin_write
         def begin(operation):
@@ -233,7 +238,7 @@ class CatalogObjectWriteTests(unittest.TestCase):
         with patch.object(self.context.backend, 'begin_write', begin), self.assertRaises(BackendError):
             self.write(source)
         frozen = self.card.get_member('Description')
-        with self.assertRaisesRegex(BackendError, 'conflict'):
+        with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             self.write(source)
         self.assertEqual(self.card.get_member('Description'), frozen)
         self.assertIsNone(self.card._pending_write)
@@ -264,27 +269,31 @@ class CatalogObjectWriteTests(unittest.TestCase):
             return view
         with patch.object(context.backend, 'begin_write', begin), self.assertRaises(BackendError):
             write_prepared_catalog_object(fixture.SOURCE, obj)
-        self.assertTrue(obj._pending_write[0].auto_number)
-        with patch('yadinassi.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')):
-            write_prepared_catalog_object(fixture.SOURCE, obj)
-        self.assertEqual(obj.get_member('Code'), '00000001')
-        self.assertEqual(obj.get_member('Description'), 'Кабель')
+        self.assertTrue(obj._uncertain_write)
+        self.assertEqual(obj.get_member('Code'), '')
+        with patch('yadinassi.db.catalog.catalog_object_preparation._prepare_catalog_object', side_effect=AssertionError('BSL replay')):
+            with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+                write_prepared_catalog_object(fixture.SOURCE, obj)
+        fresh = vm.execute('Справочники.Номенклатура.НайтиПоКоду("00000001").ПолучитьОбъект()')
+        self.assertEqual(fresh.get_member('Code'), '00000001')
+        self.assertEqual(fresh.get_member('Description'), 'Кабель')
 
-    def test_absent_existing_update_revalidates_unchanged_section_rows(self):
+    def test_existing_update_after_uncertain_rollback_reloads_unchanged_sections(self):
         self.write()
         section = self.card.get_member('Склады')
         self.assertFalse(section._dirty)
         self.card.set_member('Description', ' Новый кабель ')
         self.pending('before')
-        frozen = self.card._pending_write
-        self.assertIsNotNone(frozen[1])
-        self.assertEqual(len(frozen[0].tabular_sections[0].rows), 1)
-        self.write()
-        self.assertIsNotNone(self.context.backend.committed_operation(frozen[2]))
+        with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+            self.write()
+        fresh = self.vm.execute('Карточка.Ссылка.ПолучитьОбъект()')
+        self.assertEqual(len(fresh._sections['склады']._rows), 1)
+        fresh.set_member('Description', ' Новый кабель ')
+        write_prepared_catalog_object(fixture.SOURCE, fresh)
         self.assertEqual(self.vm.execute('Карточка.Ссылка.ПолучитьОбъект().Наименование'), 'Новый кабель')
         self.assertEqual(self.vm.execute('Карточка.Ссылка.ПолучитьОбъект().Склады.Количество()'), 1)
 
-    def test_guarded_pending_intent_locks_scalar_and_row_edits(self):
+    def test_uncertain_commit_locks_scalar_and_row_edits(self):
         self.pending()
         section = self.card.get_member('Склады')
         for action in (lambda: self.card.set_member('Description', 'replacement'),
@@ -292,7 +301,8 @@ class CatalogObjectWriteTests(unittest.TestCase):
                        lambda: section._rows[0].set_member('Склад', self.vm.variables['склад'].get_member('Ref'))):
             with self.subTest(action=action), self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                 action()
-        self.write()
+        with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+            self.write()
 
     def test_direct_reference_attributes_and_presentation_fail_closed(self):
         for expression in ('ВидНоменклатуры.Наименование', 'Строка(ВидНоменклатуры)'):

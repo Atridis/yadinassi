@@ -5,10 +5,10 @@ from dataclasses import replace
 from uuid import uuid4
 import test_source_catalog_queries as fixture
 from test_source_catalog_relations import source as related_source, CREATE
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_catalog_runtime import reference_member, reference_call
-from yadinassi.source_catalog_store import SourceCatalogStore
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.catalog.source_catalog_runtime import reference_member, reference_call
+from yadinassi.db.catalog.source_catalog_store import SourceCatalogStore
+from yadinassi.types.errors import BSLError
 
 class SourceCatalogLookupTests(unittest.TestCase):
     setUp=fixture.SourceCatalogQueryTests.setUp
@@ -67,7 +67,7 @@ class SourceCatalogLookupTests(unittest.TestCase):
         forged=replace(ref,read_member=lambda *args:calls.append(args))
         app.interpreter._context_stack.append('server');self.addCleanup(app.interpreter._context_stack.pop)
         with self.assertRaises(TypeError):reference_member(app.interpreter,forged,'Description')
-        from yadinassi.source_catalog_runtime import is_source_reference
+        from yadinassi.db.catalog.source_catalog_runtime import is_source_reference
         forged_without_metadata=replace(forged,metadata=None)
         self.assertTrue(is_source_reference(forged_without_metadata))
         with self.assertRaises(TypeError):reference_member(app.interpreter,forged_without_metadata,'Description')

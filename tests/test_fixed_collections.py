@@ -11,10 +11,11 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.structures import BSLFixedStructure, BSLStructure
-from yadinassi.values import BSLArray, BSLFixedArray
+from yadinassi.execution.codegen.direct_scalar_semantics import UnsupportedScalarSemantics
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.collections.structures import BSLFixedStructure, BSLStructure
+from yadinassi.types.values import BSLArray, BSLFixedArray
 
 
 class FixedCollectionTests(unittest.TestCase):
@@ -413,12 +414,34 @@ class FixedCollectionTests(unittest.TestCase):
 
         first, second = Hostile(), Hostile()
         self.vm.variables.update(first=first, second=second)
-        self.vm.execute('''
-            m = New Map; m[first] = 7; m[second] = 8;
-            fm = New FixedMap(m); copy = New Map(fm); m.Clear();
-            Message(fm[first]); Message(copy[second]); Message(fm.Count());
-        ''')
-        self.assertEqual(self.output, ['7', '8', '2'])
+        # The boxed host API supports opaque identity keys. Direct BSL Map
+        # has a closed key domain and must decline them without hashing.
+        mapping = BSLMap()
+        mapping.insert(first, Decimal(7))
+        mapping.insert(second, Decimal(8))
+        snapshot = BSLFixedMap(mapping)
+        copy = BSLMap(snapshot)
+        mapping.clear()
+        self.assertEqual(snapshot.get_index(first), Decimal(7))
+        self.assertEqual(copy.get(second), Decimal(8))
+        self.assertEqual(snapshot.get_method('Count')(), Decimal(2))
+        self.vm.execute('m = New Map; fm = New FixedMap(m);')
+        for expression in ('m[first] = 7;', 'm.Insert(second, 8);',
+                           'm.Get(first)', 'm.Delete(second);', 'fm.Get(second)'):
+            with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError):
+                self.vm.execute(expression)
+        self.assertEqual(self.vm.execute('m.Count()'), Decimal(0))
+        self.assertEqual(self.vm.execute('fm.Count()'), Decimal(0))
+
+    def test_missing_fixed_collection_dot_properties_are_catchable(self):
+        self.make_collections()
+        self.vm.execute("""
+            Try fa.items; Except Message("array"); EndTry;
+            Try fm.Known; Except Message("map"); EndTry;
+            Try fm.Known = 8; Except Message("write"); EndTry;
+            Message(fa[0]); Message(fm["Known"]);
+        """)
+        self.assertEqual(self.output, ["array", "map", "write", "7", "7"])
 
     def test_map_keys_are_not_dot_properties_even_when_named_like_methods(self):
         self.vm.execute('''
@@ -562,32 +585,46 @@ class FixedCollectionTests(unittest.TestCase):
                                                ('ordinary', 'first', False)]:
                     self.assertIs(self.vm.execute(f'({left} = {right})'), expected)
                     self.assertIs(self.vm.execute(f'({left} <> {right})'), not expected)
-                self.vm.execute('''
-                    bag = New Array; bag.Add(first); fixedBag = New FixedArray(bag);
-                    values = New Map; values.Insert(first, 7); values[second] = 8;
-                    values.Вставить(alias, 9); snapshot = New FixedMap(values);
-                    copy = New Map(snapshot);
-                ''')
+                self.vm.execute('bag = New Array; bag.Add(first); fixedBag = New FixedArray(bag);')
                 for receiver in ['bag', 'fixedBag']:
                     self.assertEqual(self.vm.execute(f'{receiver}.Find(alias)'), Decimal(0))
                     self.assertIsNone(self.vm.execute(f'{receiver}.Найти(second)'))
-                for receiver in ['values', 'snapshot', 'copy']:
-                    self.assertEqual(self.vm.execute(f'{receiver}[alias]'), Decimal(9))
-                    self.assertEqual(self.vm.execute(f'{receiver}.Получить(second)'), Decimal(8))
-                    self.assertIsNone(self.vm.execute(f'{receiver}.Get(ordinary)'))
-                    self.assertEqual(self.vm.execute(f'{receiver}.Count()'), Decimal(2))
-                self.vm.execute('values.Delete(alias); copy.Удалить(second);')
-                self.assertIsNone(self.vm.execute('values.Get(first)'))
-                self.assertEqual(self.vm.execute('snapshot[first]'), Decimal(9))
-                self.assertEqual(self.vm.execute('snapshot[second]'), Decimal(8))
+
+                values = BSLMap()
+                values.insert(first, Decimal(7))
+                values.set(second, Decimal(8))
+                alias = first
+                values.insert(alias, Decimal(9))
+                snapshot = BSLFixedMap(values)
+                copy = BSLMap(snapshot)
+                for receiver in (values, snapshot, copy):
+                    self.assertEqual(receiver.get(alias), Decimal(9))
+                    self.assertEqual(receiver.get(second), Decimal(8))
+                    self.assertIsNone(receiver.get(self.vm.variables['ordinary']))
+                    self.assertEqual(receiver.get_method('Count')(), Decimal(2))
+                values.delete(alias)
+                copy.delete(second)
+                self.assertIsNone(values.get(first))
+                self.assertEqual(snapshot.get_index(first), Decimal(9))
+                self.assertEqual(snapshot.get_index(second), Decimal(8))
+
+                self.vm.execute('values = New Map;')
+                for expression in ('values.Insert(first, 7);', 'values[second] = 8;'):
+                    with self.assertRaises(BSLRuntimeError):
+                        self.vm.execute(expression)
+                self.assertEqual(self.vm.execute('values.Count()'), Decimal(0))
 
     def test_fixed_identity_does_not_override_ordinary_host_equality(self):
+        seen = []
+
         class HostValue:
             def __eq__(self, other):
+                seen.append(self)
                 return True
 
         class HostArray(BSLArray):
             def __eq__(self, other):
+                seen.append(self)
                 return True
 
         for kind in [HostValue, HostArray]:
@@ -598,8 +635,23 @@ class FixedCollectionTests(unittest.TestCase):
                 self.assertIs(self.vm.execute('(first = second)'), True)
                 self.assertIs(self.vm.execute('(first <> second)'), False)
                 self.vm.execute('bag = New Array; bag.Add(first);')
-                self.assertEqual(self.vm.execute('bag.Find(second)'), Decimal(0))
-                self.assertIs(self.vm.execute('(first = 1)'), False)
+                # Direct typed search rejects arbitrary host needles rather
+                # than delegating an implicit equality callback to Python.
+                count = len(seen)
+                with self.assertRaises(UnsupportedScalarSemantics):
+                    self.vm.execute('bag.Find(second)')
+                self.assertEqual(len(seen), count)
+                boxed = BSLArray()
+                boxed.add(first)
+                self.assertEqual(boxed.find(second), Decimal(0))
+                self.assertEqual(len(seen), count + 1)
+                self.assertIs(seen[-1], first)
+                self.assertIsNone(boxed.find(Decimal(1)))
+                self.assertEqual(len(seen), count + 1)
+                # Plain operators intentionally preserve an explicitly
+                # supplied Python equality hook for non-fixed operands.
+                self.assertIs(self.vm.execute('(first = 1)'), True)
+                self.assertEqual(len(seen), count + 2)
 
     def test_direct_mutable_arrays_freeze_recursively_without_changing_source(self):
         # Native nested.freeze/types/after-source-write/snapshot-write.
@@ -644,8 +696,11 @@ class FixedCollectionTests(unittest.TestCase):
             self.assertIs(self.vm.execute(f'fixedRoot[0][{index}]'), self.vm.variables[name])
             if index != 3:
                 self.assertIs(self.vm.execute(f'copy[0][{index}]'), self.vm.variables[name])
-        self.assertIsInstance(self.vm.execute('copy[0][3]'), BSLArray)
+        self.assertIs(self.vm.execute('TypeOf(copy[0][3])'), self.vm.execute('Type("Array")'))
         self.assertIsNot(self.vm.execute('copy[0][3]'), self.vm.variables['child'])
+        self.vm.execute('copy[0][3][0] = 10;')
+        self.assertEqual(self.vm.execute('fixedRoot[0][3][0]'), Decimal(7))
+        self.assertEqual(self.vm.execute('child[0]'), Decimal(8))
 
     def test_cyclic_direct_array_paths_remain_explicit_unverified_limitations(self):
         # The native scenario does not probe cycles. Keep this a subset contract.
@@ -850,6 +905,40 @@ class FixedCollectionTests(unittest.TestCase):
             Message(fa[0]); Message(fs.Known); Message(fm["Known"]);
         ''')
         self.assertEqual(self.output, ['Да', 'Да', 'Да', '7', '7', '7'])
+
+    def test_direct_fixed_map_index_distinguishes_missing_and_undefined(self):
+        self.vm.execute("""
+            m = New Map; m.Insert("present", Undefined);
+            fm = New FixedMap(m);
+            a = New FixedArray(New Array);
+        """)
+        self.assertIsNone(self.vm.execute('fm["present"]'))
+        self.assertIsNone(self.vm.execute('fm.Get("absent")'))
+        for expression in ('fm["absent"]', 'fm[a]'):
+            with self.subTest(expression=expression), self.assertRaisesRegex(
+                    BSLRuntimeError, 'Ключ фиксированного соответствия не найден'):
+                self.vm.execute(expression)
+        self.assertIsNone(self.vm.execute('fm.Get(a)'))
+        self.vm.execute('m.Insert(a, 7); newSnapshot=New FixedMap(m);')
+        self.assertIsNone(self.vm.execute('fm.Get(a)'))
+        self.assertEqual(self.vm.execute('newSnapshot[a]'),7)
+
+    def test_direct_fixed_map_assignment_reports_readonly_after_rhs(self):
+        self.vm.execute("""
+            Function RHS()
+                Message("evaluated");
+                Return 8;
+            EndFunction
+            m = New Map; m[1] = 7;
+            fm = New FixedMap(m);
+        """)
+        with self.assertRaisesRegex(BSLRuntimeError,
+                                    'Элементы фиксированного соответствия недоступны для записи') as caught:
+            self.vm.execute('\nfm[1] = RHS();', 'fixed-map.bsl')
+        self.assertEqual((caught.exception.source, caught.exception.line,
+                          caught.exception.column), ('fixed-map.bsl', 2, 1))
+        self.assertEqual(self.output, ['evaluated'])
+        self.assertEqual(self.vm.execute('fm[1]'), 7)
 
     def test_fixed_errors_report_source_location_and_restore_routine_scope(self):
         self.make_collections()

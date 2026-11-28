@@ -3,11 +3,11 @@ from decimal import Decimal
 from unittest.mock import patch
 import unittest
 
-from yadinassi import query_parser as syntax
-from yadinassi.queries import BSLQuery
-from yadinassi.query_packages import BSLTempTablesManager
-from yadinassi.values import BSLArray, BSLFixedArray, NULL
-from yadinassi.relational_queries import _compare
+from yadinassi.db.query import query_parser as syntax
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.query.query_packages import BSLTempTablesManager
+from yadinassi.types.values import BSLArray, BSLFixedArray, NULL
+from yadinassi.db.query.relational_queries import _compare
 import test_catalog_queries as fixtures
 import test_document_queries as document_fixtures
 
@@ -56,7 +56,7 @@ class MembershipTests(unittest.TestCase):
         with self.assertRaises(TypeError): self.rows('SELECT Code FROM Catalog.Products WHERE Active IN (0)')
 
     def test_array_and_fixed_array_parameters(self):
-        for value in (array(Decimal(10), Decimal(30)), BSLFixedArray(array(Decimal(10), Decimal(30)))):
+        for value in (array(Decimal(10), Decimal(30)), BSLFixedArray(array(Decimal(10), Decimal(30))), [Decimal(10),Decimal(30)]):
             with self.subTest(type=type(value).__name__):
                 self.assertEqual(self.rows('SELECT Code FROM Catalog.Products WHERE Amount IN &Values', [('Values', value)]), (('1',),('3',)))
 
@@ -64,7 +64,7 @@ class MembershipTests(unittest.TestCase):
         values = array(Decimal(10))
         query = self.query('SELECT Code FROM Catalog.Products WHERE Amount IN &Values', [('Values', values)])
         values.items.append(Decimal(20))
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         original = _View.scan_catalog_values
         def scan(view, *args, **kwargs):
             values.items[:] = [Decimal(30)]
@@ -72,6 +72,19 @@ class MembershipTests(unittest.TestCase):
         with patch.object(_View, 'scan_catalog_values', scan):
             self.assertEqual(query.execute()._rows, (('1',),('2',)))
         self.assertEqual(query.execute()._rows, (('3',),))
+
+    def test_native_list_snapshot_observes_pre_execute_not_mid_scan_changes(self):
+        values=[Decimal(10)]
+        query=self.query('SELECT Code FROM Catalog.Products WHERE Amount IN &Values',[('Values',values)])
+        values.append(Decimal(20))
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+        original=_View.scan_catalog_values
+        def scan(view,*args,**kwargs):
+            values[:]=[Decimal(30)]
+            return original(view,*args,**kwargs)
+        with patch.object(_View,'scan_catalog_values',scan):
+            self.assertEqual(query.execute()._rows,(('1',),('2',)))
+        self.assertEqual(query.execute()._rows,(('3',),))
 
     def test_empty_and_null_list_truth(self):
         self.assertEqual(self.rows('SELECT Code FROM Catalog.Products WHERE Amount IN &V', [('V', array())]), ())
@@ -172,20 +185,21 @@ class MembershipTests(unittest.TestCase):
 
     def test_subquery_sources_share_one_view(self):
         backend=self.context.backend
-        original=backend.begin_read
-        with patch.object(backend,'begin_read',wraps=original) as begin:
+        with patch.object(backend,'begin_query_read',wraps=backend.begin_query_read) as begin, \
+             patch.object(backend,'begin_read',side_effect=AssertionError('nested object read')):
             self.assertEqual(self.rows('SELECT Code FROM Catalog.Products WHERE Amount IN (SELECT Amount FROM Catalog.Products WHERE Amount IN (SELECT Amount FROM Catalog.Products))'),(('1',),('2',),('3',)))
-            self.assertEqual(begin.call_count,1)
+            begin.assert_called_once_with(query_language=True)
+        self.assertIsNone(backend._active)
 
     def test_membership_work_limit(self):
-        import yadinassi.relational_queries as relational
+        import yadinassi.db.query.relational_queries as relational
         with patch.object(relational,'MAX_MEMBERSHIP_WORK',1):
             with self.assertRaisesRegex(ValueError,'work limit'):
                 self.rows('SELECT Code FROM Catalog.Products WHERE Amount IN (10,20,30)')
         self.assertEqual(len(self.rows('SELECT Code FROM Catalog.Products')),3)
 
     def test_resource_budget_shared_across_subqueries(self):
-        import yadinassi.queries as queries
+        import yadinassi.db.query.queries as queries
         with patch.object(queries,'_MAX_CELLS',5):
             with self.assertRaisesRegex(ValueError,'resource limit'):
                 self.rows('SELECT Code FROM Catalog.Products WHERE Amount IN (SELECT Amount FROM Catalog.Products)')
@@ -213,7 +227,7 @@ class MembershipTests(unittest.TestCase):
     def test_parameter_lists_are_frozen_for_entire_package(self):
         values=array(Decimal(10))
         q=self.query('SELECT Code FROM Catalog.Products WHERE Amount IN &V ORDER BY Code; SELECT Code FROM Catalog.Products WHERE Amount IN &V ORDER BY Code',[('V',values)])
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         original=_View.scan_catalog_values
         def scan(view,*args,**kwargs):
             values.items[:]=[Decimal(30)]
@@ -268,7 +282,7 @@ class RegisterMembershipTests(unittest.TestCase):
     query=periodic_fixtures.PeriodicRegisterTests.query
 
     def test_periodic_slice_subquery_on_same_snapshot(self):
-        from yadinassi.dates import literal_date
+        from yadinassi.temporal.dates import literal_date
         self.seed()
         q=self.query('SELECT Item,Price FROM InformationRegister.Prices.SliceLast(&At) WHERE Price IN (SELECT Price FROM InformationRegister.Prices WHERE Price>=20)',literal_date('20240102120000'))
         with patch.object(self.context.backend,'begin_query_read',wraps=self.context.backend.begin_query_read) as begin:

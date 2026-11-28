@@ -10,13 +10,13 @@ from hashlib import sha256
 from types import MappingProxyType
 import xml.etree.ElementTree as ET
 
-from ..catalog_backend import BackendError
-from ..configuration_forms import load_configuration_forms
-from ..configuration_xml import MD, _object
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_xml import MD, _object
 
 
 def document_forms(configuration):
-    from ..configuration_main_demo import canonical, _runtime_metadata_projection
+    from yadinassi.configuration.configuration_main_demo import canonical, _runtime_metadata_projection
     configuration = canonical(configuration)
     source = dict(configuration.files)
     projected = _runtime_metadata_projection(source)
@@ -53,8 +53,8 @@ def document_forms(configuration):
 
 
 def require_backend(backend):
-    from ..configuration_main_demo import MainDemoConfiguration, PROFILE, canonical
-    from ..sqlite_catalog import SQLiteCatalogBackend
+    from yadinassi.configuration.configuration_main_demo import MainDemoConfiguration, PROFILE, canonical
+    from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
     if type(backend) is not SQLiteCatalogBackend:
         raise BackendError('unsupported')
     if backend._closed:
@@ -81,10 +81,10 @@ def form_family(configuration, *, side, **kwargs):
     Common-form interpreters must also remain database-less; document interpreters
     retain their separately validated object-session admission.
     """
-    from ..configuration_main_demo import canonical
-    from ..configuration_modules import MODULE_RUNTIME
-    from ..configuration_xml import import_configuration
-    from ..configuration_runtime import ConfigurationApplication
+    from yadinassi.configuration.configuration_main_demo import canonical
+    from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+    from yadinassi.configuration.configuration_xml import import_configuration
+    from yadinassi.configuration.configuration_runtime import ConfigurationApplication
     configuration = canonical(configuration)
     if kwargs.get('database_context') is not None:
         raise ValueError('main demo form family is memory-only')

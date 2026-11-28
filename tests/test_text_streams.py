@@ -8,12 +8,12 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi import file_io
-from yadinassi.file_io import BSLTextReader as Reader, BSLTextWriter as Writer
-from yadinassi.binary_streams import (BSLMemoryStream as Memory, BSLFileStream as File,
+from yadinassi.streams import file_io
+from yadinassi.streams.file_io import BSLTextReader as Reader, BSLTextWriter as Writer
+from yadinassi.streams.binary_streams import (BSLMemoryStream as Memory, BSLFileStream as File,
     BSLBinaryDataBuffer as Buffer, BSLPositionInStream as Origin,
     BSLFileOpenMode as Mode, BSLFileAccess as Access)
-from yadinassi.text_streams import is_stream, read_snapshot, BinaryStreamSink
+from yadinassi.streams.text_streams import is_stream, read_snapshot, BinaryStreamSink
 
 
 def source(data):

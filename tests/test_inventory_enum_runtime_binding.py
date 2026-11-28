@@ -5,11 +5,11 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_inventory_enums import import_inventory_enum_configuration,PROFILE
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_inventory_enums import import_inventory_enum_configuration,PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.runtime import Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 from test_configuration_inventory_enums import source
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -21,10 +21,10 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
         self.config=import_inventory_enum_configuration(source(),inventory_runtime=PROFILE)
         self.context=SQLiteDBContext.create_inventory_enum(self.path,self.config)
         self.addCleanup(self.context.close)
-        self.vm=Interpreter(database_context=self.context);self.addCleanup(self.vm.close)
+        self.vm=Interpreter(database_context=self.context, allow_extensions=True);self.addCleanup(self.vm.close)
         self.ref=self.vm.execute('Enums.Units.Piece')
         self.units=next(e.identity for e in self.config.enumerations if e.name=='Units')
-        from yadinassi.inventory_enum_runtime import binding
+        from yadinassi.configuration.demos.inventory_enum_runtime import binding
         self.bridge=binding(self.vm._metadata)
 
     def test_root_namespace_and_typed_empty(self):
@@ -35,6 +35,37 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
         self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="P";C.Unit=Enums.Units.Piece;C.Write();')
         self.assertIs(self.vm.execute('C.Ref.GetObject().Unit'),self.ref)
         self.assertIs(self.vm.execute('Catalogs.Products.CreateItem().Unit'),self.vm.execute('Enums.Units.EmptyRef()'))
+
+    def test_detached_document_enum_conversion_does_not_open_read_views(self):
+        backend = self.context.backend
+        self.vm._documents.get_index('Receipt')  # separately admitted document metadata
+        self.vm._metadata._enum_storage = None  # exercise first conversion, too
+        with mock.patch.object(backend, 'begin_read',
+                               side_effect=AssertionError('detached read view')):
+            d = self.vm.execute('D=Documents.Receipt.CreateDocument();'
+                                'D.State=Enums.States.Approved; D')
+            draft = d._draft()
+        field = next(f for f in d._manager._schema.fields if f.name == 'State')
+        index = d._manager._schema.fields.index(field)
+        self.assertEqual(draft.values[index].enum_id, field.target_enum_id)
+        self.assertEqual(draft.values[index].value_id, d._values['state'].reference_uuid)
+
+    def test_detached_conversion_rejects_foreign_lease_and_stale_file(self):
+        from yadinassi.configuration.demos.inventory_enum_runtime import read_snapshot
+        backend = self.context.backend
+        with closing(Interpreter(database_context=self.context)) as other:
+            scope = other._metadata._enum_storage_scope
+            from yadinassi.configuration.demos.inventory_enum_runtime import binding
+            foreign = binding(scope.metadata, detached=True)
+            with closing(backend.begin_document_read()) as view:
+                with read_snapshot(self.vm._metadata, view):
+                    with self.assertRaisesRegex(BackendError, 'unsupported'):
+                        foreign.detached_empty(self.units)
+        with mock.patch.object(backend, '_check_file', side_effect=BackendError('schema_changed')):
+            with self.assertRaisesRegex(BackendError, 'schema_changed'):
+                self.bridge.key(self.ref, self.units, detached=True)
+        with self.assertRaises(BackendError):
+            self.bridge.assigned(replace(self.ref), self.units, detached=True)
 
     def test_document_header_and_line_roundtrip(self):
         self.vm.execute('D=Documents.Receipt.CreateDocument();D.Number="R";D.Date=Date(2024,2,10);D.State=Enums.States.Approved;L=D.Lines.Add();L.Unit=Enums.Units.Piece;D.Write();')
@@ -52,7 +83,7 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
         self.assertIsNone(backend._active)
 
     def test_captured_snapshot_is_lexical_and_not_another_roots_authority(self):
-        from yadinassi.inventory_enum_runtime import binding,read_snapshot
+        from yadinassi.configuration.demos.inventory_enum_runtime import binding,read_snapshot
         backend=self.context.backend
         with closing(Interpreter(database_context=self.context)) as other:
             foreign=binding(other._metadata)
@@ -107,9 +138,22 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
             with self.assertRaises(BackendError):self.bridge.key(foreign,self.units)
 
     def test_child_family_reuses_namespace(self):
-        with closing(Interpreter(database_context=self.context,family_owner=self.vm)) as child:
-            self.assertIs(child._metadata,self.vm._metadata)
-            self.assertIs(child.execute('Enums.Units.Piece'),self.ref)
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+        module = self.path.parent / 'EnumHelper.bsl'
+        module.write_text('Function Unit() Export Return Enums.Units.Piece; EndFunction',
+                          encoding='utf-8')
+        source = str(self.path.parent / 'main.bsl')
+        result = self.vm.execute('// #Import EnumHelper.bsl\nEnumHelper.Unit()', source)
+        child = self.vm.imports['enumhelper'].interpreter
+        self.assertIs(child.database_context, self.context)
+        self.assertIs(child._metadata, self.vm._metadata)
+        self.assertIs(result, self.ref)
+        # Merely constructing a child of the family does not enroll it
+        # as an imported module owned by the root.
+        with closing(Interpreter(database_context=self.context, family_owner=self.vm)) as bare:
+            self.assertIs(bare._metadata, self.vm._metadata)
+            with self.assertRaises(PythonDirectUnsupported):
+                bare.execute('Enums.Units.Piece')
 
     def test_fabricated_equal_reference_is_not_storage_authority(self):
         with self.assertRaises(BackendError):self.bridge.key(replace(self.ref),self.units)
@@ -140,10 +184,10 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
 
     def test_other_root_cannot_borrow_current_transaction(self):
         from contextvars import Context
-        from yadinassi.values import HostFunction
-        from yadinassi.inventory_enum_runtime import binding
+        from yadinassi.types.values import HostFunction
+        from yadinassi.configuration.demos.inventory_enum_runtime import binding
         calls=[]
-        with closing(Interpreter(database_context=self.context)) as other:
+        with closing(Interpreter(database_context=self.context, allow_extensions=True)) as other:
             foreign=binding(other._metadata)
             def probe():
                 # A nested synchronous callback intentionally inherits the

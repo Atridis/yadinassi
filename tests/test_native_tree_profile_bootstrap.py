@@ -49,7 +49,7 @@ class TreeProfileTests(unittest.TestCase):
         runtime=Interpreter()
         runtime.execute(module.decode('utf-8-sig'))
         runtime.execute('Result = ВычислитьПробу();')
-        values=runtime.variables['result'].items
+        values=list(runtime.variables['result'])
         raw=('\n'.join(values)+'\n').encode('ascii')
         self.assertEqual(len(contract.validate_output(raw)),32)
         self.assertEqual(raw,payload())

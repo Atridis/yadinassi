@@ -8,9 +8,9 @@ from main_demo_interactions_fixture import sources
 from test_main_demo_configuration import source, ROOT
 from test_main_demo_runtime import SEED
 from yadinassi import Interpreter, BSLError
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.form_dialogs import DIALOG_CAPABILITY
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.forms.form_dialogs import DIALOG_CAPABILITY
 from yadinassi.ui.configuration_app import load_application, ConfigurationBroker, ConfigurationController, PROTOCOL
 from yadinassi.ui.protocol import encode_line, decode_line
 
@@ -107,7 +107,7 @@ L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=3;L.Amount=12
         opened = self.rpc(app, 'openRecord', entry=entry, record=record, request='receipt')
         self.assertIsNone(opened['error'], opened)
         sid = opened['session']; owned = broker.objects[sid]
-        from yadinassi.inventory_enum_runtime import binding
+        from yadinassi.configuration.demos.inventory_enum_runtime import binding
         domain = binding(owned.operations._interpreter._metadata)
         self.assertIsNotNone(domain)
         self.assertFalse(owned.object.get_member('State').is_empty())

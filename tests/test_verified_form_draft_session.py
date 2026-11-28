@@ -9,11 +9,11 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from yadinassi import form_event_simulation as sim
-from yadinassi.catalog_backend import BackendError, CatalogFormSource, ConfigurationSourceIdentity
-from yadinassi.errors import BSLError
-from yadinassi.form_module_analysis import FormModuleAnalysisError
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.forms import form_event_simulation as sim
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogFormSource, ConfigurationSourceIdentity
+from yadinassi.types.errors import BSLError
+from yadinassi.forms.form_module_analysis import FormModuleAnalysisError
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from test_form_module_analysis import SOURCE, CATALOG, FORM, DEFINITION, PATHS
 
 
@@ -73,11 +73,12 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
         backend = SQLiteCatalogBackend(self.path)
         self.addCleanup(backend.close)
         record = backend.read_form_source(CATALOG_ID)
-        with patch.object(sim, 'analyze_form_module', wraps=sim.analyze_form_module) as analyze:
+        from yadinassi.forms import form_module_analysis as analysis
+        with patch.object(analysis, '_input_key', wraps=analysis._input_key) as analyze:
             session = self.make(backend=backend)
             session.change_description(' abc ', revision=0)
             session.prepare_save(revision=1)
-        self.assertEqual(analyze.call_count, 3)
+        self.assertEqual(analyze.call_count, 4)
         for call in analyze.call_args_list:
             source, binding = call.args
             self.assertEqual(source, raw)

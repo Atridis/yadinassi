@@ -5,9 +5,9 @@ import unittest
 from uuid import uuid4
 
 import test_catalog_object_preparation as fixture
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import _View
 from yadinassi.ui.catalog_editor import CatalogEditorApplication
 from yadinassi.ui.editor_protocol import CatalogEditorSession, validate_request
 from yadinassi.ui.protocol import CatalogRef, UIError
@@ -114,24 +114,57 @@ class CatalogSectionEditorTests(unittest.TestCase):
         self.assertEqual(len(self.section()['rows']), 2)
         self.assertEqual(len(self.stored().tabular_sections[0].rows), 1)
 
-    def test_uncertain_committed_locks_all_row_actions_and_resolves_once(self):
-        self.event('addRow')
-        original = _View.commit
-        def lost(tx): original(tx); raise BackendError('uncertain_commit')
-        with patch.object(_View, 'commit', lost): self.save()
-        for event, args in [('addRow', {}), ('deleteRow', {'row':self.section()['rows'][0]['id']}),
-                            ('changeRow', {'row':self.section()['rows'][0]['id'],'value':self.choice})]:
-            with self.assertRaises(UIError): self.event(event, **args)
-        with patch.object(_View, 'commit', side_effect=AssertionError('second write')): self.save()
-        self.assertEqual(self.editor.save_state, 'saved')
-        self.assertEqual(len(self.stored().tabular_sections[0].rows), 2)
+    def assert_unknown_save_is_locked(self):
+        state = self.editor.snapshot()
+        self.assertEqual((state['saveState'], state['error']), ('uncertain', 'uncertain_commit'))
+        self.assertTrue(state['editingLocked'])
+        self.assertTrue(state['dirty'])
+        self.assertTrue(self.editor.pending_commit)
+        self.assertFalse(self.editor.pending_refresh)
 
-    def test_uncertain_absent_retries_same_rows(self):
-        self.event('addRow'); identities = [r['id'] for r in self.section()['rows']]
-        with patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')): self.save()
-        self.save()
-        self.assertEqual(self.editor.save_state, 'saved')
+    def reopen_after_unknown_save(self):
+        self.app.event('command', control='CancelButton')
+        self.assertIsNone(self.app.editor)
+        self.assertIn('Previous write outcome remains unknown', self.app.list_notice)
+        self.app.open(self.reference)
+        self.editor = self.app.editor
+        self.assertFalse(self.editor.snapshot()['editingLocked'])
+        self.assertFalse(self.editor.snapshot()['dirty'])
+
+    def test_uncertain_committed_locks_row_actions_until_fresh_open(self):
+        self.event('addRow')
+        identities = [r['id'] for r in self.section()['rows']]
+        original = _View.commit
+        def lost(tx, **options):
+            original(tx, **options)
+            raise BackendError('uncertain_commit')
+        with patch.object(_View, 'commit', lost): self.save()
+        self.assert_unknown_save_is_locked()
+        for event, args in [('addRow', {}), ('deleteRow', {'row':identities[0]}),
+                            ('changeRow', {'row':identities[0],'value':self.choice})]:
+            with self.subTest(event=event), self.assertRaises(UIError): self.event(event, **args)
+        with patch.object(_View, 'update', side_effect=AssertionError('second write')), \
+             patch.object(self.editor, '_refresh', side_effect=AssertionError('outcome guessed')):
+            self.save()
+        self.assert_unknown_save_is_locked()
         self.assertEqual([str(r.identity) for r in self.stored().tabular_sections[0].rows], identities)
+        self.reopen_after_unknown_save()
+        self.assertEqual([r['id'] for r in self.section()['rows']], identities)
+
+    def test_uncertain_rolled_back_save_cannot_replay_row_buffer(self):
+        before = self.stored()
+        self.event('addRow')
+        identities = [r['id'] for r in self.section()['rows']]
+        with patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')): self.save()
+        self.assert_unknown_save_is_locked()
+        with patch.object(_View, 'update', side_effect=AssertionError('second write')), \
+             patch.object(self.editor, '_refresh', side_effect=AssertionError('outcome guessed')):
+            self.save()
+        self.assert_unknown_save_is_locked()
+        self.assertEqual([r['id'] for r in self.section()['rows']], identities)
+        self.assertEqual(self.stored(), before)
+        self.reopen_after_unknown_save()
+        self.assertEqual([r['id'] for r in self.section()['rows']], identities[:1])
 
     def test_refresh_size_failure_keeps_old_revision_and_refresh_only_lock(self):
         self.event('addRow'); revision = self.editor.object._revision
@@ -191,7 +224,7 @@ class CatalogSectionEditorTests(unittest.TestCase):
     def test_unsupported_sections_are_preserved_on_scalar_save(self):
         from pathlib import Path
         from catalog_sections_fixture import configuration_files_with_sections
-        from yadinassi.configuration_xml import import_configuration
+        from yadinassi.configuration.configuration_xml import import_configuration
         from yadinassi import Interpreter
         context = SQLiteDBContext.create(Path(self.temp.name)/'mixed.sqlite',
             import_configuration(configuration_files_with_sections()))

@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from test_source_catalog_records import package
 from test_source_constant_store import configuration
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 class SourceCatalogModuleGuardTests(unittest.TestCase):
     def setUp(self):
@@ -50,13 +50,13 @@ class SourceCatalogModuleGuardTests(unittest.TestCase):
         app.start();self.assertEqual(out,['unsupported','Нет'])
 
     def test_moduleless_schema_record_keeps_three_items(self):
-        from yadinassi.source_catalog_definitions import source_catalog_definitions, catalog_definition_record
+        from yadinassi.db.catalog.source_catalog_definitions import source_catalog_definitions, catalog_definition_record
         definitions,errors=source_catalog_definitions(package())
         self.assertEqual(errors,{})
         self.assertEqual(len(catalog_definition_record(definitions['items'])),3)
 
     def test_add_module_update_refuses_without_touching_original(self):
-        from yadinassi.source_catalog_store import SourceCatalogStore
+        from yadinassi.db.catalog.source_catalog_store import SourceCatalogStore
         source=package();store=SourceCatalogStore.create(self.path,source)
         store.close();before=self.path.read_bytes()
         files={f.path:f.content for f in source.files}

@@ -7,18 +7,18 @@ from unittest.mock import patch
 
 from business_configuration_fixture import sources
 from test_document_configuration_xml import document_files
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_business_profile import import_business_configuration
-from yadinassi.configuration_evolution import canonical
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_configuration_update import prepare
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_business_profile import import_business_configuration
+from yadinassi.configuration.configuration_evolution import canonical
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_configuration_update import prepare
 
 
 class AdditiveBusinessProfileBoundaryTests(unittest.TestCase):
     def test_business_grant_target_refused_before_storage(self):
         target = import_business_configuration(sources())
-        with patch('yadinassi.sqlite_catalog.SQLiteCatalogBackend', side_effect=AssertionError('storage must not open')):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.SQLiteCatalogBackend', side_effect=AssertionError('storage must not open')):
             with self.assertRaises(BackendError) as caught: prepare('unopened.sqlite', target, maintenance=True)
         self.assertEqual(caught.exception.code, 'unsupported')
 

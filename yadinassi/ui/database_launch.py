@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 import sys
 import tempfile
 
-from ..sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 BINDING_PROTOCOL = 'yadinassi-database-ui-launch/1'
 # Closed route names are emitted only by the canonical backend admission.
@@ -81,7 +81,7 @@ def materialize(snapshot):
         yield root
 
 
-from ..execution_policy import backend_entrypoint, UI_BACKENDS
+from yadinassi.execution.execution_policy import backend_entrypoint, UI_BACKENDS
 
 
 @backend_entrypoint

@@ -5,6 +5,7 @@ from pathlib import Path
 import unittest
 from yadinassi import Interpreter
 from scripts.uuid_typed_pipeline_behavior import route
+from scripts.native_associative_order import signature
 ROOT=Path(__file__).resolve().parents[1]
 NATIVE=ROOT/'tests/fixtures/native_uuid_typed_pipeline_43270339666.json'
 
@@ -29,7 +30,20 @@ def case(number):
         vm.execute(declarations)
         actual=vm.execute(f'Stage="setup"; ObserveCase({number},Stage)')
         expected=json.loads(NATIVE.read_bytes())['observations'][number-1]
-        self.assertEqual(actual,expected)
+        if number != 14:
+            self.assertEqual(actual,expected)
+            return
+        # This pinned observation contains two maps inside an ordered array.
+        # Only pair order is unspecified; the lookup results and all bytes
+        # inside each complete pair remain part of the native witness.
+        observed_wire, _, observed_cells = actual.rpartition('/')
+        archived_wire, _, archived_cells = expected.rpartition('/')
+        self.assertEqual(observed_cells, archived_cells)
+        self.assertEqual(observed_cells, 'zero:fixed')
+        self.assertTrue(observed_wire.startswith('S:') and archived_wire.startswith('S:'))
+        array=b'51e7a0d2-530b-11d4-b98a-008048da3034'
+        opts=dict(expected_root=array,expected_count=2,uuid_scalars=True)
+        self.assertEqual(signature(observed_wire[2:],**opts),signature(archived_wire[2:],**opts))
     return test
 for number in range(1,17):
     setattr(NativeUUIDTypedPipelineReplay,f'test_native_{number:02d}',case(number))

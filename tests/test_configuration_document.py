@@ -6,11 +6,11 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_document import DocumentObjectSession, DocumentImage, DocumentRowImage
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import literal_date
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_document import DocumentObjectSession, DocumentImage, DocumentRowImage
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.temporal.dates import literal_date
 from test_document_configuration_xml import document_files
 
 
@@ -82,23 +82,39 @@ class ConfigurationDocumentTests(unittest.TestCase):
         self.assertEqual(dict(result.image.values)['Number'], '000000001')
         self.assertEqual(len(result.image.sections[0][1]), 2)
 
-    def test_uncertain_commit_resolves_original_header_and_lines(self):
+    def test_uncertain_commit_cannot_replay_and_can_reopen_fresh(self):
         backend = self.context.backend
         original = backend.begin_document_write
         class LostReply:
             def __init__(self, tx): self.tx = tx
             def __getattr__(self, name): return getattr(self.tx, name)
-            def commit(self): self.tx.commit(); raise OSError('lost acknowledgement')
-        with patch.object(backend, 'begin_document_write', side_effect=lambda op: LostReply(original(op))):
+            def _confirm_commit(self): self.tx._confirm_commit(); raise OSError('lost acknowledgement')
+        with patch.object(backend, 'begin_document_write',
+                          side_effect=lambda op, **kwargs: LostReply(original(op, **kwargs))):
             uncertain = self.owned.save(self.image())
         self.assertEqual(uncertain.state, 'uncertain')
-        with self.assertRaises(BackendError): self.owned.require_discardable()
+        self.owned.require_discardable()
         with patch.object(backend, 'begin_document_write') as begin:
             result = self.owned.save(self.image(number='wrong', flags=()))
             begin.assert_not_called()
+        self.assertEqual(result, uncertain)
+        reopened = DocumentObjectSession(self.context, self.schema, self.files,
+                                         self.owned.object._key)
+        self.assertEqual(dict(reopened.image().values)['Number'], '000000001')
+        self.assertEqual(len(reopened.image().sections[0][1]), 2)
+
+    def test_confirmed_commit_with_cleanup_error_refreshes_without_new_write(self):
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        close = DocumentView.close
+        def fail_closed(view):
+            close(view)
+            if view._view._committed:
+                raise BackendError('storage_error')
+        with patch.object(DocumentView, 'close', fail_closed):
+            result = self.owned.save(self.image())
         self.assertEqual(result.state, 'saved')
         self.assertEqual(dict(result.image.values)['Number'], '000000001')
-        self.assertEqual(len(result.image.sections[0][1]), 2)
+        self.assertEqual(len(result.listing), 1)
 
     def test_source_mismatch_does_not_activate_document_editor(self):
         changed = dict(self.files); changed['Configuration.xml'] += b'\n'
@@ -112,7 +128,7 @@ class ConfigurationDocumentTests(unittest.TestCase):
 
     def test_posting_profile_refuses_nonposting_host_editor_before_read(self):
         from test_document_posting_runtime import posting_source
-        from yadinassi.configuration_posting import import_posting_configuration, PROFILE
+        from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE
         files = posting_source()
         config = import_posting_configuration(files, posting_runtime=PROFILE)
         path = Path(self.temp.name) / 'posting.sqlite'

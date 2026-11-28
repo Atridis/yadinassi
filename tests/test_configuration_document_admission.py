@@ -11,10 +11,10 @@ from unittest.mock import patch
 
 from document_form_fixture import sources
 from test_document_configuration_xml import document_files
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_migration_plan import prepare, apply
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
 
 
 class DocumentAdmissionBoundaryTests(unittest.TestCase):
@@ -42,7 +42,7 @@ class DocumentAdmissionBoundaryTests(unittest.TestCase):
         SQLiteCatalogBackend.create(ordinary,import_configuration(document_files(catalogs=False,fields=False))).close()
         plan=prepare(ordinary,maintenance=True)
         before=self.digest()
-        with patch('yadinassi.sqlite_migration_plan._open',side_effect=AssertionError('migration file must not open')):
+        with patch('yadinassi.db.sqlite.sqlite_migration_plan._open',side_effect=AssertionError('migration file must not open')):
             with self.assertRaises(BackendError) as caught:apply(self.path,plan,maintenance=True)
         self.assertEqual(caught.exception.code,'unsupported')
         self.assertEqual(self.digest(),before);self.reopen()
@@ -56,7 +56,7 @@ class DocumentAdmissionBoundaryTests(unittest.TestCase):
     def test_live_valid_persisted_schema_tamper_rejects_export_and_reopen(self):
         with closing(sqlite3.connect(self.path)) as db:
             identity,definition=db.execute('SELECT identity,definition FROM document_schema').fetchone()
-            from yadinassi.sqlite_documents import schema_data
+            from yadinassi.db.sqlite.sqlite_documents import schema_data
             definition=schema_data(replace(self.backend._document_schemas[0],number_length=8))
             db.execute('UPDATE document_schema SET definition=? WHERE identity=?',(json.dumps(definition,ensure_ascii=False,separators=(',',':')),identity));db.commit()
         with self.assertRaises(BackendError):self.backend.export_configuration()
@@ -73,7 +73,7 @@ class DocumentAdmissionBoundaryTests(unittest.TestCase):
         with self.assertRaises(BackendError):self.backend.export_configuration()
 
     def test_regular_create_does_not_authorize_document_grant(self):
-        from yadinassi.configuration_document_profile import import_document_forms_configuration
+        from yadinassi.configuration.configuration_document_profile import import_document_forms_configuration
         target=self.path.with_name('not-authorized.sqlite')
         with self.assertRaises(BackendError):
             SQLiteCatalogBackend.create(target,import_document_forms_configuration(self.files))
@@ -90,7 +90,7 @@ class DocumentAdmissionBoundaryTests(unittest.TestCase):
         with self.assertRaises(BackendError):SQLiteCatalogBackend(self.path)
 
     def test_forged_grant_digest_cannot_authorize_reopen(self):
-        from yadinassi.configuration_document_profile import DOCUMENT_FORMS_SOURCE_ISSUE
+        from yadinassi.configuration.configuration_document_profile import DOCUMENT_FORMS_SOURCE_ISSUE
         with closing(sqlite3.connect(self.path)) as db:
             db.execute('UPDATE database_info SET activation_issues=?',
                 (json.dumps([DOCUMENT_FORMS_SOURCE_ISSUE+':'+('0'*64)]),));db.commit()

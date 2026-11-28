@@ -7,6 +7,7 @@ contract. A failed transport locks the entire application without replay.
 import argparse
 from collections import deque
 from contextlib import nullcontext
+from decimal import Decimal
 import os
 from pathlib import Path
 import sys
@@ -14,16 +15,17 @@ from secrets import token_hex
 from threading import Lock
 import webbrowser
 
-from ..configuration_forms import load_configuration_forms
-from ..configuration_import import read_configuration_directory
-from ..database_context import SQLiteDBContext
-from ..invocation import InvocationPort, InvocationServer, _decode_scalar, _encode_scalar
-from ..structures import BSLStructure, BSLFixedStructure
-from ..values import HostFunction
-from ..form_dialogs import (DIALOG_CAPABILITY, MAX_DIALOGS, MAX_DIALOG_TEXT, MAX_DIALOG_TITLE,
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.execution.invocation import InvocationPort, InvocationServer, _decode_scalar, _encode_scalar
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
+from yadinassi.types.values import HostFunction
+from yadinassi.forms.form_dialogs import (DIALOG_CAPABILITY, MAX_DIALOGS, MAX_DIALOG_TEXT, MAX_DIALOG_TITLE,
     QuestionDialogMode, DialogReturnCode, OwnedDialog, dialog_text)
-from ..form_value_input import (INPUT_CAPABILITY, MAX_INPUTS, ScalarInputSpec,
+from yadinassi.forms.form_value_input import (INPUT_CAPABILITY, MAX_INPUTS, ScalarInputSpec,
     ValueListSelection, OwnedInput, scalar_descriptor)
+from yadinassi.forms.form_replication import PROTOCOL as FULL_REPLICA_PROTOCOL
 from .form_app import FormController, FormProcess, PROTOCOL as FORM_PROTOCOL
 from .local_app import LocalTransportError, LocalUIServer, _Handler
 from .protocol import decode_line, encode_line, MAX_LINE_BYTES, MAX_COUNTER, UIError
@@ -43,8 +45,10 @@ def _parameters(values):
     """Snapshot a small scalar map; never admit a form/object/reference handle."""
     if values is None:
         values = {}
-    if type(values) in (BSLStructure, BSLFixedStructure):
-        values = {pair.key: pair.value for pair in values}
+    from yadinassi.forms.direct_form_parameters import structure_items
+    pairs = structure_items(values)
+    if pairs is not None:
+        values = dict(pairs)
     if type(values) is not dict or len(values) > MAX_PARAMETERS:
         raise ValueError('scalar form parameters required')
     seen = set(); result = {}
@@ -62,43 +66,43 @@ def load_application(root, *, catalog_objects=False, application_host=False, doc
         raise ValueError('configuration source profiles cannot be combined implicitly')
     files = read_configuration_directory(root)
     if main_demo_application:
-        from ..configuration_main_demo import import_main_demo_configuration, PROFILE
+        from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
         from .main_demo import document_forms
         return document_forms(import_main_demo_configuration(files, profile=PROFILE))
     if inventory_enum_application:
-        from ..configuration_inventory_enum_application import import_inventory_application, PROFILE
+        from yadinassi.configuration.configuration_inventory_enum_application import import_inventory_application, PROFILE
         imported = import_inventory_application(files, inventory_runtime=PROFILE)
         return load_configuration_forms(files, catalog_schemas=imported.catalogs, document_schemas=imported.documents,
             reference_catalogs=imported.catalogs, posting_application=True, enum_definitions=imported.enumerations)
     if inventory_application:
-        from ..configuration_inventory_application import import_inventory_application, PROFILE
+        from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE
         imported = import_inventory_application(files, inventory_runtime=PROFILE)
         return load_configuration_forms(files, catalog_schemas=imported.catalogs, document_schemas=imported.documents,
             reference_catalogs=imported.catalogs, posting_application=True)
     if posting_application:
-        from ..configuration_posting_application import import_posting_application, PROFILE
+        from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
         imported = import_posting_application(files, posting_runtime=PROFILE)
         return load_configuration_forms(files, document_schemas=imported.documents, posting_application=True)
     if reference_application:
-        from ..configuration_reference_profile import import_reference_configuration
+        from yadinassi.configuration.configuration_reference_profile import import_reference_configuration
         imported = import_reference_configuration(files)
         return load_configuration_forms(files, catalog_schemas=imported.catalogs, document_schemas=imported.documents, reference_catalogs=imported.catalogs)
     if business_application:
-        from ..configuration_business_profile import import_business_configuration
+        from yadinassi.configuration.configuration_business_profile import import_business_configuration
         imported = import_business_configuration(files)
         return load_configuration_forms(files, catalog_schemas=imported.catalogs, document_schemas=imported.documents)
     if application_host:
         if catalog_objects:
             raise ValueError('application host is a separate explicit profile')
-        from ..configuration_application_profile import import_application_configuration
+        from yadinassi.configuration.configuration_application_profile import import_application_configuration
         imported = import_application_configuration(files)
         return load_configuration_forms(files, catalog_schemas=imported.catalogs)
     if document_objects:
-        from ..configuration_document_profile import import_document_forms_configuration
+        from yadinassi.configuration.configuration_document_profile import import_document_forms_configuration
         imported = import_document_forms_configuration(files)
         return load_configuration_forms(files, document_schemas=imported.documents)
     if catalog_objects:
-        from ..configuration_xml import import_catalog_forms_configuration
+        from yadinassi.configuration.configuration_xml import import_catalog_forms_configuration
         imported = import_catalog_forms_configuration(files)
         return load_configuration_forms(files, catalog_schemas=imported.catalogs)
     return load_configuration_forms(files)
@@ -111,17 +115,17 @@ def _definitions(configuration):
 
 def _runtime(configuration, side, *, business_application=False, reference_application=False, main_demo_application=False, **kwargs):
     if main_demo_application:
-        from ..configuration_main_demo import import_main_demo_configuration, PROFILE
+        from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
         from .main_demo import form_family
         admitted = import_main_demo_configuration(dict(configuration.source_files), profile=PROFILE)
         return form_family(admitted, side=side, **kwargs)
-    from ..configuration_application_profile import import_application_configuration
-    from ..configuration_runtime import ConfigurationApplication
+    from yadinassi.configuration.configuration_application_profile import import_application_configuration
+    from yadinassi.configuration.configuration_runtime import ConfigurationApplication
     if reference_application:
-        from ..configuration_reference_profile import import_reference_configuration
+        from yadinassi.configuration.configuration_reference_profile import import_reference_configuration
         imported = import_reference_configuration(dict(configuration.source_files))
     elif business_application:
-        from ..configuration_business_profile import import_business_configuration
+        from yadinassi.configuration.configuration_business_profile import import_business_configuration
         imported = import_business_configuration(dict(configuration.source_files))
     else:
         imported = import_application_configuration(dict(configuration.source_files))
@@ -147,7 +151,7 @@ class ConfigurationBroker:
         self.posting_application = posting_application or inventory_application or inventory_enum_application or main_demo_application
         self.posting_configuration = None
         if main_demo_application:
-            from ..configuration_main_demo import import_main_demo_configuration, PROFILE
+            from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
             from .main_demo import document_forms
             self.posting_configuration = import_main_demo_configuration(dict(configuration.source_files), profile=PROFILE)
             # Rebuild compiler-owned programs from the exact full-source grant;
@@ -155,13 +159,13 @@ class ConfigurationBroker:
             configuration = document_forms(self.posting_configuration)
             self.configuration = configuration
         if inventory_enum_application:
-            from ..configuration_inventory_enum_application import import_inventory_application, PROFILE
+            from yadinassi.configuration.configuration_inventory_enum_application import import_inventory_application, PROFILE
             self.posting_configuration = import_inventory_application(dict(configuration.source_files), inventory_runtime=PROFILE)
         if inventory_application:
-            from ..configuration_inventory_application import import_inventory_application, PROFILE
+            from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE
             self.posting_configuration = import_inventory_application(dict(configuration.source_files), inventory_runtime=PROFILE)
         if posting_application:
-            from ..configuration_posting_application import import_posting_application, PROFILE
+            from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
             self.posting_configuration = import_posting_application(dict(configuration.source_files), posting_runtime=PROFILE)
         self.definitions = _definitions(configuration)
         self.database = database
@@ -287,7 +291,7 @@ class ConfigurationBroker:
         return self._record_projection(page)
 
     def _report_service(self):
-        from ..inventory_application_reports import InventoryReports
+        from yadinassi.configuration.demos.inventory_application_reports import InventoryReports
         if not self.inventory_application or self.database is None:
             raise ValueError('explicit inventory report grant required')
         if self.record_context is None: self.record_context = self._open_context()
@@ -341,11 +345,11 @@ class ConfigurationBroker:
 
     def _report(self, payload):
         from datetime import datetime
-        from ..inventory_application_reports import InventoryReports
-        from ..accumulation_movements import AccumulationDirection
-        from ..catalog_backend import CatalogKey
-        from ..document_backend import DocumentKey
-        from ..dates import _date_from_datetime
+        from yadinassi.configuration.demos.inventory_application_reports import InventoryReports
+        from yadinassi.db.registers.accumulation_movements import AccumulationDirection
+        from yadinassi.db.catalog.catalog_backend import CatalogKey
+        from yadinassi.db.document.document_backend import DocumentKey
+        from yadinassi.temporal.dates import _date_from_datetime
         grant = next((r for r in self.posting_configuration.reports if r.name == payload.get('report')), None) if self.inventory_application else None
         statement = grant is not None and grant.view == 'BalanceAndTurnovers'
         _keys(payload, 'report at start end' + (' periodicity setup' if statement else ''))
@@ -517,7 +521,7 @@ class ConfigurationBroker:
                 definition = self.definitions[entry]
                 opened = None
                 if definition.document_schema is not None and reference is not None:
-                    from ..configuration_document import _read_form_document, _FormCapacityError
+                    from yadinassi.configuration.configuration_document import _read_form_document, _FormCapacityError
                     # The record-list context may predate a file replacement.
                     # Classify capacity only after this new context proves the
                     # exact source and profile, without installing root services.
@@ -526,11 +530,11 @@ class ConfigurationBroker:
                     if backend.export_configuration() != dict(self.configuration.source_files):
                         raise ValueError('configuration/database source mismatch')
                     if self.inventory_application:
-                        from ..inventory_host_operations import _source_configuration
+                        from yadinassi.configuration.demos.inventory_host_operations import _source_configuration
                         if _source_configuration(backend) != self.posting_configuration:
                             raise ValueError('inventory form source mismatch')
                     elif self.posting_application:
-                        from ..configuration_posting_application import PostingApplicationConfiguration
+                        from yadinassi.configuration.configuration_posting_application import PostingApplicationConfiguration
                         if (type(backend.posting_configuration) is not PostingApplicationConfiguration
                                 or backend.posting_configuration != self.posting_configuration):
                             raise ValueError('posting form source mismatch')
@@ -548,22 +552,22 @@ class ConfigurationBroker:
                 sid = 'form-' + str(self.allocated)
                 owned = None
                 if definition.catalog_schema is not None:
-                    from ..configuration_catalog import CatalogObjectSession
+                    from yadinassi.configuration.configuration_catalog import CatalogObjectSession
                     if self.inventory_application:
-                        from ..inventory_application_sessions import InventoryCatalogSession
+                        from yadinassi.configuration.demos.inventory_application_sessions import InventoryCatalogSession
                         owned = InventoryCatalogSession(context, definition.catalog_schema,
                             self.posting_configuration, reference=reference)
                     else:
                         owned = CatalogObjectSession(context, definition.catalog_schema,
                             dict(self.configuration.source_files), reference=reference, reference_fields=self.reference_application)
                 elif definition.document_schema is not None:
-                    from ..configuration_document import DocumentObjectSession
+                    from yadinassi.configuration.configuration_document import DocumentObjectSession
                     if self.inventory_application:
-                        from ..inventory_application_sessions import InventoryDocumentSession
+                        from yadinassi.configuration.demos.inventory_application_sessions import InventoryDocumentSession
                         owned = InventoryDocumentSession(context, definition.document_schema,
                             self.posting_configuration, definition.name, key=reference, _opened=opened)
                     elif self.posting_application:
-                        from ..configuration_posting_document import PostingDocumentSession
+                        from yadinassi.configuration.configuration_posting_document import PostingDocumentSession
                         owned = PostingDocumentSession(context, definition.document_schema,
                             self.posting_configuration, definition.name, key=reference, _opened=opened)
                     else:
@@ -600,7 +604,7 @@ class ConfigurationBroker:
                         vm.close()
                 if context is not None:
                     context.close()
-                from ..catalog_backend import BackendError
+                from yadinassi.db.catalog.catalog_backend import BackendError
                 # A listed record may disappear before a new form is allocated.
                 # Only exact missing-record failure before any form interpreter
                 # exists is a safe refusal; failed cleanup still propagates.
@@ -610,36 +614,40 @@ class ConfigurationBroker:
         if sid not in self.sessions:
             raise ValueError('retired session')
         server, nocontext, context = self.sessions[sid]
+        owned = self.objects.get(sid)
+        posting_locked = (self.posting_application and owned is not None and hasattr(owned, 'operations')
+                          and (owned.pending_commit or owned.pending_refresh))
+        if posting_locked and operation in ('form', 'invoke', 'reference'):
+            raise ValueError('posting draft is locked')
         if operation == 'posting':
-            _keys(payload, 'action command receipt form')
+            _keys(payload, 'action command form')
             if not self.posting_application or sid not in self.objects or not hasattr(self.objects[sid], 'operations'):
                 raise ValueError('explicit posting form required')
             definition = next(d for d in self.definitions.values() if d.name == self.objects[sid].form)
             binding = next((b for b in server.bindings if b.name == 'YadinassiPostingSync'), None)
             frame = payload['form']; action = payload['action']; owned = self.objects[sid]
-            if (binding is None or type(frame) is not dict or frame.get('operation') != 'call'
-                    or frame.get('endpoint') != binding.endpoint or action not in ('execute', 'recover', 'sync')):
+            if (binding is None or type(frame) is not dict or frame.get('protocol') != FULL_REPLICA_PROTOCOL
+                    or frame.get('operation') != 'call' or frame.get('endpoint') != binding.endpoint
+                    or action not in ('execute', 'refresh', 'sync')):
                 raise ValueError('unknown posting synchronization capability')
             if action == 'execute' and not any(g.form == definition.name and g.command == payload['command']
                     for g in self.posting_configuration.commands):
                 raise ValueError('ungranted posting command')
             if action != 'execute' and payload['command'] is not None:
                 raise ValueError('unexpected posting command')
-            if action == 'recover' and (type(payload['receipt']) is not str or payload['receipt'] != owned.receipt_token):
-                raise ValueError('wrong posting receipt capability')
-            if action != 'recover' and payload['receipt'] is not None:
-                raise ValueError('unexpected posting receipt')
-            if action == 'recover':
-                from ..configuration_posting_document import recover_posting_frame
-                return recover_posting_frame(definition, server, owned, frame, payload['receipt'])
+            if action == 'refresh':
+                from yadinassi.configuration.configuration_posting_document import refresh_posting_frame
+                return refresh_posting_frame(definition, server, owned, frame)
+            if owned.pending_commit or owned.pending_refresh:
+                raise ValueError('posting draft is locked')
             # Synchronize typed buffers through the ordinary replica protocol.
             # The root effect cannot run until this dispatch returns successfully.
             response = decode_line(server.exchange(encode_line(frame)))
             if response.get('status') != 'ok' or response.get('accepted') is not True:
                 return {'form': response, 'posting': None}
-            from ..configuration_posting_document import dispatch_posting
-            from ..form_replication import _pack_state
-            state = dispatch_posting(definition, server, owned, action, payload['command'], payload['receipt'])
+            from yadinassi.configuration.configuration_posting_document import dispatch_posting
+            from yadinassi.forms.form_replication import _pack_state
+            state = dispatch_posting(definition, server, owned, action, payload['command'])
             response['state'] = _pack_state(server.session, server.session._replica_handler_names)
             encode_line(response)
             return {'form': response, 'posting': state}
@@ -647,6 +655,11 @@ class ConfigurationBroker:
             if payload != {}:
                 raise ValueError('invalid close guard')
             owned = self.objects.get(sid)
+            from yadinassi.configuration.configuration_catalog import CatalogObjectSession
+            if isinstance(owned, CatalogObjectSession) and owned.pending_commit:
+                if self.application is None or not self.application.interpreter.pending_promises:
+                    return {'allowed': True, 'discard_unknown_catalog': True}
+                return {'allowed': False}
             dirty = (self.posting_application and owned is not None and hasattr(owned, 'operations') and
                 next(d for d in self.definitions.values() if d.name == owned.form)._document_image(server.session) != owned.baseline)
             return {'allowed': not dirty and (owned is None or not (owned.pending_commit or owned.pending_refresh))
@@ -678,9 +691,13 @@ class ConfigurationBroker:
                 raise ValueError('application tasks must finish before releasing a form')
             owned = self.objects.get(sid)
             if owned is not None:
-                owned.verify_source()
-                if payload.get('operation') in ('close', 'dispose'):
-                    owned.require_discardable()
+                from yadinassi.configuration.configuration_catalog import CatalogObjectSession
+                discard = (payload.get('operation') == 'dispose'
+                           and isinstance(owned, CatalogObjectSession) and owned.pending_commit)
+                if not discard:
+                    owned.verify_source()
+                    if payload.get('operation') in ('close', 'dispose'):
+                        owned.require_discardable()
             scope = (nullcontext() if self.application is None else
                      self.application.event_messages(server.session._record_message))
             with scope:
@@ -698,13 +715,22 @@ class ConfigurationBroker:
                      self.application.event_messages(nocontext._message))
             with scope:
                 return decode_line(nocontext.exchange(encode_line(payload)))
-        if operation == 'retire':
+        if operation in ('retire', 'discardPosting'):
             if payload != {}:
                 raise ValueError('invalid retirement')
             if self.application is not None and self.application.interpreter.pending_promises:
                 raise ValueError('application tasks must finish before releasing a form')
             owned = self.objects.get(sid)
-            if owned is not None and ((self.posting_application and hasattr(owned, 'operations')) or self.inventory_application): owned.close()
+            if operation == 'discardPosting':
+                if not posting_locked or server.session._busy:
+                    raise ValueError('unknown posting draft required')
+                owned.discard_unknown()
+            elif owned is not None and ((self.posting_application and hasattr(owned, 'operations')) or self.inventory_application):
+                from yadinassi.configuration.configuration_catalog import CatalogObjectSession
+                if isinstance(owned, CatalogObjectSession) and owned.pending_commit and server.session.closed:
+                    owned.close(discard_unknown=True)
+                else:
+                    owned.close()
             del self.sessions[sid]
             self.objects.pop(sid, None)
             try:
@@ -769,9 +795,6 @@ class ConfigurationProcess(FormProcess):
             command += ['--document-objects']
         if launch_binding is not None:
             command += ['--launch-binding', launch_binding]
-        from ..execution_policy import ui_backend
-        self.execution_backend = ui_backend()
-        command += ['--execution-backend', self.execution_backend]
         self._start(command, environment)
 
 
@@ -828,7 +851,7 @@ class ConfigurationController:
         self.posting_application = posting_application or inventory_application or inventory_enum_application or main_demo_application
         self.posting_configuration = None
         if main_demo_application:
-            from ..configuration_main_demo import import_main_demo_configuration, PROFILE
+            from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
             from .main_demo import document_forms
             self.posting_configuration = import_main_demo_configuration(dict(configuration.source_files), profile=PROFILE)
             # Rebuild compiler-owned programs from the exact full-source grant;
@@ -836,13 +859,13 @@ class ConfigurationController:
             configuration = document_forms(self.posting_configuration)
             self.configuration = configuration
         if inventory_enum_application:
-            from ..configuration_inventory_enum_application import import_inventory_application, PROFILE
+            from yadinassi.configuration.configuration_inventory_enum_application import import_inventory_application, PROFILE
             self.posting_configuration = import_inventory_application(dict(configuration.source_files), inventory_runtime=PROFILE)
         if inventory_application:
-            from ..configuration_inventory_application import import_inventory_application, PROFILE
+            from yadinassi.configuration.configuration_inventory_application import import_inventory_application, PROFILE
             self.posting_configuration = import_inventory_application(dict(configuration.source_files), inventory_runtime=PROFILE)
         if posting_application:
-            from ..configuration_posting_application import import_posting_application, PROFILE
+            from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
             self.posting_configuration = import_posting_application(dict(configuration.source_files), posting_runtime=PROFILE)
         self.definitions = _definitions(configuration)
         self.names = {definition.name.casefold(): entry for entry, definition in self.definitions.items()}
@@ -967,6 +990,10 @@ class ConfigurationController:
             raise TypeError('ShowInputValue requires two to four arguments')
         callback, initial = arguments[:2]
         sid, session = self._input_owner(callback)
+        # The direct emitter represents whole BSL numbers as Python ints.
+        # The scalar input protocol uses the canonical Decimal representation.
+        if type(initial) is int:
+            initial = Decimal(initial)
         prompt = arguments[2] if len(arguments) > 2 else None
         descriptor = arguments[3] if len(arguments) > 3 else None
         prompt = dialog_text('' if prompt is None else prompt, MAX_DIALOG_TEXT)
@@ -1084,7 +1111,7 @@ class ConfigurationController:
             raise ValueError('form capacity exhausted')
         owned = None
         if len(arguments) == 7:
-            from ..form_results import OwnedFormResult, freeze_result
+            from yadinassi.forms.form_results import OwnedFormResult, freeze_result
             sid = self._current_form_sid
             controller = self.sessions.get(sid, (None, None))[0]
             session = None if controller is None else controller.session
@@ -1266,13 +1293,13 @@ class ConfigurationController:
             raise ValueError('posting source command binding changed')
         return command
 
-    def _posting_sync(self, sid, action, command=None, receipt=None):
+    def _posting_sync(self, sid, action, command=None):
         controller, entry = self.sessions[sid]
         binding = next((b for b in self.definitions[entry].program.server_bindings
             if b.name == 'YadinassiPostingSync'), None)
         if binding is None or controller.session._busy:
             raise ValueError('posting barrier requires completed dispatch')
-        self._posting_action = (sid, action, command, receipt)
+        self._posting_action = (sid, action, command)
         try:
             controller.session._request('call', binding)
             controller.session.revision += 1
@@ -1403,10 +1430,8 @@ class ConfigurationController:
                 _keys(result, 'form posting')
                 state = result['posting']
                 if state is not None:
-                    import re
-                    _keys(state, 'receipt state error posted')
-                    if (state['receipt'] is not None and (type(state['receipt']) is not str or not re.fullmatch('[0-9a-f]{32}', state['receipt']))
-                            or state['state'] not in ('new', 'unchanged', 'saved', 'committed', 'uncertain', 'rejected')
+                    _keys(state, 'state error posted')
+                    if (state['state'] not in ('new', 'unchanged', 'saved', 'committed', 'uncertain', 'rejected')
                             or state['error'] not in (None, 'refresh_required', 'outcome_unknown', 'operation_refused')
                             or (state['posted'] is not None if state['state'] in ('uncertain', 'committed')
                                 else type(state['posted']) is not bool)):
@@ -1426,10 +1451,11 @@ class ConfigurationController:
                 self._reference_changed = changed
                 if result['uncertain']: self._lock()
             elif operation == 'guardClose':
-                _keys(result, 'allowed')
-                if type(result['allowed']) is not bool:
+                _keys(result, 'allowed' + (' discard_unknown_catalog' if 'discard_unknown_catalog' in result else ''))
+                if (type(result['allowed']) is not bool or 'discard_unknown_catalog' in result
+                        and (result['allowed'] is not True or result['discard_unknown_catalog'] is not True)):
                     raise ValueError('invalid close guard response')
-            elif operation == 'retire' and result != {}:
+            elif operation in ('retire', 'discardPosting') and result != {}:
                 raise ValueError('invalid retirement')
             return result
         except BaseException:
@@ -1475,7 +1501,7 @@ class ConfigurationController:
             self.bind_interpreter(interpreter)
 
     def _request_owned_close(self, sid, value):
-        from ..form_results import freeze_result
+        from yadinassi.forms.form_results import freeze_result
         owned = self.owned_results.get(sid)
         controller = self.sessions.get(sid, (None, None))[0]
         if (owned is None or owned.state != 'open' or controller is None
@@ -1500,11 +1526,11 @@ class ConfigurationController:
         try:
             def exchange(raw):
                 if self._posting_action is not None:
-                    owner, action, command, receipt = self._posting_action
+                    owner, action, command = self._posting_action
                     if owner != sid: raise ValueError('posting action owner mismatch')
                     self._posting_action = None
                     result = self._call('posting', sid, {'action': action, 'command': command,
-                        'receipt': receipt, 'form': decode_line(raw)})
+                        'form': decode_line(raw)})
                     return encode_line(result['form'])
                 if self._reference_action is not None:
                     owner, action = self._reference_action
@@ -1515,12 +1541,13 @@ class ConfigurationController:
                 return encode_line(self._call('form', sid, decode_line(raw)))
             reference_scope = None
             if definition.reference_targets or definition.enum_targets:
-                from ..form_references import FormReferenceScope, FormEnumTarget
+                from yadinassi.forms.form_references import FormReferenceScope, FormEnumTarget
                 reference_scope = FormReferenceScope(targets={**{i: n for i, _, n in definition.reference_targets},
                     **{i:FormEnumTarget(n) for i,_,n in definition.enum_targets}})
             controller = FormController(definition.client_package(), exchange, parameters=parameters, reference_scope=reference_scope,
                 bind_interpreter=lambda vm: self._bind(sid, vm),
-                interpreter_factory=None if self.application is None else self.application.form_interpreter_factory)
+                interpreter_factory=None if self.application is None else self.application.form_interpreter_factory,
+                reuse_tables=bool(definition.tables) and not definition.posting_application and reference_scope is None)
             if definition.posting_application:
                 controller.session.form._host_readonly = frozenset((dict(definition.object_fields)["Posted"].casefold(),))
             self.sessions[sid] = (controller, entry)
@@ -1585,11 +1612,11 @@ class ConfigurationController:
                 error = failed
         return error
 
-    def _retire_completed_form(self, sid):
+    def _retire_completed_form(self, sid, *, discard_posting=False):
         """Retirement acknowledgement precedes every completion. Never retry."""
         controller, _ = self.sessions[sid]
         owned = self.owned_results.get(sid)
-        self._call('retire', sid)
+        self._call('discardPosting' if discard_posting else 'retire', sid)
         del self.sessions[sid]
         self.posting_states.pop(sid, None)
         if self.active == sid:
@@ -1616,7 +1643,7 @@ class ConfigurationController:
             owned.finish('owner_retired')
             owners.pop(owned.owner, None)
             return 'retired_session'
-        from ..form_results import result_value
+        from yadinassi.forms.form_results import result_value
         session = parent.session
         # Reserve delivery before any fallible work. Even a partial callback or
         # allocation failure is terminal, never an invitation to replay.
@@ -1817,7 +1844,7 @@ class ConfigurationController:
                 if method != 'application.catalog' or self.report is not None and 'page' in self.report:
                     self.report = None
                 self.report_setup = None
-            error = None; sid = None; form = None
+            error = None; sid = None; form = None; discard_catalog = False
             updates = []; retained_before = set(self.sessions)
             if self.closed:
                 error = 'closed'
@@ -1997,18 +2024,42 @@ class ConfigurationController:
                         raise ValueError('finish reference selection first')
                     closing = (type(nested_request) is dict and nested_request.get('method') == 'form.event'
                                and type(nested_request.get('params')) is dict and nested_request['params'].get('event') == 'close')
-                    if closing and self.definitions[entry].posting_application and nested_request['params'].get('revision') == controller.session.revision:
+                    posting = self.posting_states.get(sid)
+                    posting_blocked = (posting is not None and posting['state'] in ('uncertain', 'committed')
+                                       and not readonly_snapshot)
+                    if (not posting_blocked and closing and self.definitions[entry].posting_application
+                            and nested_request['params'].get('revision') == controller.session.revision):
                         self._posting_sync(sid, 'sync')
                         nested_request = dict(nested_request, params=dict(nested_request['params'], revision=controller.session.revision))
-                    blocked = owner_blocked or (closing and ((self.application is not None
-                                  and self.application.interpreter.pending_promises)
-                               or ((self.definitions[entry].catalog_schema is not None or self.definitions[entry].document_schema is not None or self.application is not None)
-                                  and not self._call('guardClose', sid)['allowed'])))
+                    guard = None
+                    pending_tasks = closing and self.application is not None and self.application.interpreter.pending_promises
+                    if (closing and not posting_blocked and not owner_blocked and not pending_tasks
+                            and (self.definitions[entry].catalog_schema is not None
+                                 or self.definitions[entry].document_schema is not None or self.application is not None)):
+                        guard = self._call('guardClose', sid)
+                    discard_catalog = (guard is not None and guard.get('discard_unknown_catalog') is True
+                            and self.owned_results.get(sid) is None
+                            and set(nested_request) == {'jsonrpc', 'id', 'method', 'params'}
+                            and nested_request['jsonrpc'] == '2.0'
+                            and type(nested_request['id']) is int and 1 <= nested_request['id'] <= MAX_COUNTER
+                            and set(nested_request['params']) == {'event', 'revision'}
+                            and type(nested_request['params']['revision']) is int
+                            and nested_request['params']['revision'] == controller.session.revision)
+                    blocked = (posting_blocked or owner_blocked or pending_tasks
+                               or guard is not None and (not guard['allowed']
+                                   or guard.get('discard_unknown_catalog') and not discard_catalog))
                     if blocked:
                         error = self._owner_block_error(sid) if owner_blocked else 'save_recovery_required'
                         form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': nested_request['id'],
                             'method': 'form.snapshot', 'params': {}})
                         form['result']['error'] = 'busy'
+                    elif discard_catalog:
+                        # An explicit Close retires only this uncertain draft;
+                        # the replica dispose packet carries no delta or handler.
+                        controller.session.dispose()
+                        form = controller.exchange({'jsonrpc': '2.0', 'id': nested_request['id'],
+                                                    'method': 'form.snapshot', 'params': {}})
+                        error = 'outcome_unknown'
                     else:
                         form = self._form_exchange(controller, nested_request)
                         form, close_error = self._finish_owned_close(sid, form)
@@ -2053,17 +2104,23 @@ class ConfigurationController:
                 sid, form, error = self._answer_dialog(params, updates)
             elif method == 'application.answerInput':
                 sid, form, error = self._answer_input(params, updates)
-            elif method == 'application.recoverPosting':
-                _keys(params, 'session receipt')
+            elif method in ('application.refreshPosting', 'application.discardPosting'):
+                _keys(params, 'session')
                 sid = params['session']
-                if not self.posting_application or sid not in self.sessions:
+                if (not self.posting_application or type(sid) is not str or sid not in self.sessions
+                        or self._owner_blocked(sid) or self.choice is not None):
                     raise ValueError('posting session required')
                 state = self.posting_states.get(sid)
-                if state is None or params['receipt'] != state['receipt'] or state['receipt'] is None:
-                    raise ValueError('posting receipt owner mismatch')
-                self._posting_sync(sid, 'recover', receipt=params['receipt'])
-                controller, entry = self.sessions[sid]
-                form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': 1, 'method': 'form.snapshot', 'params': {}})
+                if method == 'application.refreshPosting':
+                    if state is None or state['state'] != 'committed':
+                        raise ValueError('known commit awaiting refresh required')
+                    self._posting_sync(sid, 'refresh')
+                    controller, _ = self.sessions[sid]
+                    form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': 1, 'method': 'form.snapshot', 'params': {}})
+                else:
+                    if state is None or state['state'] != 'uncertain' or self.owned_results.get(sid) is not None:
+                        raise ValueError('unknown posting draft required')
+                    self._retire_completed_form(sid, discard_posting=True)
                 if self.catalog is not None:
                     projection = self._call('catalog', payload={'entry': self.catalog['entry']})
                     error = projection.get('error'); self.catalog = None if error else projection
@@ -2090,7 +2147,8 @@ class ConfigurationController:
                         self.closed = True
             else:
                 raise ValueError('unknown application method')
-            queued_error = self._drain()
+            queued_error = (None if discard_catalog or method in ('application.refreshPosting', 'application.discardPosting')
+                            else self._drain())
             final_updates = []
             for update in updates:
                 owner = update['session']
@@ -2144,11 +2202,11 @@ class ConfigurationHandler(_Handler):
     asset_directory = 'configuration'
     methods = ('application.hello', 'application.snapshot', 'application.open',
                'application.form', 'application.close', 'application.catalog', 'application.openRecord', 'application.openRecorder', 'application.reference',
-               'application.recoverPosting', 'application.answerDialog', 'application.answerInput', 'application.report',
+               'application.refreshPosting', 'application.discardPosting', 'application.answerDialog', 'application.answerInput', 'application.report',
                'application.reportSetup', 'application.reportPage', 'application.catalogPage', 'application.catalogFilter')
 
 
-from ..execution_policy import backend_entrypoint, UI_BACKENDS
+from yadinassi.execution.execution_policy import backend_entrypoint, UI_BACKENDS
 
 
 @backend_entrypoint
@@ -2183,7 +2241,7 @@ def main(argv=None):
         configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application, inventory_enum_application=args.inventory_enum_application, main_demo_application=args.main_demo_application)
         if args.launch_binding is not None:
             from .database_launch import verify_binding, configuration_route
-            from ..sqlite_catalog import SQLiteCatalogBackend
+            from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
             backend = SQLiteCatalogBackend(args.f, read_only=True)
             try:
                 route = configuration_route(catalog_objects=args.catalog_objects, application_host=args.application_host,

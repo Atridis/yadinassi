@@ -298,7 +298,7 @@ EXECUTE_SCRIPT='''import sys
 from pathlib import Path
 root=Path(sys.argv[1]);sys.path.insert(0,str(root));sys.path.insert(0,str(root/'scripts'))
 from form_runtime_packet import source,parse_records,require_available
-from yadinassi.form_runtime import FormSession
+from yadinassi.forms.form_runtime import FormSession
 session=FormSession(source(),bindings={'OnCreateAtServer':'FormCreate','OnOpen':'FormOpen','BeforeClose':'FormBeforeClose'})
 snapshot=session.open();raw=dict(snapshot.attributes)['FLog'].encode('ascii')
 require_available(parse_records(raw));sys.stdout.buffer.write(raw)

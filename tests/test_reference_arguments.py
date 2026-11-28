@@ -1,11 +1,73 @@
 """PR47 native references plus explicitly local regression boundaries."""
+from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLObject
+from yadinassi.types.values import BSLObject
+
+
+class DirectFixedSlotTests(unittest.TestCase):
+    def test_execute_fixed_slots_are_readable_and_reject_only_the_write(self):
+        from yadinassi.collections.maps import BSLFixedMap, BSLMap
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
+
+        source = """
+        Var entered, last;
+        Procedure Read(x) last=x; EndProcedure
+        Procedure Forward(x) Read(x); EndProcedure
+        Procedure Write(x) entered=entered+1; x=99; entered=entered+100; EndProcedure
+        a=New Array; a.Add(10); fa=New FixedArray(a);
+        fs=New FixedStructure("Value",10);
+        m=New Map; m.Insert("key",10); fm=New FixedMap(m);
+        """
+        for slot in ('fa[0]', 'fs.Value', 'fs["Value"]', 'fm["key"]', 'host_map["key"]'):
+            with self.subTest(slot=slot), closing(Interpreter()) as vm:
+                vm.execute(source)
+                if slot.startswith('host_map'):
+                    host_map=BSLMap()
+                    host_map.set('key',Decimal(10))
+                    vm.variables['host_map']=BSLFixedMap(host_map)
+                program=f'''
+                entered=0;
+                Execute "Forward({slot.replace('"', '""')});";
+                Try Execute "Write({slot.replace('"', '""')});";
+                Except caught=True; EndTry;
+                '''
+                with patch.object(BoundaryContext,'_check',side_effect=AssertionError('Light check')):
+                    vm.execute(program)
+                self.assertEqual((vm.variables['entered'], vm.variables['last'], vm.variables['caught']),
+                                 (Decimal(1), Decimal(10), True))
+                self.assertEqual(vm.execute(slot), Decimal(10))
+
+    def test_failed_fixed_binding_precedes_later_argument_and_callee(self):
+        with closing(Interpreter()) as vm:
+            vm.execute("""
+            Var touched; touched=0;
+            Function Mark() touched=touched+1; Return 1; EndFunction
+            Procedure Enter(x,Val ignored) touched=touched+10; EndProcedure
+            a=New Array; a.Add(10); fa=New FixedArray(a);
+            Try Execute "Enter(fa[1],Mark());"; Except caught=True; EndTry;
+            """)
+            self.assertEqual((vm.variables['touched'],vm.variables['caught']),(Decimal(0),True))
+
+    def test_fixed_subclass_does_not_gain_index_capability(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        from yadinassi.types.values import BSLFixedArray
+
+        class Foreign(BSLFixedArray):
+            def get(self,index):
+                raise AssertionError('unregistered callback')
+            __getitem__=get
+
+        with closing(Interpreter()) as vm:
+            vm.execute('Procedure Read(x) Return; EndProcedure')
+            vm.variables['f']=object.__new__(Foreign)
+            with self.assertRaises(BoundaryViolation):
+                vm.execute('Execute "Read(f[0]);";')
 
 
 class ReferenceArgumentTests(unittest.TestCase):
@@ -13,6 +75,7 @@ class ReferenceArgumentTests(unittest.TestCase):
         self.output = []
         self.vm = Interpreter(output=self.output.append)
         self.vm.execute('''
+            Var trace, calls;
             Procedure SetValue(x) x = 99; EndProcedure
             Procedure ReadValue(x) Message(x); EndProcedure
             Procedure SetThenRaise(x) SetValue(x); Raise "stop"; EndProcedure
@@ -49,7 +112,7 @@ class ReferenceArgumentTests(unittest.TestCase):
 
     def test_nested_receiver_and_index_expressions_once_left_to_right(self):
         self.vm.execute('''
-            Var trace; trace = "";
+            trace = "";
             Function Owner(Val value) trace = trace + "R"; Return value; EndFunction
             Function Index() trace = trace + "I"; Return 0; EndFunction
             SetValue(Owner(a)[Index()]); Message(trace);
@@ -187,7 +250,7 @@ class ReferenceArgumentTests(unittest.TestCase):
 
     def test_wrong_arity_does_not_evaluate_receiver(self):
         self.vm.execute('''
-            Var calls; calls = 0;
+            calls = 0;
             Function Owner() calls = calls + 1; Return New Array(1); EndFunction
         ''')
         with self.assertRaises(BSLError):
@@ -196,12 +259,29 @@ class ReferenceArgumentTests(unittest.TestCase):
 
     def test_non_collection_index_rejected_without_index_effects(self):
         self.vm.execute('''
-            Var calls; calls = 0;
+            calls = 0;
             Function Index() calls = calls + 1; Return 0; EndFunction
         ''')
         with self.assertRaises(BSLError):
             self.vm.execute('SetValue(7[Index()]);')
         self.assertEqual(self.vm.execute('calls'), Decimal(0))
+
+    def test_scalar_reference_rejection_runs_after_receiver_and_is_catchable(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
+        with (patch.object(BoundaryContext,'_check',side_effect=AssertionError('Light check')),
+              patch.object(BoundaryContext,'_check_lease',side_effect=AssertionError('Light effect check'))):
+            self.vm.execute('''
+                trace = "";
+                Function Receiver() trace = trace + "R"; Return Undefined; EndFunction
+                Function Index() trace = trace + "I"; Return 0; EndFunction
+                Try
+                    trace = trace + "B"; SetValue(Receiver()[Index()]);
+                    trace = trace + "S";
+                Except
+                    trace = trace + "C";
+                EndTry;
+            ''')
+        self.assertEqual(self.vm.execute('trace'), 'BRC')
 
     def test_host_properties_are_explicitly_outside_current_reference_support(self):
         class Host(BSLObject):

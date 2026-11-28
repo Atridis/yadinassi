@@ -13,7 +13,7 @@ from unittest import mock
 from yadinassi import Interpreter
 import test_native_tree_profile_budget as budget
 from test_native_tree_copy_measurement import emit_capture as emit, maximum_capture as maximum_output, synthetic_method, emit_missing_capture
-from yadinassi.value_trees import BSLValueTree
+from yadinassi.collections.value_trees import BSLValueTree
 from test_native_tree_profile_host import synthetic_producer_reader
 from test_native_1c_smoke import bootstrap_report
 from scripts import native_1c_tree_copy_diagnostics as diagnostics
@@ -75,7 +75,7 @@ class CopyProfileTests(unittest.TestCase):
         module = tree.client_module(source, template, profile=PROFILE)
         runtime = Interpreter(); runtime.execute(module.decode('utf-8-sig'))
         runtime.execute('Result = ВычислитьПробу();')
-        actual = ('\n'.join(runtime.variables['result'].items)+'\n').encode()
+        actual = ('\n'.join(runtime.variables['result'])+'\n').encode()
         self.assertEqual(actual, emit())
         self.assertIn('ПараметрыЗаписиJSON(ПереносСтрокJSON.Нет, " ", Истина)'.encode(),module)
         self.assertIn(b'Code = 47',module)

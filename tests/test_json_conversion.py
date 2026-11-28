@@ -8,8 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.json_processing import BSLJSONReader
-from yadinassi.values import BSLType
+from yadinassi.formats.json.json_processing import BSLJSONReader
+from yadinassi.types.values import BSLType
 
 
 UUID_TEXT = '12345678-1234-1234-1234-123456789abc'
@@ -110,6 +110,23 @@ class JSONConversionTests(unittest.TestCase):
             self.assertIs(self.vm.execute('TypeOf(ВариантЗаписиДатыJSON.ЛокальнаяДата)'),
                           BSLType.JSON_DATE_WRITING_VARIANT)
 
+    def test_callback_free_date_serialization_uses_bilingual_settings(self):
+        with patch.dict(os.environ, {'YADINASSI_TIMEZONE': 'UTC'}):
+            for constructor, write, format_option, variant_option, expected in (
+                    ('JSONSerializerSettings', 'WriteJSON', 'JSONDateFormat.ISO',
+                     'JSONDateWritingVariant.LocalDate', ISO_TEXT),
+                    ('НастройкиСериализацииJSON', 'ЗаписатьJSON', 'ФорматДатыJSON.JavaScript',
+                     'ВариантЗаписиДатыJSON.УниверсальнаяДата', 'new Date(1704164645000)'),
+                    ('JSONSerializerSettings', 'WriteJSON', 'JSONDateFormat.Microsoft',
+                     'JSONDateWritingVariant.UniversalDate', '/Date(1704164645000)/')):
+                with self.subTest(format=format_option):
+                    self.writer()
+                    self.vm.execute(f's=New {constructor}; '
+                                    f's.DateSerializationFormat={format_option}; '
+                                    f's.DateWritingVariant={variant_option}; '
+                                    f'{write}(writer,Date(2024,1,2,3,4,5),s);')
+                    self.assertEqual(json.loads(self.vm.execute('writer.Close()')), expected)
+
     def test_serializer_settings_format_dates_without_converter(self):
         with patch.dict(os.environ, {'YADINASSI_TIMEZONE': 'UTC'}):
             for format_name, expected in (('ISO', ISO_TEXT),
@@ -147,7 +164,7 @@ class JSONConversionTests(unittest.TestCase):
                 self.writer()
                 self.vm.execute(f'{write}(writer,id,,"cONVERT",{module},);')
                 self.assertEqual(json.loads(self.vm.execute('writer.Close()')), UUID_TEXT)
-        self.assertEqual(self.vm.variables['seen'].items, [None, None])
+        self.assertEqual(list(self.vm.variables['seen']), [None, None])
 
     def test_converter_receives_property_names_and_unnamed_array_elements(self):
         self.writer()
@@ -156,7 +173,7 @@ class JSONConversionTests(unittest.TestCase):
                         'WriteJSON(writer,value,,"Convert",ThisObject);')
         self.assertEqual(json.loads(self.vm.execute('writer.Close()')),
                          {'first': UUID_TEXT, 'items': [UUID_TEXT, {'nested': UUID_TEXT}], 'last': 7})
-        self.assertEqual(self.vm.variables['seen'].items, ['first', None, 'nested'])
+        self.assertEqual(list(self.vm.variables['seen']), ['first', None, 'nested'])
 
     def test_converter_is_not_called_for_supported_values(self):
         self.reader('[null,false,true,1.25,"text",{},[]]')
@@ -177,10 +194,41 @@ class JSONConversionTests(unittest.TestCase):
             self.writer()
             self.vm.execute('WriteJSON(writer,id,,"Convert",ThisObject,extra); writer.Close();')
         self.assertEqual(self.vm.variables['count'], D(2))
-        self.assertEqual(len(self.vm.variables['extra'].items), 2)
-        for item in self.vm.variables['extra'].items:
+        self.assertEqual(len(self.vm.variables['extra']), 2)
+        for item in self.vm.variables['extra']:
             self.assertIs(item, self.vm.variables['id'])
         self.assertIsNone(self.vm.locals)
+
+    def test_prepared_named_converter_cannot_commit_after_owner_close(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+
+        effects = []
+        def output(message):
+            effects.append(message)
+            vm.close()
+
+        vm = Interpreter(output)
+        self.addCleanup(vm.close)
+        vm.execute('Function Convert(P,V,E,C) Export Message("called"); Return "x"; EndFunction '
+                   'W=New JSONWriter; W.SetString();')
+        writer = vm.variables['w']
+        plan = vm.prepare(f'WriteJSON(W, New UUID("{UUID_TEXT}"),, "Convert", ThisObject);')
+        with self.assertRaises(BoundaryViolation):
+            vm.execute_prepared(plan)
+        self.assertEqual(effects, ['called'])
+        self.assertEqual(writer._parts, [])
+
+    def test_named_json_cannot_resolve_a_python_registry_function(self):
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        calls = []
+        vm.register_function('HostCallback', lambda *arguments: calls.append(arguments))
+        reader = BSLJSONReader()
+        reader.set_string('1')
+        vm.variables['reader'] = reader
+        with self.assertRaisesRegex(BSLError, 'обработчик'):
+            vm.execute('ReadJSON(Reader,,,,"HostCallback",ThisObject)')
+        self.assertEqual((calls, reader._position), ([], -1))
 
     def test_stored_module_receiver_works_for_write_and_read(self):
         self.vm.execute('module=ThisObject; box=New Structure("Module",module);')
@@ -212,6 +260,21 @@ Count=0;
             self.reader('10')
             self.assertEqual(self.vm.execute('ReadJSON(reader,,,,"Revive",B)'), D(12))
         self.assertEqual(self.vm.variables['count'], D(0))
+
+    def test_prepared_imported_reviver_reuses_export_for_each_event(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'Handler.bsl').write_text(
+                'Var Calls; Calls=0; '
+                'Function Revive(P,V,E) Export Calls=Calls+1; Return V; EndFunction '
+                'Function Seen() Export Return Calls; EndFunction',
+                encoding='utf-8')
+            self.vm.execute('// #Import Handler.bsl\n', str(root/'Main.bsl'))
+            self.reader('[1,2]')
+            plan = self.vm.prepare('R=ReadJSON(Reader,,,,"Revive",Handler); Calls=Handler.Seen();')
+            self.vm.execute_prepared(plan)
+            self.assertEqual(list(self.vm.variables['r']), [D(1),D(2)])
+            self.assertEqual(self.vm.variables['calls'], D(3))
 
     def test_converter_handles_fixed_collections(self):
         self.writer()
@@ -320,9 +383,8 @@ Function Hidden(P,V,E) Count=Count+1; Return V; EndFunction
 Function Short(P,V) Export Count=Count+1; Return V; EndFunction
 Function Long(P,V,E,Required) Export Count=Count+1; Return V; EndFunction
 Procedure Proc(P,V,E) Export Count=Count+1; EndProcedure
-Async Function AsyncHandler(P,V,E) Export Count=Count+1; Return V; EndFunction
 ''')
-        for name in ('Hidden', 'Short', 'Long', 'Proc', 'AsyncHandler', 'Missing'):
+        for name in ('Hidden', 'Short', 'Long', 'Proc', 'Missing'):
             with self.subTest(name=name):
                 reader = self.reader('1')
                 with self.assertRaises(BSLError):
@@ -335,9 +397,8 @@ Async Function AsyncHandler(P,V,E) Export Count=Count+1; Return V; EndFunction
         self.vm.execute('''
 Function Short(P,V,E) Export Count=Count+1; Return V; EndFunction
 Procedure Proc(P,V,E,C) Export Count=Count+1; EndProcedure
-Async Function AsyncHandler(P,V,E,C) Export Count=Count+1; Return V; EndFunction
 ''')
-        for name in ('Short', 'Proc', 'AsyncHandler', 'Missing'):
+        for name in ('Short', 'Proc', 'Missing'):
             with self.subTest(name=name):
                 self.writer()
                 with self.assertRaises(BSLError):
@@ -345,6 +406,35 @@ Async Function AsyncHandler(P,V,E,C) Export Count=Count+1; Return V; EndFunction
                 self.vm.execute('WriteJSON(writer,1);')
                 self.assertEqual(self.vm.execute('writer.Close()'), '1')
         self.assertEqual(self.vm.variables['count'], D(0))
+
+    def test_async_handler_declaration_is_rejected_without_consuming(self):
+        handlers = '''
+Async Function ReadAsync(P,V,E) Export Count=Count+1; Await 0; Return V; EndFunction
+Async Function WriteAsync(P,V,E,C) Export Count=Count+1; Await 0; Return String(V); EndFunction
+'''
+        self.vm.execute(handlers)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'Handlers.bsl').write_text('Var Count Export;\n'+handlers+'\nCount=0;', encoding='utf-8')
+            source = str(root/'Main.bsl')
+            self.vm.execute('// #Import Handlers.bsl', source)
+            for target in ('ThisObject', 'Handlers'):
+                with self.subTest(target=target):
+                    reader = self.reader('1')
+                    self.writer()
+                    reason = 'экспортной функц' if target == 'ThisObject' else 'Асинхронный обработчик'
+                    with self.assertRaisesRegex(BSLError, reason):
+                        self.vm.execute(f'ReadJSON(reader,,,,"ReadAsync",{target})', source)
+                    self.assertEqual(reader._position, -1)
+                    self.assertIsNone(reader._tokens)
+                    with self.assertRaisesRegex(BSLError, reason):
+                        self.vm.execute(f'WriteJSON(writer,id,,"WriteAsync",{target});', source)
+                    self.assertEqual(self.vm.pending_promises, ())
+                    self.assertEqual(self.vm.execute('ReadJSON(reader)', source), D(1))
+                    self.vm.execute('WriteJSON(writer,2);', source)
+                    self.assertEqual(self.vm.execute('writer.Close()', source), '2')
+            self.assertEqual(self.vm.variables['count'], D(0))
+            self.assertEqual(self.vm.execute('Handlers.Count', source), D(0))
 
     def test_handler_name_and_module_validation_never_evaluates_strings(self):
         for name, module in (('1', 'ThisObject'), ('""', 'ThisObject'),
@@ -394,9 +484,9 @@ Function NoContext(R,M) Return ReadJSON(R,,,,"Revive",M); EndFunction
     def test_read_reviver_postorder_includes_root_and_unnamed_array_elements(self):
         self.reader('{"first":[1,{"leaf":2}],"last":3}')
         self.vm.execute('extra=New Array; value=ReadJSON(reader,,,,"Revive",ThisObject,extra);')
-        self.assertEqual(self.vm.variables['seen'].items,
+        self.assertEqual(list(self.vm.variables['seen']),
                          [None, 'leaf', None, 'first', 'last', None])
-        extra = self.vm.variables['extra'].items
+        extra = list(self.vm.variables['extra'])
         self.assertEqual(extra[0], D(1))
         self.assertEqual(extra[1], D(2))
         self.assertIs(extra[-1], self.vm.variables['value'])
@@ -457,7 +547,7 @@ EndFunction
         self.vm.execute('value=ReadJSON(reader,,dates,,"Revive",ThisObject,,names);')
         self.assertEqual(self.vm.execute('value.first'), ISO_TEXT)
         self.assertIs(self.vm.execute('TypeOf(value.second)'), BSLType.DATE)
-        self.assertEqual(self.vm.variables['seen'].items, ['first'])
+        self.assertEqual(list(self.vm.variables['seen']), ['first'])
 
     def test_optional_holes_defaults_and_bilingual_nine_argument_read(self):
         for expression in ('ReadJSON(reader,,,,,,,,)',
@@ -470,6 +560,41 @@ EndFunction
         self.writer()
         self.vm.execute('WriteJSON(writer,False,,,,);')
         self.assertEqual(self.vm.execute('writer.Close()'), 'false')
+
+    def test_callback_free_global_omissions(self):
+        for name in ('ReadJSON', 'ПрочитатьJSON'):
+            with self.subTest(name=name):
+                self.reader('[null,false,2]')
+                self.assertEqual(self.vm.execute(f'{name}(reader,,,,,,,,)').items,
+                                 [None, False, D(2)])
+        for name in ('WriteJSON', 'ЗаписатьJSON'):
+            with self.subTest(name=name):
+                self.writer()
+                self.vm.execute(f'{name}(writer,False,,,,);')
+                self.assertEqual(self.vm.execute('writer.Close()'), 'false')
+
+    def test_required_json_hole_rejects_before_later_argument_effect(self):
+        self.vm.execute('Function Later() Export Count=Count+1; Return 1; EndFunction')
+        reader = self.reader('1')
+        self.writer()
+        for expression in ('ReadJSON(,Later())', 'WriteJSON(writer,,Later());'):
+            with self.subTest(expression=expression), self.assertRaises(BSLError):
+                self.vm.execute(expression)
+        self.assertEqual(self.vm.variables['count'], 0)
+        self.assertEqual(reader._position, -1)
+        self.vm.execute('WriteJSON(writer,1);')
+        self.assertEqual(self.vm.execute('writer.Close()'), '1')
+
+    def test_unsupported_json_callback_does_not_consume_or_write(self):
+        reader = self.reader('1')
+        self.writer()
+        for expression in ('ReadJSON(reader,,,,"Handler","Module")',
+                           'WriteJSON(writer,False,,"Handler","Module");'):
+            with self.subTest(expression=expression), self.assertRaisesRegex(BSLError, 'обработчик'):
+                self.vm.execute(expression)
+        self.assertEqual(reader._position, -1)
+        self.vm.execute('WriteJSON(writer,1);')
+        self.assertEqual(self.vm.execute('writer.Close()'), '1')
 
     def test_expanded_global_argument_limits_and_required_holes(self):
         self.reader('1')

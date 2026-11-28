@@ -2,9 +2,9 @@
 
 from decimal import Decimal, ROUND_DOWN
 
-from ..values import number
+from yadinassi.types.values import number
 from .round_modes import BSLRoundMode
-from ..collation import string_key
+from yadinassi.text.collation import string_key
 
 
 def integer_part(value: object) -> Decimal:
@@ -27,6 +27,8 @@ def round_number(value: object, precision: object = Decimal(0),
     precision = number(precision).to_integral_value(rounding=ROUND_DOWN)
     if type(mode) is BSLRoundMode:
         increase_tie = mode is BSLRoundMode.ROUND15_AS20
+    elif type(mode) is int:
+        increase_tie = mode != 0
     elif type(mode) is Decimal and mode.is_finite():
         increase_tie = not mode.to_integral_value(rounding=ROUND_DOWN).is_zero()
     else:
@@ -66,7 +68,7 @@ def _extreme(first: object, rest: tuple[object, ...], *, maximum: bool) -> objec
     if all(type(value) is str for value in values):
         # min/max retain the original first argument on equal collation keys.
         return (max if maximum else min)(values, key=string_key)
-    numeric = all(type(value) in (Decimal, bool) for value in values)
+    numeric = all(type(value) in (Decimal, int, bool) for value in values)
     if not numeric:
         raise TypeError("Значения несовместимы для сравнения")
     if any(isinstance(value, Decimal) and not value.is_finite() for value in values):

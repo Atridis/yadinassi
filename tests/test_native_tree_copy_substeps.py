@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 from yadinassi import Interpreter
-from yadinassi.value_trees import BSLValueTree
+from yadinassi.collections.value_trees import BSLValueTree
 from scripts import native_1c_tree_copy_diagnostics as d
 from scripts import native_1c_tree_copy_contract as contract
 from test_native_tree_copy_measurement import SOURCE, HELPERS, emit, synthetic_method, maximum_output

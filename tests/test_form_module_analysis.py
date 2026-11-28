@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID
 
-from yadinassi import form_module_analysis as fm
-from yadinassi.configuration_xml import import_configuration
+from yadinassi.forms import form_module_analysis as fm
+from yadinassi.configuration.configuration_xml import import_configuration
 from sqlite_catalog_fixture import configuration_files
 
 

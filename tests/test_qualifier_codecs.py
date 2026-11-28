@@ -13,21 +13,23 @@ import re
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, serialization, type_values
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.serialization import (
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
+from yadinassi.types import type_values
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_qualifiers import (
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_qualifiers import (
     ALLOWED_LENGTHS, ALLOWED_SIGNS, DATE_FRACTIONS,
     BSLAllowedLength, BSLAllowedLengths, BSLAllowedSign, BSLAllowedSigns,
     BSLBinaryDataQualifiers, BSLDateFractions, BSLDateFractionsNamespace,
     BSLDateQualifiers, BSLNumberQualifiers, BSLStringQualifiers,
 )
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]

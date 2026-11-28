@@ -1,0 +1,536 @@
+"""Narrow direct declaration execution for configured startup/common modules.
+
+Metadata owners and existing module/transport gates remain authoritative. No AST
+execution, scheduler dispatcher, arbitrary host reflection or implicit fallback.
+"""
+from decimal import localcontext
+from contextvars import ContextVar
+from types import FunctionType
+from threading import get_ident
+from weakref import WeakKeyDictionary, ref
+
+_PARAMETERS = WeakKeyDictionary()
+
+def parameter_snapshot(plan):
+    function=plan.function
+    if type(function) is not FunctionType:raise BoundaryViolation('configuration plan function changed')
+    entry=_PARAMETERS.get(function)
+    if entry is None or entry[0]() is not plan or plan._configuration_parameters is not entry[1]:
+        raise BoundaryViolation('configuration parameter snapshot changed')
+    return entry[1]
+
+
+def parameter_entries(plan,routine):
+    parameter_snapshot(plan)
+    witness=_PARAMETERS[plan.function][2].get(id(routine))
+    if witness is None or witness[0] is not routine:
+        raise BoundaryViolation('configuration routine is not installed')
+    return witness[1]
+
+
+_COMMAND_SCOPE = ContextVar("direct_configuration_command", default=None)
+from yadinassi import runtime as _runtime
+from yadinassi.execution import safe_mode
+from yadinassi.db import source_transactions, database_transactions
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.execution.codegen.direct_collections import _Cell
+from yadinassi.execution.codegen.direct_emitter import compile_owned
+from .python_direct_numbers import public_number
+from yadinassi.execution.codegen.direct_errors import convert_error
+from .python_direct import _snapshot
+from yadinassi.execution.codegen.native_targets import target_context
+from yadinassi.syntax import ast
+from yadinassi.types.values import HostFunction
+from yadinassi.collections.value_lists import BSLValueList
+from . import python_direct_configuration_enums as enums
+from .python_direct_names import VALUE_LIST_CHOICE_ALIASES
+
+
+def check_owner(app, owner, *, allow_database=False):
+    app.require_open()
+    root=app.interpreter
+    if (owner._family_owner is not root or owner._configuration_runtime is not app
+            or owner._scheduler is not root._scheduler or root._family_closed
+            or owner._family_released or owner._family_generation != root._family_generation):
+        raise BoundaryViolation('direct configuration owner is no longer active')
+    if (safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None
+            or database_transactions._execution.get() is not None
+            or root._scheduler.pending or root._scheduler._active_task is not None):
+        raise BoundaryViolation('direct configuration restricted execution is not connected')
+    grant=app._cli_database
+    if grant is not None:
+        interpreter_type=_runtime.Interpreter
+        database,backend,thread=grant
+        if (type(root) is not interpreter_type or type(owner) is not interpreter_type
+                or get_ident()!=thread or owner.database_context is not database
+                or root.database_context is not database or database.backend is not backend
+                or backend._closed or root.allow_extensions or owner.allow_extensions):
+            raise BoundaryViolation('managed CLI database owner changed or closed')
+    elif app._client_sqlite is not None:
+        database,backend,thread=app._client_sqlite
+        if (not allow_database or get_ident()!=thread or owner.database_context is not database
+                or root.database_context is not database or database.backend is not backend
+                or backend._closed is not False or root.allow_extensions or owner.allow_extensions):
+            raise BoundaryViolation('client configuration SQLite owner changed or closed')
+    elif owner.database_context is not None and not allow_database:
+        raise BoundaryViolation('direct configuration database execution is not connected')
+
+
+class ConfigurationBoundary(BoundaryContext):
+    def __init__(self,app,owner,routine=None):
+        super().__init__()
+        self._services=owner.functions
+        self.app,self.owner,self.routine=app,owner,routine
+        self._command_scope=_COMMAND_SCOPE.get()
+        self._enum_binding=None
+        if self._command_scope is not None:
+            from .python_direct_configuration_commands import _Scope
+            if type(self._command_scope) is not _Scope:raise BoundaryViolation('invalid command scope')
+    def _check(self):
+        super()._check()
+        scope=self._command_scope
+        if _COMMAND_SCOPE.get() is not scope:
+            raise BoundaryViolation('direct configuration boundary left its command context')
+        # Within a command, scope validates state/thread/context before the
+        # generic owner's catchable closed-application diagnostic. A revoked
+        # command must not enter a BSL Except handler after a host callback.
+        if scope is not None:scope.check(self.app,self.owner)
+        else:check_owner(self.app,self.owner)
+        if self.routine is not None:self.app.check_call(self.routine,self.owner)
+    def _enums(self):
+        if self._enum_binding is None:self._enum_binding=self._command_scope.enums.bind(self)
+        return self._enum_binding
+
+    def external_get(self,name):
+        self._check()
+        if self._command_scope is not None:
+            from .python_direct_configuration_metadata import ROOT_NAMES
+            if name.casefold() in ROOT_NAMES:return self._command_scope.metadata.root(self)
+            if name.casefold() in enums.NAMES:return self._enums().root()
+        result=self.app.resolve_module(name,self.owner)
+        if result is None:raise BoundaryViolation('unsupported configuration name: '+name)
+        if self._command_scope is not None:self._command_scope.admit_module(name,result)
+        return result
+    def get_member(self,value,name):
+        if self._command_scope is not None:
+            from .python_direct_configuration_metadata import is_reader
+            if is_reader(value):
+                readers=self._command_scope.metadata
+                if name.casefold() in enums.NAMES and readers.record(self,value)[0]=='root':
+                    return self._enums().root().metadata
+                return readers.get(self,value,name)
+            if enums.receiver_type(value):
+                return self._enums().get(value,name)
+        return super().get_member(value,name)
+
+    def external_set(self,name,value):
+        raise ValueError('common module names are read-only')
+    def resolve_service(self,name,fallback=None,*,require_value=False,allow_references=False,argument_count=None):
+        self._check()
+        key=name.casefold()
+        if (self._command_scope is not None and self._command_scope.configuration.enumerations
+                and key in enums.SERVICES):
+            if argument_count is not None and argument_count!=1:
+                raise TypeError('enumeration service argument count mismatch')
+            return self._enums().service(key,require_value=require_value,allow_references=allow_references)
+        if key in ('new:uuid','new:уникальныйидентификатор'):
+            from yadinassi.types.unique_identifiers import BSLUUID
+            alias=name.split(':',1)[1].casefold()
+            factory=self.owner.types.get(alias)
+            def validate():
+                self._check()
+                if (self.owner.types.get(alias) is not factory
+                        or type(factory) is not HostFunction or factory.function is not BSLUUID
+                        or type(factory.reference_parameters) is not frozenset or factory.reference_parameters
+                        or factory.returns_value is not True):
+                    raise BoundaryViolation('configuration UUID requires canonical constructor')
+            validate()
+            # Bind only the admitted scalar constructor. This does not authorize
+            # arbitrary host services or extend command transfer/cache values.
+            call=BoundaryContext.resolve_callable(self,factory,require_value=True)
+            def construct(*args):
+                validate()
+                # Bound callable performs policy admission and the post-call
+                # owner check; do not duplicate its finally check here.
+                return call(*args)
+            return construct
+        if (self._command_scope is not None and key not in ('message','сообщить')
+                and key in self.app._global_names):
+            return self._global_export(key, require_value, argument_count)
+        function=self._services.get(key)
+        if type(function) is not HostFunction:
+            raise BoundaryViolation('unsupported configuration service: '+name)
+        self.app.check_host_service(function,self.owner)
+        scope=self._command_scope
+        if scope is not None:scope.service(function,self.owner)
+        call=super().resolve_service(name,require_value=require_value,allow_references=allow_references)
+        def invoke(*args):
+            self._check();self.app.check_host_service(function,self.owner)
+            if scope is not None:
+                scope.service(function,self.owner)
+                args=tuple(map(public_number,args))
+                scope.literals(args)
+            result=call(*args)
+            if scope is not None:scope.literals((result,))
+            return result
+        if allow_references:invoke.requires_reference=call.requires_reference
+        return invoke
+
+    def _global_export(self,name,require_value,argument_count):
+        from yadinassi.runtime import Interpreter
+        selected=self.app.resolve_global(name,self.owner)
+        if type(selected) is not tuple or len(selected)!=2 or type(selected[1]) is not Interpreter:
+            raise BoundaryViolation('invalid global common-module binding')
+        routine,target=selected
+        issued=getattr(target,'_direct_global_module',None)
+        if type(issued) is not tuple or len(issued)!=2 or type(issued[0]) is not str:
+            raise BoundaryViolation('client global common-module export required')
+        module_name,definition=issued
+        if definition is None:
+            raise BoundaryViolation('invalid global common-module definition')
+        self._command_scope.admit_module(module_name,target._self_module,global_definition=definition)
+        bound=self._bind_common(target._self_module,name,module_name,'client',global_binding=selected)
+        if require_value and not bound.returns_value:
+            raise TypeError('Процедура не возвращает значение: '+name)
+        if argument_count is not None:bound.check_argument_count(argument_count)
+        bound.requires_reference=lambda index:False
+        return bound
+    def resolve_callable(self,value,*,require_value=False,allow_references=False,_extension_value=False):
+        scope=self._command_scope
+        if scope is None:
+            return super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)
+        self._check();scope.service(value,self.owner)
+        self.app.check_host_service(value,self.owner)
+        call=super().resolve_callable(value,require_value=require_value,allow_references=allow_references,_extension_value=_extension_value)
+        def invoke(*args):
+            self._check();self.app.check_host_service(value,self.owner)
+            scope.service(value,self.owner);args=tuple(map(public_number,args));scope.literals(args)
+            result=call(*args);scope.literals((result,));return result
+        if allow_references:invoke.requires_reference=call.requires_reference
+        return invoke
+
+    def resolve_member(self,value,name):
+        self._check()
+        if self._command_scope is not None:
+            from .python_direct_configuration_metadata import is_reader, session_full_name
+            if is_reader(value):
+                readers=self._command_scope.metadata
+                key=name.casefold()
+                if key in enums.FIND_TYPE+enums.FIND_NAME and readers.record(self,value)[0]=='root':
+                    if key in enums.FIND_NAME and self._command_scope.configuration.session_parameters:
+                        session=readers.method(self,value,name)
+                        if not self._command_scope.configuration.enumerations:return session
+                        enum=self._enums().metadata_method(key)
+                        def find(full_name):
+                            if session_full_name(full_name):return session(full_name)
+                            return enum(full_name)
+                        find.returns_value=True
+                        return find
+                    return self._enums().metadata_method(key)
+                return readers.method(self,value,name)
+            if enums.receiver_type(value):
+                bound=self._enums().method(value,name)
+                bound.returns_value=True
+                return bound
+        if self._command_scope is not None:
+            binding=self._command_scope.module_bindings.get(id(value))
+            if binding is None or binding[1] is not value:
+                raise BoundaryViolation('unsupported configuration member receiver')
+            module_name,side=binding[0]
+        else:
+            matches=[key for key,module in self.app._modules.items() if module is value]
+            if not matches:raise BoundaryViolation('unsupported configuration member receiver')
+            module_name,side=matches[0]
+        if self.app.resolve_module(module_name,self.owner) is not value:
+            raise BoundaryViolation('common module side changed')
+        if self._command_scope is not None and side=='server':
+            return self._bind_remote(value,module_name,name.casefold())
+        return self._bind_common(value,name,module_name,side)
+
+    def _bind_remote(self,module,module_name,key):
+        from yadinassi.execution.invocation import InvocationBinding, InvocationPort
+        scope,app=self._command_scope,self.app
+        route=(module_name,key)
+        records=app._command_remote_bindings
+        if type(records) is not dict:raise BoundaryViolation('invalid prebound server exports')
+        record=records.get(route)
+        if type(record) is not tuple or len(record)!=12:raise BoundaryViolation('unsupported prebound server export')
+        definition,expected,owner,routine,entry,port,binding,exchange,name,endpoint,parameters,result=record
+
+        def check():
+            self._check()
+            if (type(port) is not InvocationPort or type(binding) is not InvocationBinding
+                    or app._command_remote_bindings is not records or records.get(route) is not record
+                    or expected is not module or module.interpreter is not owner
+                    or app._definitions.get(module_name) is not definition
+                    or not scope.remote_module(module_name,definition,module)
+                    or app._server_exchange is not exchange or port._exchange is not exchange
+                    or type(owner.routines) is not dict or key in owner.routines
+                    or type(owner.server_routines) is not dict or owner.server_routines.get(key) is not routine
+                    or type(owner._invocation_bindings) is not dict
+                    or owner._invocation_bindings.get(key) is not entry or entry[0] is not routine
+                    or routine.execution_context!='server' or routine.module_context is not False
+                    or routine.exported is not True or routine.body
+                    or binding.name is not name or binding.endpoint is not endpoint
+                    or binding.parameters is not parameters or binding.is_function is not result):
+                raise BoundaryViolation('prebound server export changed')
+            check_owner(app,owner)
+            app.check_call(routine,self.owner)
+
+        def check_argument_count(count):
+            check()
+            if count!=len(parameters):raise TypeError('common-module argument count mismatch')
+
+        def invoke(*args):
+            check_argument_count(len(args))
+            args=tuple(map(public_number,args))
+            scope.values(args)
+            output=self.owner.output
+            def guarded_output(message):
+                check()
+                output(message)
+                check()
+            def check_result(value):
+                scope.values((value,))
+            try:return port.invoke(binding,args,output=guarded_output,_check_reply=check,
+                                   _check_result=check_result)
+            finally:check()
+
+        check()
+        invoke.returns_value=result
+        invoke.check_argument_count=check_argument_count
+        return invoke
+
+    def _bind_common(self,value,name,module_name,side,*,global_binding=None):
+        routine=value.routine(name);target=value.interpreter
+        def admit():
+            self._check();check_owner(self.app,target,allow_database=self._command_scope is not None)
+            if global_binding is not None:
+                if (self.app.resolve_global(name,self.owner) is not global_binding
+                        or global_binding[0] is not routine or global_binding[1] is not target
+                        or value.routine(name) is not routine):
+                    raise BoundaryViolation('global common-module binding changed')
+            elif self.app.resolve_module(module_name,self.owner) is not value:
+                raise BoundaryViolation('common module binding changed')
+            if self._command_scope is not None:self._command_scope.parameter_values(target,routine)
+            self.app.check_call(routine,self.owner)
+            if self._command_scope is not None:self._check()
+            if any(not p.by_value for p in routine.parameters):
+                raise BoundaryViolation('direct public common-module byref arguments are not connected')
+            if routine.is_async or routine.is_dual:
+                raise BoundaryViolation('direct common-module async/dual calls are not connected')
+        admit()
+        reuse_entry=self.app._reuse_routines.get(id(routine))
+        reusable=(global_binding is None and reuse_entry is not None and reuse_entry[0] is routine and routine.is_function)
+        def invoke_arguments(args,omitted=()):
+            admit()
+            scope=self._command_scope
+            if scope is not None:args=scope.arguments(target,routine,tuple(map(public_number,args)),omitted)
+            if len(args)!=len(routine.parameters):raise TypeError('common-module argument count mismatch')
+            binding=target._invocation_bindings.get(routine.name.casefold())
+            if binding is not None:
+                if binding[0] is not routine:raise BoundaryViolation('invocation binding changed')
+                try:return binding[1](list(args))
+                finally:self._check()
+            if side!=self.owner.execution_context:
+                raise BoundaryViolation('direct common-module crossing requires explicit transport')
+            scope=self._command_scope
+            if scope is not None:scope.values(args)
+            if reusable:
+                result=invoke_reusable(self.app,self.owner,target,routine,args)
+                self._check()
+            elif (scope is None and self.app._value_selection_service is not None
+                    and self.app._input_call_key in self.owner._scheduler.active_context.state):
+                with self.app.input_delegation(self.owner,target,routine):
+                    result=invoke_routine(self.app,target,routine,args)
+            else:result=invoke_routine(self.app,target,routine,args)
+            if scope is not None:scope.values((result,))
+            return result
+        def invoke(*args):return invoke_arguments(args)
+        def check_argument_count(count):
+            self._check()
+            entries=self._command_scope.parameter_values(target,routine)
+            minimum=max((i+1 for i,entry in enumerate(entries) if entry[3] is None),default=0)
+            if not minimum<=count<=len(entries):raise TypeError('common-module argument count mismatch')
+        def with_omissions(omitted):
+            self._check()
+            self._command_scope.omissions(target,routine,omitted)
+            def call(*args):return invoke_arguments(args,omitted)
+            call.returns_value=routine.is_function
+            call.check_argument_count=check_argument_count
+            return call
+        invoke.returns_value=routine.is_function
+        if self._command_scope is not None:
+            invoke.with_omissions=with_omissions
+            invoke.check_argument_count=check_argument_count
+        return invoke
+
+    def resolve_configuration_member_call(self,value,name,*,require_value=False,omitted=(),argument_count):
+        if self._command_scope is not None and enums.receiver_type(value):
+            if omitted:raise TypeError('enumeration methods do not accept omitted arguments')
+            return self._enums().method(value,name,require_value=require_value,argument_count=argument_count)
+        bound=self.resolve_member_call(value,name,require_value=require_value,omitted=omitted)
+        if self._command_scope is not None and hasattr(bound,'check_argument_count'):
+            bound.check_argument_count(argument_count)
+        return bound
+
+    def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if self._command_scope is None:
+            if type(value) is BSLValueList and name.casefold() in VALUE_LIST_CHOICE_ALIASES:
+                return self._bind_value_selection(value,name,require_value,omitted)
+            return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
+        bound=self.resolve_member(value,name)
+        if self._command_scope is not None and require_value and not bound.returns_value:
+            raise TypeError('Процедура не возвращает значение: '+name)
+        if omitted:
+            if not hasattr(bound,'with_omissions'):
+                raise TypeError('metadata methods do not accept omitted arguments')
+            return bound.with_omissions(omitted)
+        return bound
+
+    def _bind_value_selection(self,value,name,require_value,omitted):
+        self._check()
+        if omitted:raise TypeError('form ValueList argument omission is unsupported')
+        if require_value:raise TypeError('Процедура не возвращает значение: '+name)
+        app,owner=self.app,self.owner
+        if app is None:
+            raise ValueError('ShowChooseItem requires an application-owned client dispatch')
+        app.require_value_selection(owner)
+        def choose(*arguments):
+            self._check()
+            try:return app.dispatch_value_selection(owner,value,arguments)
+            finally:self._check()
+        return choose
+
+
+def install(app,owner,program,source_text=''):
+    check_owner(app,owner,allow_database=app._client_sqlite is not None);app.check_program(program)
+    if any(type(n) not in (ast.Routine,ast.Var) for n in program):
+        raise BoundaryViolation('direct configured module requires declarations only')
+    if any(type(n) is ast.Routine and (n.is_async or n.is_dual) for n in program):
+        raise BoundaryViolation('direct configured async/dual routines are not connected')
+    owned=_snapshot(program)
+    sqlite_names=()
+    session_owner=owner is app._session_owner
+    if app._client_sqlite is not None and not session_owner:
+        from .python_direct_configuration_sqlite import NAMES as sqlite_names
+    if session_owner:
+        from .python_direct_configuration_sessions import NAMES
+        external_names=NAMES
+    else:
+        external_names=tuple(app._definitions)+sqlite_names+(enums.NAMES+('metadata','метаданные')
+            if app.configuration.enumerations else ())
+        if app.configuration.session_parameters and owner.execution_context=='server':
+            from .python_direct_configuration_sessions import NAMES
+            external_names+=NAMES
+    plan=compile_owned(owned,retain_generated=False,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
+        external_names=external_names,
+        exports=True,configuration_dispatch=True,
+        meter_loops=app._cli_database is None and (not session_owner or owner.allow_extensions))
+    # Capture original declaration bindings when this exact plan is installed.
+    # Never infer a default from later host-mutated declaration metadata.
+    plan._configuration_parameters=tuple((node,tuple(
+        (parameter,parameter.name,parameter.by_value,parameter.default,
+         parameter.default.value if type(parameter.default) is ast.Literal else None)
+        for parameter in node.parameters)) for node in program if type(node) is ast.Routine)
+    _PARAMETERS[plan.function]=(ref(plan),plan._configuration_parameters,
+        {id(routine):(routine,entries) for routine,entries in plan._configuration_parameters})
+    owner._direct_configuration_plan=plan
+    for node in program:
+        if type(node) is ast.Routine:
+            (owner.server_routines if node.execution_context=='server' else owner.routines)[node.name.casefold()]=node
+        elif type(node) is ast.Var:
+            for name in node.names:owner.variables.setdefault(name.casefold(),None)
+    owner._self_module.ready=True
+
+
+def invoke_reusable(app,caller,owner,routine,arguments):
+    """Lazy same-side scalar reuse; no transport or collection admission."""
+    scope=_COMMAND_SCOPE.get()
+    if scope is None:raise BoundaryViolation('reusable command scope is absent')
+    from .python_direct_configuration_commands import _Scope
+    if type(scope) is not _Scope:raise BoundaryViolation('invalid reusable command scope')
+    scope.check(app,owner)
+    scope.literals(arguments)
+    from decimal import Decimal
+    if any(type(value) is Decimal and not value.is_finite() for value in arguments):
+        raise TypeError('reusable arguments require finite numbers')
+    entry=app._reuse_routines.get(id(routine))
+    if entry is not None and entry[0] is routine and routine.is_function and entry[2].return_values_reuse=='DuringRequest':
+        scope=_COMMAND_SCOPE.get()
+        if scope is None:raise BoundaryViolation('reusable command scope is absent')
+        scope.request_reuse()
+    reusable=app.reusable_call(caller,owner,routine,True)
+    if reusable is None:return invoke_routine(app,owner,routine,arguments)
+    cache,key=reusable
+    cache._open()
+    wrappers=getattr(cache,'_direct_functions',None)
+    if wrappers is None:wrappers={};cache._direct_functions=wrappers
+    plan=owner._direct_configuration_plan
+    entry=wrappers.get(key)
+    if entry is None or entry[0] is not owner or entry[1] is not routine or entry[2] is not plan.function:
+        from functools import lru_cache
+        @lru_cache(maxsize=256,typed=True)
+        def call(*args):
+            result=invoke_routine(app,owner,routine,args)
+            scope=_COMMAND_SCOPE.get()
+            if scope is None:raise BoundaryViolation('reusable command scope is absent')
+            scope.literals((result,))
+            return result
+        entry=(owner,routine,plan.function,call)
+        wrappers[key]=entry
+    return entry[3](*arguments)
+
+
+def invoke_routine(app,owner,routine,arguments):
+    session_owner=owner is app._session_owner
+    check_owner(app,owner,allow_database=_COMMAND_SCOPE.get() is not None or
+                (session_owner and app._client_sqlite is not None));app.check_call(routine,owner)
+    plan=getattr(owner,'_direct_configuration_plan',None)
+    if plan is None:raise BoundaryViolation('unprepared direct configuration routine')
+    registry=owner.server_routines if routine.execution_context=='server' else owner.routines
+    if registry.get(routine.name.casefold()) is not routine:
+        raise BoundaryViolation('direct configuration routine replaced')
+    if len(arguments)!=len(routine.parameters):raise TypeError('configuration argument count mismatch')
+    scope=_COMMAND_SCOPE.get()
+    if session_owner:
+        from .python_direct_configuration_sessions import SessionStartup
+        context=SessionStartup(app,owner,routine)
+    elif routine.execution_context=='server' and app.configuration.session_parameters:
+        from .python_direct_configuration_sessions import SessionServer
+        context=SessionServer(app,owner,routine)
+    elif (scope is not None and app._client_sqlite is not None
+            and owner is not app.interpreter and routine.execution_context=='client'):
+        from .python_direct_configuration_commands import _Scope
+        if type(scope) is not _Scope:raise BoundaryViolation('invalid command scope')
+        from .python_direct_configuration_sqlite import SQLiteClientRoutine
+        context=SQLiteClientRoutine(app,owner,routine)
+    else:
+        context=ConfigurationBoundary(app,owner,routine)
+    previous=getattr(owner,'_transaction_activation_allowed',True)
+    owner._transaction_activation_allowed=False
+    owner._context_stack.append(routine.execution_context)
+    owner._module_context_stack.append(True)
+    try:
+        with target_context(owner.native_target),localcontext():
+            context.enter()
+            try:
+                try:
+                    exports=plan.function(owner.variables,plan.constants,context)
+                    return public_number(exports[routine.name.casefold()](*arguments))
+                finally:context._check()
+            except Exception as error:
+                converted=convert_error(error,plan.source_name,plan.source_text)
+                if converted is error:raise
+                raise converted from None
+            finally:context.leave()
+    finally:
+        owner._module_context_stack.pop();owner._context_stack.pop()
+        owner._transaction_activation_allowed=previous
+
+
+def invoke_event(app,routine,values):
+    slots=[_Cell(obj.get_member(name)) for obj,name in values]
+    try:return invoke_routine(app,app.interpreter,routine,slots)
+    finally:
+        for (obj,name),slot in zip(values,slots):obj.set_member(name,slot.value)

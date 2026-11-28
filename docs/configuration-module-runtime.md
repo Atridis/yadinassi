@@ -9,7 +9,7 @@ There is no second evaluator. Import, database creation and database opening
 ## Using it
 
 ```python
-from yadinassi.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
 
 application = ConfigurationApplication.from_files(files, output=print)
 try:
@@ -45,6 +45,18 @@ startup exits successfully without executing the command. A cancelled shutdown
 reports cancellation and exits with code 1; this finite CLI cannot preserve a
 live interactive process after returning. A host that needs cancellable close
 should retain the `ConfigurationApplication` instance instead.
+
+The direct CLI opens the validated SQLite configuration once, runs the managed
+application startup, and sends `-c`, a file, stdin or console commands to that
+same application. It uses the existing bounded configuration command profile
+(client scalar common-module calls and supported metadata reads); activating
+the application does not admit direct catalog writes, transactions, external
+Python extensions or additional client/server crossings. Ordinary BSL
+operations inside an owned CLI module do not emit redundant checks; calls at
+an actual application, database or transport boundary remain checked.
+A separately started `side='server'` application exposes its admitted exported
+endpoints to the configured invocation host; it does not accept top-level
+`application.execute()` commands.
 
 ## Common modules and exports
 
@@ -95,6 +107,9 @@ running initializers. `start()` runs the application module body, then
 Russian names are `ПередНачаломРаботыСистемы` and `ПриНачалеРаботыСистемы`.
 Only ordinary procedures with the exact supported argument counts are admitted.
 Cancellation is by reference and must remain Boolean. Startup occurs once.
+The direct application module body uses the same bounded synchronous scalar
+initializer in headless and managed CLI startup. It does not grant transactions,
+arbitrary host calls, async execution or general application command admission.
 
 `close()` invokes `BeforeExit(Cancel, WarningText)` and, if not cancelled,
 `OnExit()`. Russian aliases are `ПередЗавершениемРаботыСистемы` and

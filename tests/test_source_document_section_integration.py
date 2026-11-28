@@ -3,9 +3,9 @@ import contextlib
 import io
 import unittest
 import test_source_document_records as fixture
-from yadinassi.configuration_source import save_source_archive
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_document_store import SourceDocumentStore
+from yadinassi.configuration.configuration_source import save_source_archive
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.document.source_document_store import SourceDocumentStore
 from yadinassi.cli import main
 
 class SourceDocumentSectionIntegrationTests(unittest.TestCase):
@@ -34,7 +34,7 @@ class SourceDocumentSectionIntegrationTests(unittest.TestCase):
         out=[];app=SourceApplication(fixture.package(body),scratch_database=self.path,source_document_sections=True,output=out.append);self.addCleanup(app.close);app.start();self.assertEqual(out,['1'])
 
     def test_v5_remains_closed_profile(self):
-        from yadinassi.source_document_section_store import SourceDocumentSectionStore
+        from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
         store=SourceDocumentSectionStore.create(self.path,fixture.package());store.close();before=self.path.read_bytes()
         with self.assertRaises((ValueError,TypeError)):SourceDocumentStore.reopen(self.path,fixture.package())
         self.assertEqual(before,self.path.read_bytes())
@@ -42,7 +42,7 @@ class SourceDocumentSectionIntegrationTests(unittest.TestCase):
     def test_bundle_failure_after_scalar_write_rolls_back_all(self):
         from unittest.mock import patch
         from uuid import uuid4
-        from yadinassi.source_document_section_store import SourceDocumentSectionStore
+        from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
         import test_source_document_sections as sections
         source=sections.package();store=SourceDocumentSectionStore.create(self.path,source);self.addCleanup(store.close)
         rid=uuid4();values=fixture.SourceDocumentRecordTests.values(self)
@@ -62,7 +62,7 @@ class SourceDocumentSectionIntegrationTests(unittest.TestCase):
 
     def test_upgrade_preserves_existing_scalar_document(self):
         from uuid import uuid4
-        from yadinassi.source_document_section_store import SourceDocumentSectionStore
+        from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
         old=self.path.with_name('old.sqlite');source=fixture.package();s=SourceDocumentStore.create(old,source);rid=uuid4()
         s.write_document('Invoice',rid,0,fixture.SourceDocumentRecordTests.values(self));s.close();before=old.read_bytes()
         SourceDocumentSectionStore.upgrade_copy(old,self.path)
@@ -70,7 +70,7 @@ class SourceDocumentSectionIntegrationTests(unittest.TestCase):
         self.assertEqual(s.read_documents('Invoice',rid)[0][2]['number'],'A');self.assertEqual(old.read_bytes(),before)
 
     def test_upgrade_existing_destination_never_overwrites(self):
-        from yadinassi.source_document_section_store import SourceDocumentSectionStore
+        from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
         old=self.path.with_name('old.sqlite');s=SourceDocumentStore.create(old,fixture.package());s.close()
         self.path.write_bytes(b'keep-me');before=old.read_bytes()
         with self.assertRaises(FileExistsError):SourceDocumentSectionStore.upgrade_copy(old,self.path)
@@ -79,7 +79,7 @@ class SourceDocumentSectionIntegrationTests(unittest.TestCase):
     def test_section_catalog_reference_keeps_identity_after_reopen(self):
         import test_source_document_sections as sections
         import test_source_catalog_definitions as catalog
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         children=sections.SECTION.replace(catalog.attribute('Flag'),catalog.attribute('Item','<v8:Type>cfg:CatalogRef.Items</v8:Type>'))
         source=sections.package(children=children);files={f.path:f.content for f in source.files}
         files['Documents/Invoice.xml']=files['Documents/Invoice.xml'].replace(b'xmlns:xs=',b'xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:xs=')

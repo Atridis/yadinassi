@@ -8,20 +8,20 @@ import tempfile
 import unittest
 from test_source_constant_store import configuration
 from test_source_session_parameters import declaration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.configuration_source_constants import source_constant_definitions
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.source_storage_codec import encode_storage, decode_storage, VERSION
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.value_storage import BSLValueStorage, Snapshot
-from yadinassi.values import BSLArray, BSLFixedArray, NULL
-from yadinassi.structures import BSLStructure, BSLFixedStructure
-from yadinassi.maps import BSLMap
-from yadinassi.file_io import BSLBinaryData
-from yadinassi.data_compression import BSLDeflation
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_constants import source_constant_definitions
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.formats.storage.source_storage_codec import encode_storage, decode_storage, VERSION
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.formats.storage.value_storage import BSLValueStorage, Snapshot
+from yadinassi.types.values import BSLArray, BSLFixedArray, NULL
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
+from yadinassi.collections.maps import BSLMap
+from yadinassi.streams.file_io import BSLBinaryData
+from yadinassi.streams.data_compression import BSLDeflation
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.errors import BSLError
 
 UUID = '01234567-89ab-cdef-0123-456789abcdef'
 
@@ -36,7 +36,7 @@ def package(body='', extra=None):
         files['Constants/'+name+'.xml']=declaration(name,'<v8:Type>v8:'+kind+'</v8:Type>').replace(b'SessionParameter',b'Constant')
     if body:files['Ext/SessionModule.bsl']=('Procedure SessionParametersSetting(Names) '+body+' EndProcedure').encode()
     files.update(extra or {})
-    from yadinassi.configuration_source import import_source
+    from yadinassi.configuration.configuration_source import import_source
     return import_source(files)
 
 

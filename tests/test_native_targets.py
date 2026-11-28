@@ -11,12 +11,13 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.native_targets import (
+from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342,
     current_native_target, target_context,
 )
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
-from yadinassi.structures import BSLStructure, fill_property_values
+from yadinassi.collections.structures import BSLStructure, fill_property_values
 
 
 class NativeTargetTests(unittest.TestCase):
@@ -26,9 +27,9 @@ class NativeTargetTests(unittest.TestCase):
     def test_default_is_windows_even_inside_linux_context_or_environment(self):
         with patch.dict(os.environ, {'YADINASSI_NATIVE_TARGET': LINUX_8_3_27_1508,
                                      'NATIVE_TARGET': LINUX_8_3_27_1508}):
-            self.assertEqual(Interpreter().native_target, WINDOWS_8_3_27_2342)
+            self.assertEqual(Interpreter(allow_extensions=True).native_target, WINDOWS_8_3_27_2342)
             with target_context(LINUX_8_3_27_1508):
-                vm = Interpreter()
+                vm = Interpreter(allow_extensions=True)
                 vm.register_function('TargetName', current_native_target)
                 self.assertEqual(vm.native_target, WINDOWS_8_3_27_2342)
                 self.assertEqual(vm.execute('TargetName()'), WINDOWS_8_3_27_2342)
@@ -85,7 +86,7 @@ class NativeTargetTests(unittest.TestCase):
             self.assertEqual(current_native_target(), LINUX_8_3_27_1508)
 
     def test_execute_and_direct_ast_entry_points_restore_context(self):
-        vm = Interpreter(native_target=LINUX_8_3_27_1508)
+        vm = Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
         vm.register_function('TargetName', current_native_target)
         for run in (lambda code: vm.execute(code),
                     lambda code: vm.execute_program(parse(code))):
@@ -99,7 +100,7 @@ class NativeTargetTests(unittest.TestCase):
             vm.execute('If Then')
 
     def test_base_exception_during_execution_does_not_leak_target(self):
-        vm = Interpreter(native_target=LINUX_8_3_27_1508)
+        vm = Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
 
         def interrupt():
             self.assertEqual(current_native_target(), LINUX_8_3_27_1508)
@@ -109,31 +110,38 @@ class NativeTargetTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             vm.execute('InterruptHost();')
 
-    def test_reentrant_other_interpreter_and_error_restore_callers_target(self):
-        outer = Interpreter(native_target=LINUX_8_3_27_1508)
-        inner = Interpreter()
+    def test_other_vm_nesting_and_same_vm_refusal_preserve_callers_target(self):
+        outer = Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
+        inner = Interpreter(allow_extensions=True)
         seen = []
         for vm in (outer, inner):
+            self.addCleanup(vm.close)
             vm.register_function('TargetName', current_native_target)
 
         def reenter():
             seen.append(current_native_target())
             seen.append(inner.execute('TargetName()'))
             self.assertEqual(current_native_target(), LINUX_8_3_27_1508)
-            with self.assertRaises(BSLError):
+            with self.assertRaisesRegex(BSLError, 'inner failure'):
                 inner.execute('Raise "inner failure";')
             seen.append(current_native_target())
-            return outer.execute('TargetName()')
+            with self.assertRaisesRegex(
+                PythonDirectUnsupported,
+                r'^python-direct: nested or asynchronous execution is not integrated$',
+            ):
+                outer.execute('TargetName()')
+            return current_native_target()
 
         outer.register_function('Reenter', reenter)
         self.assertEqual(outer.execute('Reenter()'), LINUX_8_3_27_1508)
         self.assertEqual(seen, [LINUX_8_3_27_1508, WINDOWS_8_3_27_2342,
                                 LINUX_8_3_27_1508])
         self.assertEqual(inner.execute('TargetName()'), WINDOWS_8_3_27_2342)
+        self.assertEqual(outer.execute('TargetName()'), LINUX_8_3_27_1508)
 
     def test_eval_execute_fragments_and_caught_errors_keep_target(self):
         output = []
-        vm = Interpreter(output.append, native_target=LINUX_8_3_27_1508)
+        vm = Interpreter(output.append, native_target=LINUX_8_3_27_1508, allow_extensions=True)
         vm.register_function('TargetName', current_native_target)
         vm.execute('''
             Function Nested() Return Eval("TargetName()"); EndFunction
@@ -147,7 +155,7 @@ class NativeTargetTests(unittest.TestCase):
         barrier = Barrier(2)
 
         def run(name):
-            vm = Interpreter(native_target=name)
+            vm = Interpreter(native_target=name, allow_extensions=True)
 
             def observe():
                 barrier.wait(timeout=10)
@@ -200,7 +208,7 @@ class NativeTargetTests(unittest.TestCase):
                 self.assertEqual(current_native_target(), LINUX_8_3_27_1508)
                 tasks.append(asyncio.create_task(observe()))
 
-            vm = Interpreter(native_target=LINUX_8_3_27_1508)
+            vm = Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
             vm.register_function('Spawn', spawn)
             vm.execute('Spawn();')
             with self.assertRaises(BSLError):
@@ -247,7 +255,7 @@ class NativeTargetImportTests(unittest.TestCase):
             for name, expected in ((LINUX_8_3_27_1508, ('old', 9)),
                                    (WINDOWS_8_3_27_2342, ('new', 5))):
                 output = []
-                vm = Interpreter(output.append, native_target=name)
+                vm = Interpreter(output.append, native_target=name, allow_extensions=True)
                 vm.register_function('TargetName', current_native_target)
                 vm.execute(code, str(main))
                 interpreters.append((vm, expected))
@@ -269,7 +277,7 @@ class NativeTargetImportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'Broken.bsl').write_text('Raise "failed import";', encoding='utf-8')
-            vm = Interpreter(native_target=LINUX_8_3_27_1508)
+            vm = Interpreter(native_target=LINUX_8_3_27_1508, allow_extensions=True)
             with self.assertRaisesRegex(BSLError, 'failed import'):
                 vm.execute('// #Import Broken.bsl\n', str(root / 'Main.bsl'))
             self.assertEqual(current_native_target(), WINDOWS_8_3_27_2342)

@@ -16,13 +16,13 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.date_time_conversions import BUILTINS, to_local_time, to_universal_time
-from yadinassi.dates import BSLDate, MAX_TICKS, TICKS_PER_SECOND, UnsupportedDateRange, date
-from yadinassi.maps import BSLFixedMap, BSLMap
-from yadinassi.serialization import value_from_string_internal as read, value_to_string_internal as write
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType
+from yadinassi.temporal.date_time_conversions import BUILTINS, to_local_time, to_universal_time
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, TICKS_PER_SECOND, UnsupportedDateRange, date
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.formats.storage.serialization import value_from_string_internal as read, value_to_string_internal as write
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType
 
 ROOT = Path(__file__).resolve().parents[1]
 ALIASES = ((to_local_time, ('ToLocalTime', 'МестноеВремя')),
@@ -152,7 +152,7 @@ class FixedOffsetConversionTests(unittest.TestCase):
                 patch('time.mktime', side_effect=AssertionError('host mktime used')), \
                 patch('time.time', side_effect=AssertionError('host time used')), \
                 patch('time.time_ns', side_effect=AssertionError('host time_ns used')), \
-                patch('yadinassi.timezones._load_zone', side_effect=AssertionError('named zone used')), \
+                patch('yadinassi.temporal.timezones._load_zone', side_effect=AssertionError('named zone used')), \
                 localcontext() as context:
             context.prec = 1
             context.Emin = -1
@@ -189,7 +189,7 @@ class FixedOffsetConversionTests(unittest.TestCase):
 
 class FixedOffsetRuntimeTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter()
+        self.vm = Interpreter(allow_extensions=True)
         self.vm.execute('source = Date(2024,2,29,23,59,59);')
 
     def test_bilingual_aliases_case_variants_and_registration(self):
@@ -202,7 +202,7 @@ class FixedOffsetRuntimeTests(unittest.TestCase):
         self.vm.register_function('ToLocalTime', lambda *args: 'override')
         self.assertEqual(self.vm.execute('ToLocalTime(source,"GMT+1")'), 'override')
         self.assertEqual(self.vm.execute('МестноеВремя(source,"GMT+1")'), date('20240301005959'))
-        self.assertEqual(Interpreter().execute('ToLocalTime(Date(2024,2,29),"GMT+1")'), date('20240229010000'))
+        self.assertEqual(Interpreter(allow_extensions=True).execute('ToLocalTime(Date(2024,2,29),"GMT+1")'), date('20240229010000'))
 
     def test_invalid_types_defaults_and_arities_are_catchable(self):
         suffixes = ('()', '(source)', '(source,Undefined)', '(source,Null)',

@@ -4,12 +4,12 @@ from pathlib import Path
 from uuid import UUID, uuid4
 from test_source_catalog_definitions import config, attribute
 from test_source_defined_type_constants import xml
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_catalog_store import SourceCatalogStore
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.source_catalog_definitions import source_catalog_definitions
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.catalog.source_catalog_store import SourceCatalogStore
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.db.catalog.source_catalog_definitions import source_catalog_definitions
+from yadinassi.types.errors import BSLError
 
 
 def source(body='',target='Groups',constant=False):

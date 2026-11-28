@@ -10,9 +10,9 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi import strings
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342
-from yadinassi.values import BSLArray, NULL
+from yadinassi.text import strings
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342
+from yadinassi.types.values import BSLArray, NULL
 
 
 class NStrLocalPolicyTests(unittest.TestCase):

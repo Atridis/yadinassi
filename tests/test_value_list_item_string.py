@@ -12,12 +12,13 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from yadinassi import BSLError, Interpreter, value_lists
-from yadinassi.dates import BSLDate, literal_date
-from yadinassi.maps import BSLMap
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, BSLType, NULL, to_string
+from yadinassi import BSLError, Interpreter
+from yadinassi.collections import value_lists
+from yadinassi.temporal.dates import BSLDate, literal_date
+from yadinassi.collections.maps import BSLMap
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, BSLType, NULL, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -222,7 +223,7 @@ class ValueListItemStringTests(unittest.TestCase):
     def test_huge_numeric_exponents_reject_without_expansion(self):
         program = """
 from decimal import Decimal
-from yadinassi.value_lists import BSLValueList
+from yadinassi.collections.value_lists import BSLValueList
 owner = BSLValueList()
 for spelling in ('1e1000000000', '-1e1000000000', '1e-1000000000'):
     item = owner.add(Decimal(spelling))
@@ -258,6 +259,32 @@ print('guarded')
         self.assertEqual(output[-1], "array label")
         self.assertEqual(vm.execute("item.GetID()"), D(0))
         self.assertEqual(vm.execute("owner.Count()"), D(1))
+
+    def test_direct_scalar_and_opaque_item_text_have_no_host_fallback(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('L=New ValueList; N=L.Add(1234); Empty=L.Add(Null); '
+                   'D=L.Add(Date(2024,2,29)); B=L.Add(True); S=L.Add(" "); '
+                   'Texts=New Array; For Each I In L Do Texts.Add(Строка(I)); EndDo;')
+        self.assertEqual(list(vm.variables['texts']),
+                         ["1\u00a0234", "<Пустое значение>", "29.02.2024 0:00:00", "Да", " "])
+        # Using the exact item string endpoint directly exercises its stored
+        # value rather than the separate policy for arbitrary String arguments.
+        called = []
+        class Opaque:
+            def __repr__(self):
+                called.append('repr')
+                return 'opaque'
+            def __str__(self):
+                called.append('str')
+                return 'opaque'
+        owner = vm.variables['l']
+        item = owner.add(Opaque())
+        with self.assertRaises(ValueError):
+            str(item)
+        item.set_member('Presentation', ' ')
+        self.assertEqual(str(item), ' ')
+        self.assertEqual(called, [])
 
 
 if __name__ == "__main__":

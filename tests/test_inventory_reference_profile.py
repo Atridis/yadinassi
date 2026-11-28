@@ -9,16 +9,17 @@ import tempfile
 import unittest
 from uuid import UUID
 
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.accumulation_movements import validate_schema
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_accumulation import import_accumulation_configuration, PROFILE as SCALAR
-from yadinassi.configuration_accumulation_references import (PROFILE, canonical,
+from yadinassi.db.registers.accumulation_movements import validate_schema
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE as SCALAR
+from yadinassi.configuration.configuration_accumulation_references import (PROFILE, canonical,
     import_inventory_configuration)
-from yadinassi.configuration_profile_import import prepare_files, create_prepared
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_accumulation_movements import schema_data
+from yadinassi.configuration.configuration_profile_import import prepare_files, create_prepared
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_accumulation_movements import schema_data
 from test_configuration_accumulation import wrap, field, document, value_type
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -139,6 +140,58 @@ class InventoryRuntimeTests(unittest.TestCase):
     def query(self,text):
         self.vm.execute('Q=New Query("'+text.replace('"','""')+'"); Q.SetParameter("At",Date(2024,1,2));')
         return self.vm.execute('Q.Execute().Unload()')
+    def test_before_write_can_dirty_one_section_without_replacing_sibling(self):
+        from unittest.mock import patch
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        files = source()
+        notes = (f'<TabularSection uuid="{UUID(int=1800)}"><Properties><Name>Notes</Name></Properties><ChildObjects>'
+                 + field('Attribute', 1801, 'Text', 'string') + '</ChildObjects></TabularSection>')
+        files[DOC] = files[DOC].replace(b'</TabularSection></ChildObjects>',
+                                        ('</TabularSection>'+notes+'</ChildObjects>').encode())
+        files[MODULE] += b"""
+Procedure BeforeWrite(Cancel, WriteMode, PostingMode)
+    If Number = "clear" Then Lines.Clear(); EndIf;
+EndProcedure
+"""
+        with closing(SQLiteDBContext.create_inventory(self.path.with_name('changed.sqlite'), imported(files))) as context:
+            with closing(Interpreter(database_context=context, output=lambda text: None)) as vm:
+                vm.execute('P=Catalogs.Products.CreateItem(); P.Code="1"; P.Write();'
+                           'W=Catalogs.Warehouses.CreateItem(); W.Code="1"; W.Write();'
+                           'D=Documents.Receipt.CreateDocument(); D.Number="initial"; D.Date=Date(2024,1,1);'
+                           'D.Warehouse=W.Ref; L=D.Lines.Add(); L.Product=P.Ref; L.Quantity=1; L.Amount=2;'
+                           'N=D.Notes.Add(); N.Text="keep"; D.Write(); D=D.Ref.GetObject();')
+                document = vm.variables['d']
+                notes_before = document.get_member('Notes')._stored_rows()
+                self.assertEqual(document.get_member('Lines').count(), 1)
+                trace = []
+                connect = context.backend._connect
+                def traced_connect(**kwargs):
+                    connection = connect(**kwargs)
+                    connection.set_trace_callback(trace.append)
+                    return connection
+                normalized = []
+                sections = DocumentView._sections
+                def observe(view, schema, contents, **options):
+                    if options.get('writing'):
+                        normalized.append(tuple(section.section_id for section in contents))
+                    return sections(view, schema, contents, **options)
+                with (patch.object(context.backend, '_connect', side_effect=traced_connect),
+                      patch.object(DocumentView, '_sections', observe)):
+                    vm.execute('D.Number="clear"; D.Write(); D=D.Ref.GetObject();')
+                lines_id = document.get_member('Lines')._stored_rows().section_id
+                self.assertTrue(normalized)
+                self.assertTrue(all(section_ids == (lines_id,) for section_ids in normalized))
+                writes = [sql for sql in trace if sql.startswith('UPDATE document_record SET')]
+                self.assertEqual(len(writes), 1)
+                from yadinassi.db.sqlite.sqlite_document_layout import section_table
+                schema = document._manager._schema
+                sections_by_name = {section.name:section for section in schema.tabular_sections}
+                changes = [sql for sql in trace if sql.startswith(('DELETE','INSERT','UPDATE'))]
+                self.assertTrue(any(section_table(schema,sections_by_name['Lines']) in sql for sql in changes))
+                self.assertFalse(any(section_table(schema,sections_by_name['Notes']) in sql for sql in changes))
+                self.assertEqual(vm.variables['d'].get_member('Lines').count(), 0)
+                self.assertEqual(vm.variables['d'].get_member('Notes')._stored_rows(), notes_before)
+
     def test_distinct_format_and_reopen(self):
         self.assertEqual((self.backend.format_version,self.backend.storage_version),(15,7))
         with closing(SQLiteCatalogBackend(self.path)) as backend:
@@ -206,8 +259,8 @@ class InventoryRuntimeTests(unittest.TestCase):
             'D.Write(DocumentWriteMode.Posting); RollbackTransaction();')
         obj=self.vm.execute('D')
         self.assertEqual(self.rows(obj),())
-        for table in ('document_record','accumulation_movement','unit_of_work_receipt'):
+        for table in ('document_record',movement_table('accumulation', self.config.registers[0]),'accumulation_partition'):
             self.assertEqual(self.sql('SELECT COUNT(*) FROM '+table),[(0,)])
     def test_no_migration_admission(self):
-        from yadinassi.sqlite_migration_plan import prepare
+        from yadinassi.db.sqlite.sqlite_migration_plan import prepare
         with self.assertRaises(BackendError): prepare(self.path,maintenance=True)

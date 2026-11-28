@@ -14,7 +14,7 @@ IR/accumulation combined configuration or migration is granted.
 This is a distinct storage contract: catalog data/layout tables and numbering
 sequences are populated; movement schemas have a new exact value-domain tag and
 persist their target catalog UUIDs. Version 14 remains scalar-only, with its
-original schema bytes and receipt hash domain. Changing only a version or marker
+original schema bytes and scalar value domain. Changing only a version or marker
 must never admit the other profile. Creation/open retain and reimport exact
 source bytes, compare all projected schemas, and never execute source handlers.
 
@@ -32,10 +32,10 @@ Movement JSON cannot rely on SQLite foreign keys for this check. Source guards,
 coarse budgets, scalar validation and full reference validation are distinct.
 
 One existing unit of work owns catalog/document writes, Posted, replacement
-movements and durable receipts. A catalog created earlier in that transaction
+movements. A catalog created earlier in that transaction
 can be referenced by its document. Savepoint cancellation rolls back all of the
 posting operation; outer rollback also removes prior staged catalog creation.
-Uncertain recovery resolves receipts and does not rerun document handlers.
+An unknown outcome requires fresh reads; recovery never reruns document handlers.
 
 Native gate: install the separately owned fixture, validate material redump,
 then acquire 12 source-bound observation groups for typed defaults/assignments,

@@ -1,14 +1,11 @@
 """Source-owned closed temporary storage, not a native source-host parity claim."""
-import hashlib
-import json
-from pathlib import Path
 import unittest
 from unittest import mock
 from test_source_server_call import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
-from yadinassi import temporary_storage as storage
+from yadinassi.application import temporary_storage as storage
 
 BODY='''Function Put(Val V, Val Owner=Undefined) Export If Owner=Undefined Then Owner=New UUID; EndIf; Return PutToTempStorage(V,Owner); EndFunction
 Function Get(Val Address) Export Return GetFromTempStorage(Address); EndFunction
@@ -16,8 +13,8 @@ Procedure Delete(Val Address) Export DeleteFromTempStorage(Address); EndProcedur
 Function Recognize(Val Address) Export Return IsTempStorageURL(Address); EndFunction'''
 
 class SourceTemporaryTests(unittest.TestCase):
-    def app(self, body=BODY, startup=''):
-        app=SourceApplication(configuration(startup,body),output=lambda _:None)
+    def app(self, body=BODY, startup='', *, allow_extensions=False):
+        app=SourceApplication(configuration(startup,body),output=lambda _:None, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         app.start()
         return app
@@ -42,23 +39,8 @@ class SourceTemporaryTests(unittest.TestCase):
         self.execute(app,f'ServerAPI.Delete("{address}")')
         with self.assertRaises(BSLError):self.put(app,'1','"'+address+'"')
 
-    def test_native_closed_profile_replay(self):
-        root=Path(__file__).resolve().parents[1]
-        raw=(root/'tests/fixtures/native_temporary_storage_43056863128.json').read_bytes()
-        self.assertEqual(hashlib.sha256(raw).hexdigest(),'0f475f9e8184890bdfa7f0d3e676970035586f7948365b0a1067275ba91486e7')
-        source=(root/'scripts/temporary_storage_behavior/observe.bsl').read_bytes()
-        self.assertEqual(hashlib.sha256(source).hexdigest(),'a5d1cdce77f24f6801a55328812fc442c3978e5daae13fdebef807b355f520e7')
-        declarations=source.decode().split('For CaseNo = 1 To 16 Do')[0]
-        declarations+='\nFunction Run(Val CaseNo) Export Stage="read"; Return ObserveCase(CaseNo,Stage); EndFunction'
-        app=self.app(declarations);expected=json.loads(raw)
-        for n in range(1,17):
-            with self.subTest(case=n):
-                code=f'ServerAPI.Run({n})'
-                if n==11:
-                    with self.assertRaises(BSLError):self.execute(app,code)
-                elif n in (12,15):self.assertEqual(self.execute(app,code),'error')
-                else:self.assertEqual(self.execute(app,code),expected[n-1])
-
+    # The pinned full native replay lives in test_application_temporary_storage.
+    # This suite tests the source bridge's distinct policy and boundary paths.
     def test_cross_application_isolation(self):
         app,other=self.app(),self.app();address=self.put(app)
         self.assertIsNone(self.get(other,address))
@@ -92,13 +74,81 @@ class SourceTemporaryTests(unittest.TestCase):
         self.assertTrue(cancelled.temporary_storage._closed)
         self.assertEqual(cancelled.temporary_storage._entries,{})
 
-    def test_client_denied_before_arguments(self):
-        app=self.app();app.interpreter.execute('Function Touch() Raise "wrong-side-effect"; EndFunction')
-        with self.assertRaisesRegex(BSLError,'active server'):
-            self.execute(app,'PutToTempStorage(Touch(),New UUID)')
+    def test_client_get_and_put_on_one_store_in_both_directions(self):
+        app=self.app()
+        client=self.execute(app,'ПоместитьВоВременноеХранилище("client",New UUID)')
+        self.assertEqual(self.get(app,client),'client')
+        server=self.put(app,'"server"')
+        self.assertEqual(self.execute(app,f'ПолучитьИзВременногоХранилища("{server}")'),'server')
+        self.execute(app,f'ServerAPI.Delete("{client}");')
+        self.assertIsNone(self.execute(app,f'GetFromTempStorage("{client}")'))
+
+    def test_client_crossing_copies_nested_mutable_values(self):
+        extra="""Function Make() Export
+V=New Array;V.Add("server"); Box=New Structure("Items",V);
+A=PutToTempStorage(Box,New UUID); V.Add("alias"); Return A; EndFunction
+Function NestedCount(Val Address) Export Return GetFromTempStorage(Address).Items.Count(); EndFunction"""
+        app=self.app(BODY+'\n'+extra)
+        address=self.execute(app,'''V=New Array; V.Add("client"); B=New Structure("Items",V);
+A=PutToTempStorage(B,New UUID); V.Add("not sent"); A''')
+        self.assertEqual(self.execute(app,f'ServerAPI.NestedCount("{address}")'),1)
+        server=self.execute(app,'ServerAPI.Make()')
+        self.execute(app,f'Copy=GetFromTempStorage("{server}"); Copy.Items.Add("not shared");')
+        self.assertEqual(self.execute(app,f'GetFromTempStorage("{server}").Items.Count()'),2)
+        self.assertEqual(self.execute(app,f'ServerAPI.NestedCount("{server}")'),2)
+
+    def test_client_uuid_only_and_wrong_arity_denies_before_actuals(self):
+        app=self.app();self.execute(app,'Function Touch() Raise "wrong-side-effect"; EndFunction')
+        for wrong in ('PutToTempStorage(Touch())','GetFromTempStorage(Touch(),Touch())'):
+            with self.subTest(wrong=wrong),self.assertRaisesRegex(BSLError,'arity'):
+                self.execute(app,wrong)
+        address=self.put(app)
+        for owner in ('Undefined','42','""','"'+address+'"'):
+            with self.subTest(owner=owner),self.assertRaisesRegex(BSLError,'explicit UUID'):
+                self.execute(app,f'PutToTempStorage("not stored",{owner})')
+        self.assertEqual(self.get(app,address),'first')
+        self.assertEqual(len(app.temporary_storage._entries),1)
+
+    def test_client_safe_mode_denied_before_argument_effects(self):
+        app=self.app()
+        self.execute(app,'''Function Touch() Raise "wrong-side-effect"; EndFunction
+Procedure Restricted() SetSafeMode(True); PutToTempStorage(Touch(),New UUID); EndProcedure''')
+        with self.assertRaisesRegex(BSLError,'source safe mode does not support cross-context'):
+            self.execute(app,'Restricted();')
+        self.assertFalse(app.temporary_storage._entries)
+
+    def test_client_get_adds_no_own_scan_of_entries(self):
+        import sys
+        app=self.app()
+        address=self.execute(app,'PutToTempStorage("hit",New UUID)')
+        missing=self.put(app)
+        self.execute(app,f'ServerAPI.Delete("{missing}");')
+        entries=app.temporary_storage._entries
+        scans=[]
+        def profile(frame,event,arg):
+            if event=='c_call' and getattr(arg,'__self__',None) is entries and arg.__name__=='items':
+                scans.append(frame.f_code.co_name)
+        previous=sys.getprofile()
+        sys.setprofile(profile)
+        try:
+            self.assertIsNone(self.execute(app,f'GetFromTempStorage("{missing}")'))
+            self.assertEqual(scans,[])
+            self.assertEqual(self.execute(app,f'GetFromTempStorage("{address}")'),'hit')
+        finally:
+            sys.setprofile(previous)
+        self.assertEqual(scans,['_measure'])
+
+    def test_client_get_does_not_reach_a_different_or_closed_session(self):
+        first,other=self.app(),self.app()
+        address=self.execute(first,'PutToTempStorage("private",New UUID)')
+        self.assertIsNone(self.execute(other,f'GetFromTempStorage("{address}")'))
+        first.close()
+        with self.assertRaises((BSLError,ValueError)):
+            self.execute(first,f'GetFromTempStorage("{address}")')
+        self.assertFalse(first.temporary_storage._entries)
 
     def test_foreign_marker_denied_before_arguments(self):
-        app=self.app();vm=Interpreter(lambda _:None);self.addCleanup(vm.close)
+        app=self.app();vm=Interpreter(lambda _:None, allow_extensions=True);self.addCleanup(vm.close)
         vm.register_function('Put',storage.SourceTemporaryCall(app.temporary_storage,storage.put_marker))
         vm.execute('Function Touch() Raise "wrong-side-effect"; EndFunction')
         with self.assertRaisesRegex(BSLError,'another or closed'):

@@ -12,7 +12,7 @@ import sys
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLArray
+from yadinassi.types.values import BSLArray
 
 
 class StringTests(unittest.TestCase):
@@ -201,6 +201,21 @@ class StringTests(unittest.TestCase):
             ('Lower(True)', 'да'), ('StrConcat(StrSplit(1203, 0), 9)', '1\u00a0293'),
         ])
 
+    def test_numeric_representation_is_shared_at_text_boundaries(self):
+        plan = self.vm.prepare("""
+            N = -1200 - 34;
+            Message(N);
+            FromString = String(N);
+            FromLeft = Left(N, 6);
+            FromBoolean = Boolean(N);
+        """)
+        self.assertIn(' - 34', plan._plan.generated_source)
+        self.vm.execute_prepared(plan)
+        self.assertEqual(self.output, ['-1\u00a0234'])
+        self.assertEqual(self.vm.variables['fromstring'], self.output[0])
+        self.assertEqual(self.vm.variables['fromleft'], self.output[0])
+        self.assertIs(self.vm.variables['fromboolean'], True)
+
     def test_split_delimiters_are_individual_characters(self):
         result = self.evaluate('StrSplit("red,green;blue|white", ",;|")')
         self.assertIsInstance(result, BSLArray)
@@ -258,9 +273,9 @@ class StringTests(unittest.TestCase):
     def test_join_converts_array_elements_and_does_not_mutate(self):
         self.vm.execute('a = New Array; a.Add(12.50); a.Add(True); '
                         'a.Add(Undefined); a.Add("x"); a.Add(New Array);')
-        items = list(self.vm.variables['a'].items)
+        items = list(self.vm.variables['a'])
         self.assertEqual(self.evaluate('StrConcat(a, "|")'), '12,5|Да||x|Массив')
-        self.assertEqual(self.vm.variables['a'].items, items)
+        self.assertEqual(list(self.vm.variables['a']), items)
 
     def test_join_accepts_fixed_arrays_with_bilingual_names_and_default_separator(self):
         # collections.bsl/out at 1c4e20f: fixed-array.join is [а;б].
@@ -291,6 +306,28 @@ class StringTests(unittest.TestCase):
         self.assertEqual(self.evaluate('СтрСоединить(fixedHalves)'), '🙂')
         self.assertIs(self.vm.variables['fixed'].items, items)
         self.assertEqual(self.evaluate('source.Count()'), Decimal(5))
+
+    def test_string_length_matches_utf16_units_for_python_inputs(self):
+        from yadinassi.text.strings import string_length
+
+        for text in ('', 'abcdefgh', 'abc\x00def', 'кириллица', '\uffff',
+                     '😀', 'Я😀a', '\ud800', '\udc00', '\ud83d\ude00'):
+            with self.subTest(text=text):
+                result = string_length(text)
+                self.assertIs(type(result), Decimal)
+                self.assertEqual(result, len(text.encode('utf-16-le', 'surrogatepass')) // 2)
+        self.assertEqual(string_length(None), Decimal(0))
+        self.assertEqual(string_length(Decimal('1234.5')), Decimal(7))
+        self.assertEqual(string_length(True), Decimal(2))
+
+    def test_prepared_string_length_on_dynamic_ascii_and_non_ascii(self):
+        plan = self.vm.prepare('Результат = СтрДлина(Текст);')
+        for text, length in (('abc', 3), ('Я', 1), ('Я😀', 3), ('\ud800', 1)):
+            self.vm.variables['текст'] = text
+            self.vm.execute_prepared(plan)
+            result = self.vm.variables['результат']
+            self.assertIs(type(result), Decimal)
+            self.assertEqual(result, length)
 
     def test_utf16_length_slices_find_and_reassembly(self):
         self.assert_cases([

@@ -4,7 +4,7 @@ import unittest
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax import ast
-from yadinassi.errors import IncompleteInput
+from yadinassi.types.errors import BSLRuntimeError, IncompleteInput
 from yadinassi.syntax.parser import parse
 
 
@@ -118,12 +118,42 @@ class DefaultParameterTests(unittest.TestCase):
         self.assertEqual(self.output, [])
 
     def test_host_omissions_rejected_without_argument_effects(self):
-        for code in ['Message(,1)', 'Message(Message("bad"),,1)',
-                     'New Array(,1)', 'a.Add(,1)']:
-            self.vm.execute('a = New Array')
-            with self.subTest(code=code), self.assertRaisesRegex(BSLError, 'Пропуск аргументов'):
-                self.vm.execute(code)
-        self.assertEqual(self.output, [])
+        self.vm.execute('Function Tick() Message("bad"); Return 1; EndFunction')
+        for prepared in (False, True):
+            for code in ('Message(,1)', 'Message(Message("bad"),,1)',
+                         'New Array(,1)', 'a.Add(,1)', 'a.Add(,Tick())'):
+                with self.subTest(code=code, prepared=prepared):
+                    self.vm.execute('a = New Array')
+                    with self.assertRaises(BSLRuntimeError) as caught:
+                        if prepared:
+                            self.vm.execute_prepared(self.vm.prepare(code))
+                        else:
+                            self.vm.execute(code)
+                    self.assertRegex(str(caught.exception),
+                                     r'(?i)пропуск аргументов|количество аргументов')
+                    self.assertEqual(self.vm.execute('a.Count()'), 0)
+                    self.assertEqual(self.output, [])
+
+    def test_message_holes_fail_before_actuals_in_both_routes(self):
+        for prepared in (False, True):
+            for name in ('Message', 'Сообщить'):
+                with self.subTest(prepared=prepared, name=name):
+                    self.output.clear()
+                    code = (f'Try {name}({name}("bad"),,1); '
+                            f'Except {name}("caught"); EndTry; {name}(Undefined);')
+                    if prepared:
+                        self.vm.execute_prepared(self.vm.prepare(code))
+                    else:
+                        self.vm.execute(code)
+                    self.assertEqual(self.output, ['caught', ''])
+
+    def test_same_module_message_can_define_its_own_defaults(self):
+        for name in ('Message', 'Сообщить'):
+            with self.subTest(name=name):
+                code = (f'Function {name}(Val a, Val b=2, Val c=3) '
+                        f'Return a+b+c; EndFunction R={name}(1,,4);')
+                self.vm.execute_prepared(self.vm.prepare(code))
+                self.assertEqual(self.vm.variables['r'], 7)
 
     def test_incomplete_defaults_and_calls(self):
         for code in ['Function F(x =', 'Function F(x = -', 'Function F(x = 1',

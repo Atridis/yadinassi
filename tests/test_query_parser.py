@@ -5,7 +5,7 @@ import unittest
 from decimal import Decimal
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from yadinassi.query_parser import parse_query, Parameter, Predicate, MAX_TEXT
+from yadinassi.db.query.query_parser import parse_query, Parameter, Predicate, MAX_TEXT
 
 
 class QueryParserTests(unittest.TestCase):
@@ -39,14 +39,27 @@ class QueryParserTests(unittest.TestCase):
             'DELETE FROM Catalog.Products',
             'SELECT Code FROM Catalog.Products WHERE Code = (SELECT Code FROM Catalog.Categories)',
             'SELECT Code FROM Catalog.Products WHERE Code LIKE "A%"',
-            'SELECT P.Category.Code FROM Catalog.Products AS P',
+            'SELECT P.Category.Parent.Code FROM Catalog.Products AS P',
         ]
         for text in variants:
             with self.subTest(text=text), self.assertRaises(ValueError):
                 parse_query(text)
 
+    def test_reference_paths_and_existing_qualifiers_keep_all_segments(self):
+        q = parse_query('SELECT P.Code, Category.Description, P.Category.Code AS CategoryCode '
+                        'FROM Catalog.Products AS P ORDER BY Category.Description, CategoryCode')
+        self.assertEqual(tuple(part.field.parts for part in q.projections),
+                         (('P','Code'),('Category','Description'),('P','Category','Code')))
+        self.assertEqual(tuple(part.alias for part in q.projections),
+                         ('Code','Description','CategoryCode'))
+        self.assertEqual(tuple(part.field.parts for part in q.order),
+                         (('Category','Description'),('CategoryCode',)))
+        q = parse_query('ВЫБРАТЬ П.Ссылка.Номер ИЗ Документ.Заказы КАК П')
+        self.assertEqual(q.projections[0].field.parts, ('П','Ссылка','Номер'))
+        self.assertEqual(q.projections[0].alias, 'Номер')
+
     def test_relational_extension_accepts_previously_unsupported_shapes(self):
-        from yadinassi.query_parser import Aggregate, Field
+        from yadinassi.db.query.query_parser import Aggregate, Field
         materialized = parse_query('SELECT Code INTO Temp FROM Catalog.Products')
         self.assertEqual(materialized.into, 'Temp')
         temporary = parse_query('SELECT Code FROM Temp')

@@ -1,8 +1,8 @@
 import unittest
 from decimal import Decimal
-from yadinassi.reusable_values import ReusableValueCache,argument_key,MAX_RETAINED_UNITS,MAX_ENTRIES
-from yadinassi.structures import BSLStructure
-from yadinassi.values import NULL
+from yadinassi.application.reusable_values import ReusableValueCache,argument_key,MAX_RETAINED_UNITS,MAX_ENTRIES
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.values import NULL
 class CacheTests(unittest.TestCase):
     def setUp(self):self.time=0;self.c=ReusableValueCache(clock=lambda:self.time)
     def put(self,key=('x',),value=None):self.c.publish(self.c.reserve(key),value,1)

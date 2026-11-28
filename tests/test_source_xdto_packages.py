@@ -2,11 +2,11 @@ import unittest
 from unittest.mock import patch
 from configuration_xdto_fixture import files
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.xdto_io import BSLXDTOFactory, XS
-from yadinassi.xdto_packages import load_packages
-from yadinassi.configuration_xdto import ConfigurationXDTOPackage
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.formats.xml.xdto_io import BSLXDTOFactory, XS
+from yadinassi.formats.xml.xdto_packages import load_packages
+from yadinassi.configuration.configuration_xdto import ConfigurationXDTOPackage
+from yadinassi.types.errors import BSLError
 
 R='XDTOPackages/OwnedRecords/Ext/Package.bin'
 E='XDTOPackages/OwnedEnvelope/Ext/Package.bin'
@@ -125,7 +125,7 @@ EndProcedure'''
 
     def test_cumulative_bytes_budget(self):
         app=self.app();f=app.xdto.factory;f.type('urn:owned:records','Code')
-        with patch('yadinassi.source_xdto_packages.MAX_SCHEMA_BYTES',app.xdto._bytes+1):
+        with patch('yadinassi.formats.xml.source_xdto_packages.MAX_SCHEMA_BYTES',app.xdto._bytes+1):
             with self.assertRaisesRegex(ValueError,'bytes'):f.type('urn:owned:envelope','Envelope')
         self.assertIsNotNone(f.type('urn:owned:records','Code'))
 

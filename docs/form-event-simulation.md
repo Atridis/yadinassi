@@ -11,14 +11,16 @@ catalog qualifiers reconstruct a fresh private receiver before execution.
 
 The complete #221 source profile is mandatory, plus distinct handler names that
 do not collide with its receiver, parameter, message and builtin symbols. Both
-original bodies are validated; the selected original procedure is invoked on
-its own logical side through the existing interpreter, without rewriting BSL,
-executing module initialization, or crossing client/server marshalling. No
-routine names are registered. There is no managed-form event dispatch.
+original bodies are validated; the selected original procedure runs as generated
+code on its own logical side, without rewriting BSL, executing module
+initialization, or crossing client/server marshalling. No routine names are
+registered. There is no managed-form event dispatch.
 
-Each call owns a fresh interpreter, private scalar receiver, 256-node execution
-budget and a one-record message sink. Reachable functions are only СокрЛП and
-СтрДлина; the only constructor is СообщениеПользователю. Builtin namespace fallback
+Source admission checks a 256-node AST limit across both bodies before making
+a private interpreter. The fixed handler shapes admit neither loops nor calls
+to other routines. This is a source limit, not an execution-time step counter.
+Each call owns a fresh interpreter, private scalar receiver and one-record
+message sink. Reachable functions are only СокрЛП and СтрДлина; the only constructor is СообщениеПользователю. Builtin namespace fallback
 is blocked. The closed source cannot reach DataKey, SetData, dynamic calls, SQL,
 files, network or persistence. No constructor or bind_data behavior is expanded.
 The exact #217 UserMessageRecord must contain only bounded Text/Field, with empty

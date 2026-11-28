@@ -5,12 +5,12 @@ from uuid import UUID
 from types import SimpleNamespace
 
 from yadinassi import Interpreter
-from yadinassi.catalog_types import BSLCatalogReference, BSLCatalogType
-from yadinassi.serialization import value_to_string_internal
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_values import type_of
-from yadinassi.value_checks import value_is_filled
-from yadinassi.values import BSLArray, BSLType, equal, to_string
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
+from yadinassi.formats.storage.serialization import value_to_string_internal
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_values import type_of
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.types.values import BSLArray, BSLType, equal, to_string
 
 
 class CatalogDynamicTypesTests(unittest.TestCase):
@@ -44,8 +44,8 @@ class CatalogDynamicTypesTests(unittest.TestCase):
             BSLCatalogType(UUID(int=10), 'Name', self.snapshot, 'unknown')
 
     def test_manager_and_selection_type_identity(self):
-        from yadinassi.catalogs import BSLCatalogManager, BSLCatalogSelection
-        from yadinassi.catalog_backend import CatalogSchema
+        from yadinassi.db.catalog.catalogs import BSLCatalogManager, BSLCatalogSelection
+        from yadinassi.db.catalog.catalog_backend import CatalogSchema
         metadata = SimpleNamespace(_metadata_uuid=str(UUID(int=10)), _name='Name',_schema=CatalogSchema(UUID(int=10),'Name',8,64,()))
         catalogs = SimpleNamespace(_metadata=self.snapshot)
         manager = BSLCatalogManager(catalogs, metadata)
@@ -108,15 +108,46 @@ class CatalogDynamicTypesTests(unittest.TestCase):
             str(self.ref)
 
     def test_interpreter_value_operations(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from sqlite_catalog_fixture import configuration_files
+        from yadinassi.configuration.configuration_xml import import_configuration
+        from yadinassi.db.database_context import SQLiteDBContext
+
+        with TemporaryDirectory() as directory:
+            with SQLiteDBContext.create(Path(directory)/'owned.sqlite',
+                    import_configuration(configuration_files())) as context:
+                vm = Interpreter(database_context=context)
+                try:
+                    identity = str(UUID(int=20))
+                    vm.execute('C=Catalogs.Categories.CreateItem();C.Code="20";'
+                               'C.SetNewObjectRef(Catalogs.Categories.GetRef(New UUID("'+identity+'")));'
+                               'C.Write();Ref=Catalogs.Categories.FindByCode("20");')
+                    vm.set_variable('kind', vm._catalogs.get_member('Categories')._value_type)
+                    self.assertTrue(vm.execute('(TypeOf(ref) = kind)'))
+                    self.assertTrue(vm.execute('(TypeOf(kind) = Type("Type"))'))
+                    self.assertTrue(vm.execute('ValueIsFilled(ref)'))
+                    self.assertFalse(vm.execute('ref.IsEmpty()'))
+                    self.assertEqual(vm.execute('String(ref.УникальныйИдентификатор())'), identity)
+                    self.assertEqual(vm.execute('String(ref.UUID())'), identity)
+                finally:
+                    vm.close()
+
+    def test_detached_reference_value_ops_do_not_grant_database_members(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+
         vm = Interpreter()
+        self.addCleanup(vm.close)
         vm.set_variable('ref', self.ref)
         vm.set_variable('kind', self.kind)
         self.assertTrue(vm.execute('(TypeOf(ref) = kind)'))
         self.assertTrue(vm.execute('(TypeOf(kind) = Type("Type"))'))
         self.assertTrue(vm.execute('ValueIsFilled(ref)'))
-        self.assertFalse(vm.execute('ref.IsEmpty()'))
-        self.assertEqual(vm.execute('String(ref.УникальныйИдентификатор())'), str(UUID(int=20)))
-        self.assertEqual(vm.execute('String(ref.UUID())'), str(UUID(int=20)))
+        for expression in ('ref.IsEmpty()', 'ref.УникальныйИдентификатор()', 'ref.UUID()'):
+            with self.subTest(expression=expression), self.assertRaisesRegex(
+                    BoundaryViolation,'unregistered or foreign database receiver'):
+                vm.execute(expression)
 
     def test_explicit_unsupported_consumers(self):
         for value in (self.ref, self.kind, BSLType.CATALOGS_MANAGER):

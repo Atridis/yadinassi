@@ -5,8 +5,8 @@ import sys
 import unittest
 from unittest.mock import patch
 from test_main_demo_configuration import source, ROOT
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.configuration_app import (load_application, ConfigurationBroker,
     ConfigurationController, ConfigurationProcess, PROTOCOL)
 from yadinassi.ui.protocol import encode_line, decode_line
@@ -63,14 +63,11 @@ class MainDemoUISurfaceTests(unittest.TestCase):
         with patch.object(ConfigurationProcess, '_start') as start:
             ConfigurationProcess(ROOT/'examples/demo', 'demo.sqlite', main_demo_application=True, launch_binding='binding')
         command = start.call_args.args[0]
-        from yadinassi.execution_policy import current_backend
         expected = ([sys.executable, '--configuration-ui-runtime', str((ROOT/'examples/demo').resolve())]
                     if getattr(sys, 'frozen', False) else
                     [sys.executable, '-m', 'yadinassi.ui.configuration_app',
                      str((ROOT/'examples/demo').resolve()), '--runtime'])
         expected += ['--f', str(Path('demo.sqlite').resolve()),
                      '--main-demo-application', '--launch-binding', 'binding']
-        if current_backend() != 'interpreter':
-            expected += ['--execution-backend', current_backend()]
         self.assertEqual(command, expected)
         self.assertEqual(configuration_route(main_demo_application=True), 'main-demo')

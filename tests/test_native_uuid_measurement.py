@@ -111,9 +111,12 @@ class UUIDMeasurementContract(unittest.TestCase):
         output = []
         vm = Interpreter(output.append)
         vm.execute(self.text[:self.text.index('// Значение, тип и настоящий прямой/обратный кодек.')])
-        vm.execute('НаблюдатьUUID("bad", "Результат = Новый DefinitelyMissing();"); '
+        # Use the captured malformed input to a supported constructor. An
+        # unknown constructor is a preparation failure, not an action error.
+        invalid = dict(self.calls)['input.invalid']
+        vm.execute(f'НаблюдатьUUID("input.invalid", "{invalid}"); '
                    'НаблюдатьUUID("next", "Результат = 17;");')
-        self.assertEqual(output, ['uuid.bad: [error]', 'uuid.next: [17]'])
+        self.assertEqual(output, ['uuid.input.invalid: [error]', 'uuid.next: [17]'])
 
     def test_complete_adapter_keeps_every_statement_byte_identical(self):
         module = fixtures.suite.client_values_module(self.source, self.template)

@@ -1,11 +1,11 @@
 # Original mini-demo acceptance contract
 
 The one current configuration source is `examples/demo`. It preserves the
-original catalog/form/handler bytes and extends the source with inventory
-objects. The original nineteen-file envelope is not a second demo directory:
-compatibility tests reconstruct it from eighteen canonical files plus the
-4,199-byte historical root in `tests/fixtures/legacy_demo_root.xml`, checked
-against the original nineteen SHA-256 pins.
+original catalog and form bytes, extends the source with inventory objects,
+and now batches the product handler’s warehouse lookup. The historical
+nineteen-file envelope is not a second demo directory: compatibility tests
+combine seventeen unchanged canonical files with the archived root and
+product object module, checking all nineteen original SHA-256 pins.
 
 Publication of the supplied synthetic configuration was explicitly authorized
 by the owner on 2026-11-05. It contains no catalog records or observed secrets

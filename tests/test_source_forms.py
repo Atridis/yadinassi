@@ -4,9 +4,9 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 from test_source_metadata import xml
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_forms import SourceFormController, source_form_definition
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.forms.source_forms import SourceFormController, source_form_definition
 from yadinassi.ui.form_app import PROTOCOL
 
 FORM = b'''<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="2.17"><Title>Counter</Title><Attributes><Attribute name="Greeting" id="1"><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>256</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Attribute></Attributes><ChildItems><LabelField name="GreetingLabel" id="1"><DataPath>Greeting</DataPath></LabelField><Button name="GoButton" id="2"><CommandName>Go</CommandName><Title>Run</Title></Button></ChildItems><Commands><Command name="Go" id="1"><Title>Run</Title><Action>Go</Action></Command></Commands><Events><Event name="OnCreateAtServer">Created</Event></Events></Form>'''

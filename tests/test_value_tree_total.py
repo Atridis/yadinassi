@@ -3,9 +3,9 @@ from decimal import Decimal as D, localcontext, Inexact, Rounded, InvalidOperati
 import unittest
 from unittest import mock
 from yadinassi import Interpreter, BSLError
-from yadinassi.value_trees import BSLValueTree, BSLValueTreeRowCollection as Rows
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.values import NULL
+from yadinassi.collections.value_trees import BSLValueTree, BSLValueTreeRowCollection as Rows
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.values import NULL
 
 
 def fixture(values=(), types=None):
@@ -92,10 +92,10 @@ class TreeTotalTests(unittest.TestCase):
         tree,_=fixture(['9'*4097],'String')
         with self.assertRaises(ValueError):tree.rows.total('N')
         tree,_=fixture([D('1e4096'),D('1e-4096')])
-        with mock.patch('yadinassi.value_trees._MAX_TOTAL_PRECISION',10),self.assertRaises(ValueError):tree.rows.total('N')
+        with mock.patch('yadinassi.collections.value_trees._MAX_TOTAL_PRECISION',10),self.assertRaises(ValueError):tree.rows.total('N')
         tree,_=fixture([D(1),D(2),D(3)])
         for name,bound in (('_MAX_ROWS',2),('_MAX_CELLS',2),('_MAX_SEARCH_WORK',2)):
-            with mock.patch('yadinassi.value_trees.'+name,bound),self.assertRaises(ValueError):tree.rows.total('N')
+            with mock.patch('yadinassi.collections.value_trees.'+name,bound),self.assertRaises(ValueError):tree.rows.total('N')
 
     def test_opaque_untyped_values_are_ignored_without_host_hooks(self):
         class Poison:

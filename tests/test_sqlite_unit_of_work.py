@@ -7,17 +7,17 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from uuid import uuid4, uuid5
+from uuid import uuid4
 from unittest.mock import patch
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
 
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey, FieldSchema
-from yadinassi.document_backend import DocumentDraft, DocumentKey
-from yadinassi.register_backend import RegisterDraft, RegisterKey, RegisterSetDraft
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_migration_plan import prepare, apply, resolve, transition_status
-from yadinassi.transaction_backend import TransactionRequest, StagedTicket
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey, FieldSchema
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey
+from yadinassi.db.registers.register_backend import RegisterDraft, RegisterKey, RegisterSetDraft
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply, resolve, transition_status
+from yadinassi.db.transaction_backend import TransactionRequest, StagedTicket
 from test_sqlite_catalog_hierarchy import configuration
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
@@ -68,14 +68,15 @@ class UnitOfWorkTests(unittest.TestCase):
             self.assertEqual(tx.read_document(requests[1].draft.key).number,'A')
             self.assertEqual(tx.read_register(requests[2].draft.key).values,(Decimal('2.50'),))
             results=tx.commit()
-        self.assertEqual(self.backend.resolve_unit_of_work(operation,requests),results)
+        self.assertEqual(tuple(r.ticket.kind for r in results),tuple(r.kind for r in requests))
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.read_catalog(requests[0].draft.key).revision,results[0].result.revision)
 
     def test_uncommitted_context_rolls_back_every_port(self):
         requests=self.trio(); operation=uuid4()
         with self.backend.begin_unit_of_work(operation) as tx:
             for r in requests: tx.stage(r)
         self.assertEqual(tx.state,'aborted')
-        self.assertIsNone(self.backend.resolve_unit_of_work(operation,requests))
         with self.backend.begin_unit_of_work(uuid4()) as tx:
             self.assertIsNone(tx.read_catalog(requests[0].draft.key))
             self.assertIsNone(tx.read_document(requests[1].draft.key))
@@ -95,7 +96,9 @@ class UnitOfWorkTests(unittest.TestCase):
         with self.backend.begin_unit_of_work(operation) as tx:
             for r in requests: tx.stage(r)
             results=tx.commit()
-        self.assertEqual(self.backend.resolve_unit_of_work(operation,requests),results)
+        self.assertEqual([r.result.number for r in results],['A','B'])
+        with closing(self.backend.begin_document_read()) as view:
+            self.assertEqual([view.read_document(r.draft.key).number for r in requests],['A','B'])
 
     def test_repeat_object_is_explicitly_unsupported(self):
         request=TransactionRequest('catalog_create',self.catalog())
@@ -115,34 +118,25 @@ class UnitOfWorkTests(unittest.TestCase):
         tx=self.backend.begin_unit_of_work(uuid4());tx.rollback()
         with self.assertRaisesRegex(BackendError,'closed'): tx.stage(self.trio()[0])
 
-    def test_changed_request_and_order_refuse_resolution(self):
-        operation=uuid4(); requests=self.trio()
-        with self.backend.begin_unit_of_work(operation) as tx:
-            for r in requests: tx.stage(r)
-            tx.commit()
-        with self.assertRaisesRegex(BackendError,'conflict'): self.backend.resolve_unit_of_work(operation,requests[::-1])
-        changed=(replace(requests[0],draft=replace(requests[0].draft,description='changed')),*requests[1:])
-        with self.assertRaisesRegex(BackendError,'conflict'): self.backend.resolve_unit_of_work(operation,changed)
-
-    def test_operation_reuse_refuses_before_write(self):
-        operation=uuid4()
-        with self.backend.begin_unit_of_work(operation) as tx:
-            tx.stage(self.trio()[0]);tx.commit()
-        with self.assertRaisesRegex(BackendError,'conflict'):self.backend.begin_unit_of_work(operation)
-
     def test_readonly_cannot_begin_unit(self):
         other=SQLiteCatalogBackend(self.path,read_only=True)
         try:
             with self.assertRaisesRegex(BackendError,'unsupported'):other.begin_unit_of_work(uuid4())
         finally:other.close()
 
-    def test_uncertain_commit_resolves_whole_batch(self):
+    def test_lost_commit_response_does_not_replay_whole_batch(self):
         operation=uuid4();requests=self.trio();tx=self.backend.begin_unit_of_work(operation)
         for r in requests:tx.stage(r)
         tx._view._connection=FaultConnection(tx._view._connection,commit_fault='after')
         with self.assertRaisesRegex(BackendError,'uncertain_commit'):tx.commit()
         self.assertEqual(tx.state,'uncertain')
-        self.assertEqual(len(self.backend.resolve_unit_of_work(operation,requests)),3)
+        with self.assertRaisesRegex(BackendError,'closed'):tx.commit()
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.read_catalog(requests[0].draft.key).revision.token,'1')
+        with closing(self.backend.begin_document_read()) as view:
+            self.assertEqual(view.read_document(requests[1].draft.key).revision.token,'1')
+        with closing(self.backend.begin_register_read()) as view:
+            self.assertEqual(view.read_record(requests[2].draft.key).values,(Decimal('2.50'),))
 
     def test_legacy_standalone_write_still_works(self):
         draft=self.catalog();view=self.backend.begin_write(uuid4())
@@ -155,13 +149,19 @@ class UnitOfWorkTests(unittest.TestCase):
         for request in requests:tx.stage(request)
         tx._view._connection=FaultConnection(tx._view._connection,commit_fault='before')
         with self.assertRaisesRegex(BackendError,'uncertain_commit'):tx.commit()
-        self.assertIsNone(self.backend.resolve_unit_of_work(operation,requests))
+        self.assertEqual(tx.state,'uncertain')
+        with self.assertRaisesRegex(BackendError,'closed'):tx.commit()
+        with closing(self.backend.begin_read()) as view:
+            self.assertIsNone(view.read_catalog(requests[0].draft.key))
 
-    def test_interrupt_after_commit_is_resolvable(self):
+    def test_interrupt_after_commit_keeps_uncertainty_without_replay(self):
         request=self.trio()[0];operation=uuid4();tx=self.backend.begin_unit_of_work(operation);tx.stage(request)
         tx._view._connection=FaultConnection(tx._view._connection,commit_fault='interrupt')
         with self.assertRaises(KeyboardInterrupt):tx.commit()
-        self.assertEqual(len(self.backend.resolve_unit_of_work(operation,(request,))),1)
+        self.assertEqual(tx.state,'uncertain')
+        with self.assertRaisesRegex(BackendError,'closed'):tx.commit()
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.read_catalog(request.draft.key).revision.token,'1')
 
     def test_stage_memory_error_restores_sql_and_journal(self):
         request=self.trio()[0]
@@ -172,33 +172,13 @@ class UnitOfWorkTests(unittest.TestCase):
             self.assertIsNone(tx.read_catalog(request.draft.key))
             tx.stage(request);self.assertEqual(len(tx.commit()),1)
 
-    def test_child_receipt_failure_rolls_back_document(self):
+    def test_child_outcome_allocation_failure_rolls_back_document(self):
         request=self.trio()[1]
         with self.backend.begin_unit_of_work(uuid4()) as tx:
-            with patch('yadinassi.sqlite_transactions._receipt_hash',side_effect=MemoryError):
+            with patch('yadinassi.db.sqlite.sqlite_transactions.TransactionOutcome',side_effect=MemoryError):
                 with self.assertRaises(MemoryError):tx.stage(request)
             self.assertIsNone(tx.read_document(request.draft.key));self.assertEqual(tx.requests,())
             tx.stage(request);tx.commit()
-
-    def test_missing_child_receipt_cannot_confirm_batch(self):
-        requests=self.trio();operation=uuid4()
-        with self.backend.begin_unit_of_work(operation) as tx:
-            for request in requests:tx.stage(request)
-            tx.commit()
-        with closing(sqlite3.connect(self.path)) as db,db:db.execute('DELETE FROM document_commit_receipt')
-        with self.assertRaisesRegex(BackendError,'integrity'):self.backend.resolve_unit_of_work(operation,requests)
-
-    def test_changed_child_outcome_cannot_confirm_batch(self):
-        request=self.trio()[1];operation=uuid4()
-        with self.backend.begin_unit_of_work(operation) as tx:tx.stage(request);tx.commit()
-        with closing(sqlite3.connect(self.path)) as db,db:db.execute("UPDATE document_commit_receipt SET number='B'")
-        with self.assertRaisesRegex(BackendError,'integrity'):self.backend.resolve_unit_of_work(operation,(request,))
-
-    def test_root_binding_corruption_refuses(self):
-        request=self.trio()[0];operation=uuid4()
-        with self.backend.begin_unit_of_work(operation) as tx:tx.stage(request);tx.commit()
-        with closing(sqlite3.connect(self.path)) as db,db:db.execute("UPDATE unit_of_work_receipt SET request_hash=?",('0'*64,))
-        with self.assertRaisesRegex(BackendError,'conflict'):self.backend.resolve_unit_of_work(operation,(request,))
 
     def test_overlapping_register_operations_refuse(self):
         request=self.trio()[2]
@@ -213,7 +193,9 @@ class UnitOfWorkTests(unittest.TestCase):
         with self.backend.begin_unit_of_work(operation) as tx:
             for request in requests:tx.stage(request)
             results=tx.commit()
-        self.assertEqual(self.backend.resolve_unit_of_work(operation,requests),results)
+        self.assertEqual(tuple(r.ticket.kind for r in results),tuple(r.kind for r in requests))
+        with closing(self.backend.begin_register_read()) as view:
+            self.assertEqual(view.read_record(draft.key).values,(Decimal('2.50'),))
 
     def test_updates_and_delete_share_second_transaction(self):
         requests=self.trio()
@@ -227,25 +209,44 @@ class UnitOfWorkTests(unittest.TestCase):
         with self.backend.begin_unit_of_work(operation) as tx:
             for request in updates:tx.stage(request)
             outcomes=tx.commit()
-        self.assertEqual(self.backend.resolve_unit_of_work(operation,updates),outcomes)
+        self.assertEqual(tuple(r.ticket.kind for r in outcomes),tuple(r.kind for r in updates))
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.read_catalog(updates[0].draft.key).description,'new')
+        with closing(self.backend.begin_document_read()) as view:
+            self.assertEqual(view.read_document(updates[1].draft.key).number,'B')
+        with closing(self.backend.begin_register_read()) as view:
+            self.assertIsNone(view.read_record(updates[2].draft.key))
 
     def test_operation_budget_is_global(self):
-        with self.backend.begin_unit_of_work(uuid4()) as tx,patch('yadinassi.sqlite_transactions.MAX_OPERATIONS',1):
+        with self.backend.begin_unit_of_work(uuid4()) as tx,patch('yadinassi.db.sqlite.sqlite_transactions.MAX_OPERATIONS',1):
             tx.stage(self.trio()[0])
             with self.assertRaisesRegex(BackendError,'unsupported'):tx.stage(self.trio()[1])
 
     def test_payload_budget_is_global(self):
-        with self.backend.begin_unit_of_work(uuid4()) as tx,patch('yadinassi.sqlite_transactions.MAX_BYTES',1):
+        with self.backend.begin_unit_of_work(uuid4()) as tx,patch('yadinassi.db.sqlite.sqlite_transactions.MAX_BYTES',1):
             with self.assertRaisesRegex(BackendError,'unsupported'):tx.stage(self.trio()[0])
             self.assertEqual(tx.requests,())
 
-    def test_child_operation_collision_is_rejected(self):
-        operation=uuid4();child=uuid5(operation,'unit-of-work-v1:0')
-        view=self.backend.begin_write(child)
-        try:view.create(self.catalog('old'));view.commit()
-        finally:view.close()
-        with self.backend.begin_unit_of_work(operation) as tx:
-            with self.assertRaisesRegex(BackendError,'conflict'):tx.stage(self.trio()[0])
+    def test_stage_and_commit_do_not_write_receipts(self):
+        requests=self.trio();trace=[]
+        with self.backend.begin_unit_of_work(uuid4()) as tx:
+            tx._view._connection.set_trace_callback(trace.append)
+            for request in requests: tx.stage(request)
+            tx.commit()
+        self.assertFalse([sql for sql in trace if '_receipt' in sql.lower() and
+                          (sql.strip().upper().startswith(('INSERT','UPDATE','DELETE')) or
+                           'unit_of_work_receipt' in sql.lower())])
+        self.assertEqual(sum(sql.strip().upper() == 'COMMIT' for sql in trace),1)
+
+    def test_returned_commit_stays_committed_when_close_fails(self):
+        tx=self.backend.begin_unit_of_work(uuid4());request=self.trio()[0];tx.stage(request)
+        with patch.object(tx._view,'close',side_effect=BackendError('storage_error')):
+            with self.assertRaisesRegex(BackendError,'storage_error'):tx.commit()
+        self.assertEqual(tx.state,'committed')
+        with self.assertRaisesRegex(BackendError,'closed'):tx.commit()
+        tx.close()
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.read_catalog(request.draft.key).revision.token,'1')
 
     def test_staging_is_not_frontend_write_success(self):
         request=self.trio()[0]
@@ -328,12 +329,13 @@ class MigrationPlanTests(unittest.TestCase):
                     draft=CatalogDraft(CatalogKey(backend.database_id,catalogs[0].identity,uuid4()),'long-code-truncated','x',False,())
                     request=TransactionRequest('catalog_create',draft);operation=uuid4()
                     with backend.begin_unit_of_work(operation) as tx:tx.stage(request);outcomes=tx.commit()
-                    self.assertEqual(backend.resolve_unit_of_work(operation,(request,)),outcomes)
+                    with closing(backend.begin_read()) as view:
+                        self.assertEqual(view.read_catalog(draft.key).revision,outcomes[0].result.revision)
                 finally:backend.close()
 
     def test_rollback_during_migration_leaves_source(self):
         plan=prepare(self.path,maintenance=True)
-        import yadinassi.sqlite_migration_plan as migration
+        import yadinassi.db.sqlite.sqlite_migration_plan as migration
         original=migration._fingerprint;count=0
         def fail(db,**kwargs):
             nonlocal count
@@ -345,7 +347,7 @@ class MigrationPlanTests(unittest.TestCase):
         self.assertEqual(resolve(self.path,plan,maintenance=True),'not_committed')
 
     def test_cli_plan_roundtrip_apply_resolve(self):
-        from yadinassi.storage_migration_cli import main
+        from yadinassi.cli_support.storage_migration_cli import main
         saved=Path(self.temp.name)/'plan.json'
         with redirect_stdout(StringIO()) as out:
             self.assertEqual(main(['plan',str(self.path),'--maintenance','--plan-file',str(saved)]),0)
@@ -354,7 +356,7 @@ class MigrationPlanTests(unittest.TestCase):
         self.assertEqual(out.getvalue(),'plan_saved\ncommitted\ncommitted\n')
 
     def test_cli_does_not_overwrite_saved_plan(self):
-        from yadinassi.storage_migration_cli import main
+        from yadinassi.cli_support.storage_migration_cli import main
         saved=Path(self.temp.name)/'plan.json';saved.write_text('retained',encoding='utf-8')
         with redirect_stderr(StringIO()):self.assertEqual(main(['plan',str(self.path),'--maintenance','--plan-file',str(saved)]),2)
         self.assertEqual(saved.read_text(),'retained')

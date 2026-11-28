@@ -5,10 +5,12 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 import test_catalog_tabular_runtime as fixtures
-from yadinassi.catalog_backend import BackendError
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.sqlite_catalog import _View
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi import Interpreter
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class CatalogPointProjectionTests(unittest.TestCase):
@@ -50,6 +52,118 @@ class CatalogPointProjectionTests(unittest.TestCase):
         self.seed();self.assertEqual(self.vm.execute('R.Description'),'Visible')
         self.vm.execute('O.Description="Changed";O.Write();')
         self.assertEqual(self.vm.execute('R.Description'),'Changed')
+
+    def test_projected_selection_is_captured_but_ref_reads_see_peer_commit(self):
+        self.addCleanup(self.vm.close)
+        self.vm.execute('''
+            For I=1 To 2 Do
+                Item=Catalogs.Products.CreateItem(); Item.Code=String(I);
+                Item.Description="Before"+String(I); Item.Write();
+            EndDo;
+        ''')
+        plain = 'SELECT TOP 2 P.Ref, P.Description FROM Catalog.Products AS P ORDER BY P.Code'
+        dotted = ('SELECT TOP 2 P.Ref, P.Ref.Description AS Caption '
+                  'FROM Catalog.Products AS P ORDER BY P.Code')
+        self.vm.execute(f'Q=New Query("{plain}"); Q.Execute();')  # Admit the reusable read handle.
+        backend = self.context.backend
+        schema = self.vm._catalogs.get_index('Products')._schema
+        physical = quote_identifier(backend._layout.table_name(schema.identity))
+        trace = []
+        connection = backend._read_handle.connection
+        connection.set_trace_callback(trace.append)
+
+        def data_reads():
+            return [sql for sql in trace if sql.startswith('SELECT ') and f'FROM {physical}' in sql]
+
+        try:
+            with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('unbounded query fallback')), \
+                    patch.object(_View, '_card', side_effect=AssertionError('whole catalog card')):
+                for query, variable in ((plain, 'Snapshot'), (dotted, 'Dotted')):
+                    with self.subTest(query=query):
+                        trace.clear()
+                        self.vm.execute(f'Q=New Query("{query}"); {variable}=Q.Execute();')
+                        reads = data_reads()
+                        self.assertEqual(len(reads), 1, trace)
+                        self.assertTrue(reads[0].endswith('LIMIT 2'), reads)
+        finally:
+            connection.set_trace_callback(None)
+
+        self.vm.execute('S=Snapshot.Select(); D=Dotted.Select(); L=Snapshot.Select();')
+        # An independent SQLite owner commits after Execute and before reading
+        # either held selection. No write runs in the reader's BSL program.
+        with closing(SQLiteDBContext(self.path)) as peer, \
+                closing(Interpreter(database_context=peer)) as writer:
+            writer.execute('''
+                For I=1 To 2 Do
+                    Item=Catalogs.Products.FindByCode(String(I)).GetObject();
+                    Item.Description="After"+String(I); Item.Write();
+                EndDo;
+            ''')
+
+        original = backend.begin_read
+        def begin():
+            view = original()
+            view._connection.set_trace_callback(trace.append)
+            return view
+
+        backend._read_handle.connection.set_trace_callback(trace.append)
+        try:
+            with patch.object(backend, 'begin_read', side_effect=begin):
+                trace.clear()
+                self.vm.execute('''
+                    Captured=New Array; Alias=New Array;
+                    While S.Next() Do Captured.Add(S.Description); EndDo;
+                    While D.Next() Do Alias.Add(D.Caption); EndDo;
+                ''')
+                self.assertEqual(self.vm.variables['captured'], ['Before1', 'Before2'])
+                self.assertEqual(self.vm.variables['alias'], ['Before1', 'Before2'])
+                self.assertEqual(trace, [])
+
+                self.vm.execute('''
+                    Current=New Array;
+                    While L.Next() Do
+                        Current.Add(L.Ref.Description);
+                        Current.Add(L.Ref.Description);
+                    EndDo;
+                ''')
+        finally:
+            backend._read_handle.connection.set_trace_callback(None)
+        self.assertEqual(self.vm.variables['current'], ['After1', 'After1', 'After2', 'After2'])
+        points = [sql for sql in data_reads() if sql.startswith('SELECT record_id,"description" ')]
+        self.assertEqual(len(points), 4, trace)
+        self.assertEqual(points[0], points[1])
+        self.assertEqual(points[2], points[3])
+        self.assertNotEqual(points[0], points[2])
+
+    def test_repeated_live_member_observes_peer_commit_inside_selection_loop(self):
+        self.addCleanup(self.vm.close)
+        self.seed()
+        self.vm.execute('Q=New Query("SELECT TOP 1 P.Ref, P.Ref.Description AS Caption '
+                        'FROM Catalog.Products AS P ORDER BY P.Code"); '
+                        'Selection=Q.Execute().Select();')
+        with closing(SQLiteDBContext(self.path)) as peer, \
+                closing(Interpreter(database_context=peer)) as writer:
+            writer.execute('Card=Catalogs.Products.FindByCode("1").GetObject();')
+
+            def commit_between_reads(message):
+                self.assertEqual(message, 'commit between reads')
+                writer.execute('Card.Description="Changed by peer"; Card.Write();')
+
+            # The actual host output boundary deterministically interleaves
+            # a SQLite commit while keeping one BSL iteration and one selection.
+            self.vm.output = commit_between_reads
+            self.vm.execute_prepared(self.vm.prepare('''
+                While Selection.Next() Do
+                    Before=Selection.Ref.Description;
+                    Message("commit between reads");
+                    After=Selection.Ref.Description;
+                    Captured=Selection.Caption;
+                EndDo;
+            '''))
+        self.assertEqual(self.vm.variables['before'], 'Visible')
+        self.assertEqual(self.vm.variables['after'], 'Changed by peer')
+        self.assertEqual(self.vm.variables['captured'], 'Visible')
+
     def test_unrelated_corrupt_record_does_not_expand_point_validation_scope(self):
         self.seed();self.vm.execute('X=Catalogs.Products.CreateItem();X.Code="2";X.Write();')
         schema=self.vm._catalogs.get_index('Products')._schema
@@ -81,7 +195,7 @@ class EnumCatalogPointProjectionTests(unittest.TestCase):
             with self.assertRaisesRegex(BSLRuntimeError,'unsupported'):
                 self.vm.execute('BeginTransaction();V=C.Ref.'+member+';RollbackTransaction();')
     def test_lexical_witness_still_refuses_unregistered_view_subclass(self):
-        from yadinassi.inventory_enum_runtime import read_snapshot
+        from yadinassi.configuration.demos.inventory_enum_runtime import read_snapshot
         class ForeignView(_View): pass
         with closing(self.context.backend.begin_read()) as view:
             foreign=object.__new__(ForeignView);foreign.__dict__.update(view.__dict__)

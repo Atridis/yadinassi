@@ -5,11 +5,11 @@ import tempfile
 import unittest
 from unittest import mock
 
-from yadinassi.xdto_io import BSLXDTOFactory, create_xdto_factory
-from yadinassi.xdto_values import XS, BSLXDTODataObject, BSLXDTODataValue
-from yadinassi.xml_io import BSLXMLReader
-from yadinassi.xml_writer import BSLXMLWriter
-from yadinassi.json_processing import BSLJSONReader, BSLJSONWriter
+from yadinassi.formats.xml.xdto_io import BSLXDTOFactory, create_xdto_factory
+from yadinassi.formats.xml.xdto_values import XS, BSLXDTODataObject, BSLXDTODataValue
+from yadinassi.formats.xml.xml_io import BSLXMLReader
+from yadinassi.formats.xml.xml_writer import BSLXMLWriter
+from yadinassi.formats.json.json_processing import BSLJSONReader, BSLJSONWriter
 
 SCHEMA = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:t="urn:test" targetNamespace="urn:test" elementFormDefault="qualified">
 <xs:complexType name="Child"><xs:sequence><xs:element name="code" type="xs:string"/></xs:sequence></xs:complexType>
@@ -103,10 +103,10 @@ class XDTOFamilyTests(unittest.TestCase):
 
     def test_allocation_failure_atomicity(self):
         values=self.obj.get_list('tags');before=self.f._nodes,self.f._units
-        with mock.patch('yadinassi.xdto_io.MAX_NODES',self.f._nodes+1):
+        with mock.patch('yadinassi.formats.xml.xdto_io.MAX_NODES',self.f._nodes+1):
             with self.assertRaises(ValueError):values.add('not committed')
         self.assertEqual(values.count(),0);self.assertEqual((self.f._nodes,self.f._units),before)
-        with mock.patch('yadinassi.xdto_io.MAX_UNITS',self.f._units):
+        with mock.patch('yadinassi.formats.xml.xdto_io.MAX_UNITS',self.f._units):
             with self.assertRaises(ValueError):self.obj.set('title','not committed')
         self.assertFalse(self.obj.is_set('title'))
 
@@ -179,7 +179,7 @@ class XDTOFamilyTests(unittest.TestCase):
             parts.append(f'<xs:complexType name="{current}"><xs:sequence><xs:element name="v" type="t:{previous}"/></xs:sequence></xs:complexType>')
         prefix=SCHEMA.split('>')[0]+'>'
         for declarations in (parts,list(reversed(parts))):
-            with self.subTest(order=declarations[0]),mock.patch('yadinassi.xdto_schema.MAX_DEPTH',4):
+            with self.subTest(order=declarations[0]),mock.patch('yadinassi.formats.xml.xdto_schema.MAX_DEPTH',4):
                 with self.assertRaises(ValueError):factory(prefix+''.join(declarations)+'</xs:schema>')
 
     def test_json_preserves_schema_names_not_bsl_identifiers(self):
@@ -188,9 +188,9 @@ class XDTOFamilyTests(unittest.TestCase):
         result=f.read_json(json_reader(writer.close()),kind);self.assertEqual(result.get('first-name'),'x')
 
     def test_schema_budget_and_file_boundary(self):
-        with mock.patch('yadinassi.xdto_schema.MAX_SCHEMA_BYTES',20):
+        with mock.patch('yadinassi.formats.xml.xdto_schema.MAX_SCHEMA_BYTES',20):
             with self.assertRaises(ValueError):factory()
-        with mock.patch('yadinassi.xdto_schema._open_regular') as opened:
+        with mock.patch('yadinassi.formats.xml.xdto_schema._open_regular') as opened:
             for path in ['https://example.invalid/schema.xsd',r'\\server\share\schema.xsd',r'\\.\pipe\schema']:
                 with self.subTest(path=path),self.assertRaises(ValueError):create_xdto_factory(path)
             opened.assert_not_called()

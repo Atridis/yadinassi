@@ -11,13 +11,13 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import (BackendError, CatalogSchema, CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogSchema, CatalogKey,
     CatalogDraft, CatalogScanRequest, CatalogComparison, CatalogOrder,
-    CatalogWriteRequest, FieldSchema, TabularSectionSchema, TabularSectionRows, TabularRow)
-from yadinassi.configuration_xml import ConfigurationImport, ConfigurationFile
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _schema, _schema_data, _json, _View
-from yadinassi.document_backend import DocumentSchema, DocumentKey, DocumentDraft
-from yadinassi.register_backend import InformationRegisterSchema, RegisterKey, RegisterDraft
+    FieldSchema, TabularSectionSchema, TabularSectionRows, TabularRow)
+from yadinassi.configuration.configuration_xml import ConfigurationImport, ConfigurationFile
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _schema, _schema_data, _json, _View
+from yadinassi.db.document.document_backend import DocumentSchema, DocumentKey, DocumentDraft
+from yadinassi.db.registers.register_backend import InformationRegisterSchema, RegisterKey, RegisterDraft
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
 
@@ -207,15 +207,7 @@ class SQLiteHierarchyTests(unittest.TestCase):
         finally:tx.close()
         self.assertEqual(self.read(item.key).parent,a.key);self.assertEqual(self.read(item.key).revision,rev)
 
-    def test_receipt_binds_parent_and_kind(self):
-        root=self.draft(folder=True);self.save(root)
-        operation=uuid4();draft=self.draft(parent=root.key);outcome=self.save(draft,operation=operation)
-        self.assertEqual(self.backend.resolve_write_outcome(operation,draft),outcome)
-        for changed in (replace(draft,parent=None),replace(draft,is_folder=True)):
-            with self.subTest(changed=changed),self.assertRaisesRegex(BackendError,'conflict'):
-                self.backend.resolve_write_outcome(operation,changed)
-
-    def test_uncertain_commit_recovers_exact_parent_intent(self):
+    def test_uncertain_commit_requires_fresh_read_of_parent(self):
         root=self.draft(folder=True);self.save(root)
         operation=uuid4();draft=self.draft(parent=root.key)
         tx=self.backend.begin_write(operation)
@@ -223,19 +215,16 @@ class SQLiteHierarchyTests(unittest.TestCase):
             tx.create(draft);tx._connection=FaultConnection(tx._connection,commit_fault='after')
             with self.assertRaisesRegex(BackendError,'uncertain_commit'):tx.commit()
         finally:tx.close()
-        self.assertIsNotNone(self.backend.resolve_write_outcome(operation,draft))
-        with self.assertRaisesRegex(BackendError,'conflict'):self.backend.resolve_write_outcome(operation,replace(draft,parent=None))
         self.assertEqual(self.read(draft.key).parent,root.key)
 
-    def test_batch_receipts_bind_each_ordered_hierarchy_intent(self):
+    def test_batch_outcomes_match_each_persisted_hierarchy_record(self):
         op=uuid4();a=self.draft(folder=True);b=self.draft(parent=a.key)
         tx=self.backend.begin_write(op)
         try:tx.create(a);tx.create(b);outcomes=tx.commit_outcomes()
         finally:tx.close()
-        requests=(CatalogWriteRequest(a),CatalogWriteRequest(b))
-        self.assertEqual(self.backend.resolve_write_outcomes(op,requests),outcomes)
-        with self.assertRaisesRegex(BackendError,'conflict'):
-            self.backend.resolve_write_outcomes(op,(requests[0],CatalogWriteRequest(replace(b,parent=None))))
+        for draft, outcome in zip((a,b),outcomes,strict=True):
+            saved=self.read(draft.key)
+            self.assertEqual((saved.parent,saved.code,saved.revision),(draft.parent,outcome.code,outcome.revision))
 
     def test_read_only_refuses_writes_but_reads_hierarchy(self):
         root=self.draft(folder=True);self.save(root);self.backend.close()

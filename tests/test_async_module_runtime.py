@@ -13,7 +13,7 @@ from yadinassi import Interpreter
 class AsyncModuleRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def tearDown(self):
         self.vm.close()
@@ -23,13 +23,15 @@ class AsyncModuleRuntimeTests(unittest.TestCase):
         self.vm.register_function('Signal', lambda: signal)
         activations = []
         contexts = []
-        original = Interpreter._new_server_activation
-        def create(owner):
-            activation = original(owner)
+        from yadinassi.execution.direct.python_direct_server import ServerBoundary
+        original = ServerBoundary.__init__
+
+        def track(activation, parent, **kwargs):
+            original(activation, parent, **kwargs)
             activations.append(weakref.ref(activation))
-            contexts.append(owner._scheduler.active_context)
-            return activation
-        with mock.patch.object(Interpreter, '_new_server_activation', create):
+            contexts.append(parent.vm._scheduler.active_context)
+
+        with mock.patch.object(ServerBoundary, '__init__', track):
             self.vm.execute('''
 Var x, effects;
 &AtServer
@@ -62,7 +64,7 @@ x=New Structure("N",1);effects=0;p=Main();
         self.assertTrue(all(ref() is None for ref in activations))
         for context in contexts:
             self.assertEqual(context.locals, {})
-            self.assertTrue(set(context.state) <= {self.vm})
+            self.assertEqual(context.state, {})
         self.assertIsNone(self.vm.locals)
         self.assertEqual(self.vm.execution_context, 'client')
 
@@ -122,8 +124,10 @@ a=Main("first");b=Main("second");
         self.assertEqual(len(calls), 2)
         for context in contexts:
             self.assertEqual(context.locals, {})
-            self.assertEqual(set(context.state), {self.vm})
-            self.assertEqual(context.state[self.vm]['_handled_errors'], [])
+            # Direct handlers keep error state on their boundary, not in
+            # the generic scheduler's interpreter-state cache.
+            self.assertEqual(context.state, {})
+        self.assertEqual(self.vm._handled_errors, [])
 
     def test_imported_modules_keep_client_state_and_fresh_server_state_separate(self):
         source = '''

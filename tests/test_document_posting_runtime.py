@@ -11,12 +11,13 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.database_transactions import current, execution, begin, rollback
-from yadinassi.configuration_posting import import_posting_configuration, PROFILE
-from yadinassi.document_posting import PostingLimitError
-from yadinassi.document_posting_values import DocumentWriteMode
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.database_transactions import current, execution, begin, rollback
+from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE
+from yadinassi.db.document.document_posting import PostingLimitError
+from yadinassi.db.document.document_posting_values import DocumentWriteMode
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from test_configuration_posting import wrap
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,7 +49,7 @@ class PostingRuntimeTests(unittest.TestCase):
         self.addCleanup(self.context.close)
         self.backend = self.context.backend
         self.lines = []
-        self.vm = Interpreter(database_context=self.context,output=self.lines.append)
+        self.vm = Interpreter(database_context=self.context,output=self.lines.append, allow_extensions=True)
         self.addCleanup(self.vm.close)
     def new(self,number=3,mode=None):
         mode = number if mode is None else mode
@@ -102,7 +103,7 @@ class PostingRuntimeTests(unittest.TestCase):
         self.vm.execute('BeginTransaction();A.Write(DocumentWriteMode.Posting);Try B.Write(DocumentWriteMode.Posting);Except EndTry;CommitTransaction();')
         self.assertFalse(a.is_new());self.assertTrue(b.is_new());self.assertEqual(self.rows(b),())
         self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(1,)])
-        self.assertEqual(self.sql('SELECT count(*) FROM recorder_movement_receipt'),[(1,)])
+        self.assertEqual(self.sql('SELECT count(*) FROM recorder_partition'),[(1,)])
 
     def test_outer_rollback_restores_posted_and_unlocks_document(self):
         obj=self.new(3)
@@ -113,11 +114,10 @@ class PostingRuntimeTests(unittest.TestCase):
         self.vm.execute('O.RegisterRecords.OwnedPostingRows.Clear();O.Number="4";O.Write();')
         self.assertFalse(obj.is_new())
 
-    def test_multiple_explicit_writes_have_distinct_root_children(self):
+    def test_multiple_explicit_writes_advance_partition_revision(self):
         obj=self.new(9);self.post()
         self.assertEqual(self.rows(obj)[0].values[1],Decimal(88))
-        self.assertEqual(self.sql('SELECT count(DISTINCT operation_id) FROM recorder_movement_receipt'),[(2,)])
-        self.assertEqual(self.sql('SELECT count(*) FROM unit_of_work_receipt'),[(1,)])
+        self.assertEqual(self.sql('SELECT revision FROM recorder_partition'),[(2,)])
 
     def test_movement_write_property_and_method_are_distinct(self):
         obj=self.new(3)
@@ -136,7 +136,7 @@ class PostingRuntimeTests(unittest.TestCase):
         self.vm.execute('A=O.Ref.GetObject();B=O.Ref.GetObject();A.AdditionalProperties.Insert("Trace","");B.AdditionalProperties.Insert("Trace","");A.Write();')
         with self.assertRaises(BSLRuntimeError):self.vm.execute('B.Write(DocumentWriteMode.Posting);')
         self.assertEqual(self.sql('SELECT revision FROM document_record'),[(2,)])
-        self.assertEqual(self.sql('SELECT count(*) FROM unit_of_work_receipt'),[(2,)])
+        self.assertTrue(self.backend.read_document_posted(self.vm.variables['o']._key))
 
     def assert_handler_control_denied(self,command):
         self.make('Procedure Posting(Cancel,Mode) '+command+' EndProcedure')
@@ -155,11 +155,21 @@ class PostingRuntimeTests(unittest.TestCase):
         self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(0,)])
 
     def test_parent_host_commit_registration_is_not_inherited(self):
-        self.make('Procedure Posting(Cancel,Mode) HostCommit(); EndProcedure')
+        self.make('Procedure Posting(Cancel,Mode) Message("entered"); HostCommit(); '
+                  'Message("after"); EndProcedure')
         self.vm.register_function('HostCommit',self.vm._commit_transaction)
-        self.new(3)
-        with self.assertRaises(BSLRuntimeError):self.post()
+        self.vm.variables['previous']=previous=self.new(2)
+        obj=self.new(3)
+        with self.assertRaisesRegex(BoundaryViolation,r'^unregistered host service: hostcommit$'):
+            self.vm.execute('BeginTransaction();Previous.Write();'
+                            'Try O.Write(DocumentWriteMode.Posting); Except Message("caught"); EndTry;')
+        self.assertEqual(self.lines,['entered'])
+        self.assertTrue(previous.is_new());self.assertTrue(obj.is_new())
+        self.assertFalse(obj.get_member('Posted'))
+        self.assertIsNone(self.backend._active)
         self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(0,)])
+        self.assertEqual(self.sql('SELECT count(*) FROM recorder_partition'),[(0,)])
+        self.vm.execute('BeginTransaction();RollbackTransaction();')
 
     def test_parent_bound_commit_callback_keeps_handler_origin_denied(self):
         self.make('Procedure Posting(Cancel,Mode) Message("attempt"); EndProcedure')
@@ -170,17 +180,28 @@ class PostingRuntimeTests(unittest.TestCase):
         self.vm.execute('BeginTransaction();RollbackTransaction();')
 
     def test_captured_handler_control_cannot_gain_later_parent_authority(self):
-        self.make('''Procedure Posting(Cancel,Mode)
-AdditionalProperties.Insert("Commit",CommitTransaction);
-AdditionalProperties.Insert("Rollback",RollbackTransaction);
-EndProcedure''')
-        self.new(3);self.post()
-        self.vm.execute('''BeginTransaction();
-Try O.AdditionalProperties.Commit(); Except CommitBlocked=True; EndTry;
-Try O.AdditionalProperties.Rollback(); Except RollbackBlocked=True; EndTry;
-RollbackTransaction();''')
-        self.assertTrue(self.vm.execute('CommitBlocked'))
-        self.assertTrue(self.vm.execute('RollbackBlocked'))
+        for member,service in (('Commit','CommitTransaction'),('Rollback','RollbackTransaction')):
+            with self.subTest(service=service):
+                self.make('Procedure Posting(Cancel,Mode) '
+                          'AdditionalProperties.Insert("Trace","entered");'
+                          f'AdditionalProperties.Insert("{member}",{service}); EndProcedure')
+                obj=self.new(3)
+                with self.assertRaisesRegex(BSLRuntimeError,
+                                            f'Переменная или функция не определена: {service}$'):
+                    self.post()
+                self.assertEqual(self.trace(obj),'entered')
+                self.assertFalse(obj.get_member('AdditionalProperties').property(member))
+                self.assertTrue(obj.is_new());self.assertFalse(obj.get_member('Posted'))
+                self.assertIsNone(self.backend._active)
+                self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(0,)])
+                self.vm.execute('BeginTransaction();O.Write();Blocked=False;'
+                                f'Try O.AdditionalProperties.{member}(); Except Blocked=True; EndTry;'
+                                'StillActive=TransactionActive();RollbackTransaction();')
+                self.assertTrue(self.vm.execute('Blocked And StillActive'))
+                self.assertTrue(obj.is_new());self.assertFalse(obj.get_member('Posted'))
+                self.assertIsNone(self.backend._active)
+                self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(0,)])
+                self.assertEqual(self.sql('SELECT count(*) FROM recorder_partition'),[(0,)])
 
     def test_caught_forbidden_control_does_not_change_owner(self):
         self.make('Procedure Posting(Cancel,Mode) Try CommitTransaction(); Except EndTry; EndProcedure')
@@ -197,6 +218,35 @@ If T.Count()<>1 Then Raise "transaction query"; EndIf;
 EndProcedure''')
         self.new(3);self.post()
         self.assertEqual(self.vm.execution_context,'client')
+
+    def test_handler_reads_unloaded_rows_and_columns_through_public_members(self):
+        self.make('''Procedure Posting(Cancel,Mode)
+Q=New Query("SELECT Number FROM Document.OwnedPostingDoc");
+T=Q.Execute().Выгрузить();
+If T.Количество() <> 1 Then Raise "table count"; EndIf;
+If T.Columns.Get(0).Name <> "Number" Then Raise "column"; EndIf;
+Row=T.Get(0);
+If Row.Number <> "3" Then Raise "stored number"; EndIf;
+Row.Number="local";
+AdditionalProperties.Insert("Trace", T.Get(0).Number);
+EndProcedure''')
+        obj=self.new(3)
+        self.post()
+        self.assertEqual(self.trace(obj), 'local')
+        self.assertEqual(self.sql('SELECT number FROM document_record'), [('3',)])
+
+    def test_handler_does_not_adopt_foreign_table_from_document_property(self):
+        from yadinassi.collections.value_tables import BSLValueTable
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        self.make('''Procedure Posting(Cancel,Mode)
+T=AdditionalProperties.ForeignTable;
+T.Count();
+EndProcedure''')
+        obj=self.new(3)
+        obj.get_member('AdditionalProperties').insert('ForeignTable', BSLValueTable())
+        with self.assertRaisesRegex(BoundaryViolation,'unbound posting receiver'):
+            self.post()
+        self.assertEqual(self.sql('SELECT count(*) FROM document_record'),[(0,)])
 
     def test_nested_document_write_is_not_an_authority_grant(self):
         self.make('Procedure Posting(Cancel,Mode) D=Documents.OwnedPostingDoc.CreateDocument();D.Number="nested";D.Write(); EndProcedure')
@@ -223,7 +273,7 @@ EndProcedure''')
     def test_budget_failure_cannot_be_caught_and_leaves_no_rows(self):
         self.make('Procedure Posting(Cancel,Mode) Try While True Do EndDo; Except EndTry; EndProcedure')
         obj=self.new(3)
-        with patch('yadinassi.document_posting.MAX_STEPS',50):
+        with patch('yadinassi.db.document.document_posting.MAX_STEPS',50):
             with self.assertRaises(PostingLimitError):self.post()
         self.assertTrue(obj.is_new());self.assertEqual(self.rows(obj),())
         self.vm.execute('BeginTransaction();RollbackTransaction();')
@@ -257,14 +307,14 @@ EndProcedure''')
 
     def test_movement_rows_are_bounded_before_buffer_growth(self):
         self.new(3)
-        with patch('yadinassi.document_posting_values.MAX_MOVEMENT_ROWS',1):
+        with patch('yadinassi.db.document.document_posting_values.MAX_MOVEMENT_ROWS',1):
             self.vm.execute('O.RegisterRecords.OwnedPostingRows.Add();')
             with self.assertRaises(BSLRuntimeError):self.vm.execute('O.RegisterRecords.OwnedPostingRows.Add();')
         self.assertEqual(self.vm.execute('O.RegisterRecords.OwnedPostingRows.Count()'),Decimal(1))
 
     def test_movement_bytes_are_bounded_before_buffer_growth(self):
         self.new(3)
-        with patch('yadinassi.document_posting_values.MAX_BUFFER_BYTES',1):
+        with patch('yadinassi.db.document.document_posting_values.MAX_BUFFER_BYTES',1):
             with self.assertRaises(BSLRuntimeError):self.vm.execute('O.RegisterRecords.OwnedPostingRows.Add();')
         self.assertEqual(self.vm.execute('O.RegisterRecords.OwnedPostingRows.Count()'),Decimal(0))
 
@@ -273,13 +323,12 @@ EndProcedure''')
         self.vm.execute('R=O.RegisterRecords.OwnedPostingRows.Add();O.RegisterRecords.OwnedPostingRows.Clear();')
         with self.assertRaises(BSLRuntimeError):self.vm.execute('R.Amount=4;')
 
-    def test_root_receipt_resolution_never_reexecutes_handlers(self):
+    def test_confirmed_commit_publishes_after_handlers_run_once(self):
         obj=self.new(9)
         with execution(self.backend):
             begin(self.backend)
             obj.write(DocumentWriteMode.POSTING)
-            tx=current(self.backend);op=tx.unit.operation_id;requests=tx.unit.requests
-            trace=self.trace(obj);tx.commit()
-        resolved=self.backend.resolve_unit_of_work(op,requests)
-        self.assertEqual(len(resolved),4);self.assertEqual(self.trace(obj),trace)
+            trace=self.trace(obj);current(self.backend).commit()
+        self.assertFalse(obj.is_new())
+        self.assertEqual(self.trace(obj),trace)
         self.assertEqual(self.rows(obj)[0].values[1],Decimal(88))

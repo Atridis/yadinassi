@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPTURE = {

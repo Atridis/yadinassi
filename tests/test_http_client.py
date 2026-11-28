@@ -7,13 +7,13 @@ import threading
 import unittest
 from unittest import mock
 
-from yadinassi import http_client as api
-from yadinassi.http_client import BSLHTTPRequest as Request, BSLHTTPConnection as Connection
-from yadinassi.file_io import BSLBinaryData as Binary, BSLTextEncoding
-from yadinassi.maps import BSLMap
+from yadinassi.http import http_client as api
+from yadinassi.http.http_client import BSLHTTPRequest as Request, BSLHTTPConnection as Connection
+from yadinassi.streams.file_io import BSLBinaryData as Binary, BSLTextEncoding
+from yadinassi.collections.maps import BSLMap
 from yadinassi.runtime import Interpreter
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLType
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLType
 
 
 class Handler(http.server.BaseHTTPRequestHandler):

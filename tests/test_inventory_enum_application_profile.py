@@ -6,13 +6,13 @@ from pathlib import Path
 import unittest
 
 from inventory_enum_application_fixture import source
-from yadinassi.configuration_inventory_enum_application import (
+from yadinassi.configuration.configuration_inventory_enum_application import (
     PROFILE, import_inventory_application, canonical, validated_core)
-from yadinassi.configuration_inventory_enums import canonical as core_canonical
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.catalog_backend import BackendError
-from yadinassi.inventory_host_operations import _source_configuration
-from yadinassi.configuration_profile_import import prepare_files, create_prepared
+from yadinassi.configuration.configuration_inventory_enums import canonical as core_canonical
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.demos.inventory_host_operations import _source_configuration
+from yadinassi.configuration.configuration_profile_import import prepare_files, create_prepared
 
 
 class InventoryEnumApplicationProfileTests(unittest.TestCase):
@@ -85,8 +85,8 @@ class InventoryEnumApplicationProfileTests(unittest.TestCase):
                 with self.assertRaises(BackendError): context.backend.launch_snapshot()
 
     def test_catalog_session_owns_enum_family_and_close_retires_it(self):
-        from yadinassi.inventory_application_sessions import InventoryCatalogSession
-        from yadinassi.inventory_enum_runtime import binding
+        from yadinassi.configuration.demos.inventory_application_sessions import InventoryCatalogSession
+        from yadinassi.configuration.demos.inventory_enum_runtime import binding
         config = self.config()
         schema = next(s for s in config.catalogs if s.name == 'Products')
         with tempfile.TemporaryDirectory() as folder:
@@ -101,8 +101,8 @@ class InventoryEnumApplicationProfileTests(unittest.TestCase):
                 with self.assertRaises(BackendError): bridge.key(value, field.target_enum_id)
 
     def test_document_session_uses_owned_enum_manager(self):
-        from yadinassi.inventory_application_sessions import InventoryDocumentSession
-        from yadinassi.inventory_enum_runtime import binding
+        from yadinassi.configuration.demos.inventory_application_sessions import InventoryDocumentSession
+        from yadinassi.configuration.demos.inventory_enum_runtime import binding
         config = self.config()
         schema = next(s for s in config.documents if s.name == 'Receipt')
         with tempfile.TemporaryDirectory() as folder:
@@ -127,7 +127,7 @@ class InventoryEnumApplicationProfileTests(unittest.TestCase):
 
     def test_foreign_configuration_hook_not_invoked_by_runtime(self):
         from types import SimpleNamespace
-        from yadinassi.inventory_enum_runtime import bind
+        from yadinassi.configuration.demos.inventory_enum_runtime import bind
         config=self.config()
         class Foreign:
             @property

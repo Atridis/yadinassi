@@ -7,9 +7,9 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from yadinassi.configuration_source import (import_source, load_source_directory,
+from yadinassi.configuration.configuration_source import (import_source, load_source_directory,
     load_source_archive, save_source_archive)
-from yadinassi.configuration_import import read_configuration_directory
+from yadinassi.configuration.configuration_import import read_configuration_directory
 
 
 CONFIG = b'''<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"><Configuration uuid="11111111-1111-1111-1111-111111111111"><Properties><Name>Example</Name></Properties><ChildObjects/></Configuration></MetaDataObject>'''
@@ -91,11 +91,11 @@ class GeneralSourceTests(unittest.TestCase):
             import_source({'Configuration.xml': TASK})
 
     def test_source_rejects_file_budget(self):
-        with patch('yadinassi.configuration_source.MAX_FILES', 1), self.assertRaises(ValueError):
+        with patch('yadinassi.configuration.configuration_source.MAX_FILES', 1), self.assertRaises(ValueError):
             import_source({'Configuration.xml': CONFIG, 'x.bsl': b''})
 
     def test_source_rejects_total_byte_budget(self):
-        with patch('yadinassi.configuration_source.MAX_TOTAL_BYTES', 1), self.assertRaises(ValueError):
+        with patch('yadinassi.configuration.configuration_source.MAX_TOTAL_BYTES', 1), self.assertRaises(ValueError):
             import_source({'Configuration.xml': CONFIG})
 
     def test_directory_and_archive_have_identical_snapshot(self):

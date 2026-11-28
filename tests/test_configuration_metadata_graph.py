@@ -5,14 +5,17 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.metadata import BSLMetadata, is_metadata_collection
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.metadata import BSLMetadata, is_metadata_collection
 from sqlite_catalog_fixture import configuration_files
 from test_document_configuration_xml import document_files
 from test_information_registers import register_files
@@ -21,11 +24,11 @@ from configuration_runtime_fixture import module_files
 
 
 class MetadataGraphTests(unittest.TestCase):
-    def runtime(self, files=None):
+    def runtime(self, files=None, *, allow_extensions=False):
         directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
         context = SQLiteDBContext.create(Path(directory.name)/'app.sqlite',import_configuration(files or configuration_files()))
         self.addCleanup(context.close)
-        vm = Interpreter(database_context=context); self.addCleanup(vm.close)
+        vm = Interpreter(allow_extensions=allow_extensions, database_context=context); self.addCleanup(vm.close)
         return vm, context
 
     def test_configuration_name_and_empty_presentation(self):
@@ -202,13 +205,17 @@ class MetadataGraphTests(unittest.TestCase):
 
     def test_common_module_registry_without_database(self):
         source='Function Fields() Export Return Metadata.Name; EndFunction'
-        app=ConfigurationApplication.from_files(module_files([('Tools',source,{})])); self.addCleanup(app.close)
+        files = module_files([('Tools', source, {})])
+        files.setdefault('Ext/ManagedApplicationModule.bsl', b'')
+        app = SourceApplication(import_source(files))
+        self.addCleanup(app.close)
+        app.start()
         vm=app.interpreter
         self.assertEqual(vm.execute('Metadata.CommonModules.Get(0).FullName()'),'ОбщийМодуль.Tools')
         self.assertTrue(vm.execute('Metadata.CommonModules.Contains(Metadata.FindByFullName("CommonModule.Tools"))'))
         vm.execute('N=0; For Each M In Metadata.CommonModules Do N=N+1; EndDo;')
         self.assertEqual(vm.execute('N'),Decimal(1))
-        self.assertEqual(vm.execute('Tools.Fields()'),app.configuration.name)
+        self.assertEqual(vm.execute('Tools.Fields()'),app.source.name)
 
     def test_current_generation_mismatch_is_rejected(self):
         vm,_=self.runtime(document_files());vm.execute('Metadata.Catalogs.Count()')
@@ -261,6 +268,65 @@ class MetadataGraphTests(unittest.TestCase):
         vm,_=self.runtime()
         vm.execute('&AtServerNoContext\nFunction Check() D=Metadata.Catalogs.Products.Attributes.Category.Type; Return D.ContainsType(Type("CatalogRef.Categories")); EndFunction')
         self.assertTrue(vm.execute('Check()'))
+
+    def test_server_can_read_but_not_transfer_live_metadata(self):
+        vm,_=self.runtime()
+        vm.execute("""
+&AtServerNoContext
+Function ReadName()
+ Items = Metadata.Catalogs;
+ First = Items.Get(0);
+ Full = First.FullName;
+ Return Full() + ":" + Items[1].Name;
+EndFunction
+&AtServerNoContext
+Function Receive(Val Item)
+ Message("before reading the received value");
+ Return Item.Name;
+EndFunction
+&AtServerNoContext
+Function ReturnMetadata()
+ Return Metadata.Catalogs.Products;
+EndFunction
+""")
+        self.assertEqual(vm.execute('ReadName()'),'Справочник.Categories:Products')
+        effects=[]
+        with patch.object(vm,'output',effects.append):
+            with self.assertRaisesRegex(BSLRuntimeError,'Межконтекстная передача'):
+                vm.execute('Receive(Metadata.Catalogs.Products)')
+            with self.assertRaisesRegex(BSLRuntimeError,'Межконтекстная передача'):
+                vm.execute('ReturnMetadata()')
+        self.assertEqual(effects,[])
+        self.assertEqual(vm.execute('ReadName()'),'Справочник.Categories:Products')
+
+    def test_local_server_to_nocontext_preserves_logical_metadata_provenance(self):
+        vm,_=self.runtime()
+        vm.execute("""&AtServerNoContext
+Function ReadFields()
+ Return Metadata.Catalogs.Products.Attributes.Count();
+EndFunction
+&AtServer
+Function Forward()
+ Return ReadFields();
+EndFunction""")
+        self.assertEqual(vm.execute('Forward()'),Decimal(5))
+
+    def test_server_rejects_foreign_metadata_graph(self):
+        vm,context=self.runtime()
+        independent=Interpreter(database_context=context)
+        self.addCleanup(independent.close)
+        independent.execute('Metadata.Catalogs.Products.Name')
+        vm.execute('&AtServerNoContext\nFunction ReadName() Return Metadata.Catalogs.Products.Name; EndFunction')
+        with patch.object(vm,'_metadata',independent._metadata):
+            with self.assertRaises(BoundaryViolation):vm.execute('ReadName()')
+        self.assertEqual(vm.execute('ReadName()'),'Products')
+
+    def test_plain_server_calls_do_not_enter_metadata_proof(self):
+        vm,_=self.runtime()
+        vm.execute('&AtServerNoContext\nFunction Twice(Val N) Return N+N; EndFunction')
+        with patch('yadinassi.execution.direct.python_direct_live_metadata.check',
+                   side_effect=AssertionError('unexpected metadata proof')):
+            self.assertEqual(vm.execute('Twice(9)'),Decimal(18))
 
     def test_source_bytes_not_changed_by_graph_read(self):
         vm,context=self.runtime(document_files())

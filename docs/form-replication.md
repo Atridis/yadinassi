@@ -1,6 +1,6 @@
 # Replicated form host API
 
-`yadinassi.form_replication` is an opt-in Python embedding API for a detached
+`yadinassi.forms.form_replication` is an opt-in Python embedding API for a detached
 client/server form pair. It is not a new CLI mode, network listener or native 1C
 compatibility claim. Existing `FormSession` remains a local shared-model session.
 The synthetic tests do not replace native platform observations.
@@ -98,13 +98,24 @@ Requests still have monotonically increasing identities and are never replayed.
 
 ## Fixed table replication
 
-The private pair protocol is `yadinassi-form/1`. Trusted host registration supplies
+The full-state private pair protocol is `yadinassi-form/1`. Trusted host registration supplies
 `FormTableSchema` objects; the browser cannot define columns. Tables carry bounded
 scalar cells, monotonic row identities and per-control selection. Client barriers
 send existing-cell and selection deltas. Only server BSL can add/delete rows.
 Detached admission validates the entire scalar/cell/selection candidate before
 installation, preserves surviving row objects and invalidates removed rows.
 An initially empty table schema inventory is also fixed after bootstrap.
+
+Paired hosts can explicitly use `yadinassi-form/2` (the built-in stdio launcher
+and non-posting, non-reference configuration tables). Opening always sends a
+full image. A later scalar barrier can omit the table payload only when the
+client acknowledges the last admitted image and neither replica changed the
+table. The generation is bound to the exact full image; normal request identity,
+revision, sequence, cell admission and selection checks still apply. A missing
+or stale acknowledgement sends a new full image, not another invocation.
+Reference-bearing tables and custom exchanges remain on full replication by
+default; old `/1` packets retain their strict grammar. Existing model-data
+budgets apply; framing limits count bytes and nodes actually transmitted.
 
 The [table guide](form-tables.md) documents the limits, package manifest, browser
 editing and durable create-only order example. Form collection/row handles cannot
@@ -130,7 +141,7 @@ PYTHONPATH=tests:scripts python -m unittest \
   test_execution_directives test_nocontext_runtime test_nocontext_async_runtime \
   test_scalar_context_copyback test_execution_context_date_null \
   test_ui_asset_provenance test_native_preprocessor_budget \
-  test_native_preprocessor_runtime_budget test_catalog_batch_receipts \
+  test_native_preprocessor_runtime_budget test_catalog_batch_outcomes \
   test_native_preprocessor_runtime -v
 ```
 

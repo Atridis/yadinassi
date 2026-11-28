@@ -12,14 +12,14 @@ can open the database, retain and verify an operator backup, then create and sav
 an explicit plan:
 
 ```sh
-python -m yadinassi.storage_migration_cli plan owned.sqlite --maintenance --plan-file upgrade.json
-python -m yadinassi.storage_migration_cli apply owned.sqlite --maintenance --plan-file upgrade.json
+python -m yadinassi.cli_support.storage_migration_cli plan owned.sqlite --maintenance --plan-file upgrade.json
+python -m yadinassi.cli_support.storage_migration_cli apply owned.sqlite --maintenance --plan-file upgrade.json
 ```
 
 The new format is 11. Its retained base layout is 2, 3, 4, 7, 8, 9 or 10;
-metadata, records, sequences, existing receipts and configuration archives are
-not rewritten. The additional profile, migration marker and common receipt
-infrastructure are created in one exclusive SQLite transaction. A document
+metadata, records, sequences and configuration archives are not rewritten.
+The additional profile and migration marker are created in one exclusive
+SQLite transaction. A document
 query-order index is installed for document-capable profiles; each catalog gets
 a canonical UUID-order index with its versioned comparator registered on all
 backend and migration connections. The plan lists
@@ -37,7 +37,7 @@ never overwrites an existing recovery plan. It does not make a backup. An
 `uncertain_commit` must be resolved while maintenance remains in force:
 
 ```sh
-python -m yadinassi.storage_migration_cli resolve owned.sqlite --maintenance --plan-file upgrade.json
+python -m yadinassi.cli_support.storage_migration_cli resolve owned.sqlite --maintenance --plan-file upgrade.json
 ```
 
 A matching version alone is not proof. The resolver checks the exact marker,
@@ -49,9 +49,9 @@ journal requires operator investigation.
 
 ```python
 from uuid import uuid4
-from yadinassi.transaction_backend import TransactionRequest
+from yadinassi.db.transaction_backend import TransactionRequest
 
-operation = uuid4()  # Retain this and the exact immutable requests for recovery.
+operation = uuid4()  # A correlation ID for this live unit of work only.
 requests = (
     TransactionRequest('catalog_create', catalog_draft),
     TransactionRequest('document_create', document_draft),
@@ -71,27 +71,18 @@ requires the expected revision. Register-set replacement uses its existing
 snapshot guard in the draft.
 
 The context owns one connection. Child port writes cannot commit it. Each stage
-has an atomic savepoint covering its SQL, numbering, journal and child receipt.
+has an atomic savepoint covering its SQL, numbering and staged outcomes.
 If the host catches a rejected stage, earlier successful stages remain pending;
 it can explicitly commit those or roll back the whole unit. Leaving the context
 without commit rolls back. There are at most 256 operations and a shared 16 MiB
-intent/outcome budget. Repeated writes to the same catalog/document identity,
+request budget. Repeated writes to the same catalog/document identity,
 and overlapping mutations of the same register, are explicitly refused in this
 initial contract. Multiple different documents/catalogs are supported.
 
-After an uncertain commit response, close the failed unit and recover with:
+If COMMIT returns an unknown outcome, close the unit and read the affected
+records with ordinary fresh reads. Neither the operation ID nor the staged
+requests can recover or replay that write. A missing or changed record is not
+proof that the earlier operation did not commit.
 
-```python
-outcomes = backend.resolve_unit_of_work(operation, requests)
-```
-
-The resolver verifies the ordered root binding and every typed child receipt.
-Changed/reordered requests do not confirm the batch. `None` means no common
-receipt was found in the admitted database snapshot; callers must not interpret
-an inaccessible database or a raised error as that result. Never retry only one
-child or overwrite the retained drafts with edited frontend buffers.
-
-The host must propagate outcomes to frontend objects **after** complete commit
-or resolution. This module does not change object `IsNew`, revisions, automatic
-numbers or pending-write state provisionally, and does not claim ambient BSL
-transaction compatibility.
+Propagate the typed in-memory outcomes only after a confirmed COMMIT. A staging
+ticket does not update a persistent revision, code, number or `IsNew` state.

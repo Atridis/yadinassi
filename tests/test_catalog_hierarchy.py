@@ -6,10 +6,10 @@ import unittest
 from uuid import uuid4
 from sqlite_catalog_fixture import configuration_files
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.queries import BSLQuery
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.query.queries import BSLQuery
 
 
 def hierarchy_files():
@@ -53,6 +53,27 @@ D=Catalogs.Products.CreateItem();D.Code="D";D.Write();''')
         q=BSLQuery(self.vm._catalogs,text,documents=self.vm._documents,information_registers=self.vm._information_registers)
         if root is not None:q.set_parameter('Root',root)
         return q.execute()._rows
+    def test_exact_lookup_checks_one_scalar_but_validates_parent_graph_on_miss(self):
+        from contextlib import closing
+        from unittest.mock import patch
+        import sqlite3
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+
+        self.seed()
+        original = _View._scalar
+        checked = []
+        def scalar(view, identity, row, *, schema):
+            checked.append(row[2])
+            return original(view, identity, row, schema=schema)
+        with patch.object(_View,'_scalar',scalar):
+            self.assertEqual(self.vm.execute('Catalogs.Products.FindByCode("C")'),self.vm.execute('C.Ref'))
+        self.assertEqual(checked,['C'])
+        with closing(sqlite3.connect(self.path)) as c, c:
+            c.execute('UPDATE catalog_hierarchy SET parent_id=? WHERE record_id=?',
+                      (str(uuid4()),str(self.vm.execute('D.Ref').reference_uuid)))
+        with self.assertRaisesRegex(BackendError,'integrity'):
+            self.vm._catalogs.get_index('Products').find_by_code('missing')
+
     def test_explicit_v10(self):self.assertEqual(self.context.backend.storage_version,10)
     def test_folder_and_item_defaults(self):
         self.vm.execute('F=Catalogs.Products.CreateFolder();I=Catalogs.Products.CreateItem();Message(F.IsFolder);Message(I.IsFolder);Message(F.Parent.IsEmpty());')
@@ -135,6 +156,6 @@ D=Catalogs.Products.CreateItem();D.Code="D";D.Write();''')
     def test_hierarchy_joins_derived_and_aggregation(self):
         self.seed();self.assertEqual(self.rows('SELECT COUNT(*) AS N FROM (SELECT Ref FROM Catalog.Products WHERE Ref IN HIERARCHY (&Root)) AS T',self.vm.execute('A.Ref'))[0][0],3)
     def test_readonly_reopen(self):
-        self.seed();self.context.close();self.context._backend=__import__("yadinassi.sqlite_catalog",fromlist=["SQLiteCatalogBackend"]).SQLiteCatalogBackend(self.path,read_only=True);v=Interpreter(database_context=self.context)
+        self.seed();self.context.close();self.context._backend=__import__("yadinassi.db.sqlite.sqlite_catalog",fromlist=["SQLiteCatalogBackend"]).SQLiteCatalogBackend(self.path,read_only=True);v=Interpreter(database_context=self.context)
         self.assertEqual(v.execute('Catalogs.Products.FindByCode("C").Parent.Code'),'B')
         with self.assertRaises((ValueError,BSLRuntimeError)):v.execute('Catalogs.Products.CreateFolder();')

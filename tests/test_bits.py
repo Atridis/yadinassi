@@ -137,7 +137,9 @@ class BitOperationTests(unittest.TestCase):
         self.assertEqual(self.vm.variables['recovered'], 3)
 
     def test_independent_registration_and_host_override(self):
-        self.vm.register_function('BitwiseNot', lambda value: 'override')
-        self.assertEqual(self.vm.execute('BitwiseNot(0)'), 'override')
-        self.assertEqual(self.vm.execute('ПобитовоеНе(0)'), 4294967295)
-        self.assertEqual(Interpreter().execute('BitwiseNot(0)'), 4294967295)
+        extended = Interpreter(allow_extensions=True)
+        self.addCleanup(extended.close)
+        extended.register_function('BitwiseNot', lambda value: 'override')
+        self.assertEqual(extended.execute('BitwiseNot(0)'), 'override')
+        self.assertEqual(extended.execute('ПобитовоеНе(0)'), 4294967295)
+        self.assertEqual(self.vm.execute('BitwiseNot(0)'), 4294967295)

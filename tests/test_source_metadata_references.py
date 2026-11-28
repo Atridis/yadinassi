@@ -2,8 +2,8 @@
 import unittest
 from decimal import Decimal
 from test_source_metadata import xml
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_metadata import SourceMetadataRoot
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_metadata import SourceMetadataRoot
 
 
 class SourceMetadataReferenceTests(unittest.TestCase):

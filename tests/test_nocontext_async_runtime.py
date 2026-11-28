@@ -5,12 +5,12 @@ import unittest
 from unittest import mock
 import weakref
 from yadinassi import Interpreter
-from yadinassi.async_runtime import AwaitRequest
+from yadinassi.application.async_runtime import AwaitRequest
 
 class NoContextAsyncRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.output=[]
-        self.vm=Interpreter(self.output.append)
+        self.vm=Interpreter(self.output.append, allow_extensions=True)
     def tearDown(self): self.vm.close()
 
     def test_spawn_copies_capability_and_await_restores_task_view(self):
@@ -54,11 +54,15 @@ P=Work(1);Q=Work(2);
 
     def test_escaping_nocontext_after_await_has_no_copyout_or_owner_retention(self):
         gate=self.vm._scheduler.new_pending();self.vm.register_function('Gate',lambda:gate)
-        refs=[];contexts=[];original=Interpreter._new_server_activation
-        def create(owner,**kwargs):
-            activation=original(owner,**kwargs);refs.append(weakref.ref(activation))
-            contexts.append(owner._scheduler.active_context);return activation
-        with mock.patch.object(Interpreter,'_new_server_activation',create):
+        from yadinassi.execution.direct.python_direct_server import ServerBoundary
+        refs=[];contexts=[];original=ServerBoundary.__init__
+
+        def track(activation, parent, **kwargs):
+            original(activation, parent, **kwargs)
+            refs.append(weakref.ref(activation))
+            contexts.append(parent.vm._scheduler.active_context)
+
+        with mock.patch.object(ServerBoundary, '__init__', track):
             self.vm.execute('''&AtServerNoContext
 Procedure N(X) X.N=99; Raise "no-context-error"; EndProcedure
 Async Function Work()
@@ -75,7 +79,7 @@ P=Work();
         for context in contexts:
             self.assertEqual(context.locals,{})
             self.assertEqual(context.module_context_stack,[True])
-            self.assertTrue(set(context.state)<={self.vm})
+            self.assertEqual(context.state,{})
         self.assertTrue(self.vm._has_module_context)
 
     def test_initializer_failure_then_nocontext_after_await_recovers(self):

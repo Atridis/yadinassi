@@ -3,21 +3,26 @@ from decimal import Decimal
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.values import BSLArray, BSLType
+from yadinassi.syntax.parser import parse
+from yadinassi.types.values import BSLType
 
 
 class DynamicNewTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter()
+        self.vm = Interpreter(allow_extensions=True)
+
+    def assert_array_representation(self, value):
+        self.assertIs(type(value), list)
 
     def test_keyword_and_type_aliases(self):
         for keyword in ('Новый', 'New', 'нОвЫй', 'nEw'):
             for name in ('Массив', 'Array', 'мАсСиВ', 'aRrAy'):
                 with self.subTest(keyword=keyword, name=name):
-                    self.assertIsInstance(self.vm.execute(f'{keyword}("{name}")'), BSLArray)
-                    self.assertIsInstance(self.vm.execute(f'{keyword}(Type("{name}"))'), BSLArray)
+                    self.assert_array_representation(self.vm.execute(f'{keyword}("{name}")'))
+                    self.assert_array_representation(self.vm.execute(f'{keyword}(Type("{name}"))'))
 
     def test_empty_mutable_collections(self):
         for name in ('Array', 'Structure', 'Map'):
@@ -43,6 +48,19 @@ class DynamicNewTests(unittest.TestCase):
                 with self.assertRaises(BSLError):
                     self.vm.execute('New(kind)')
 
+    def test_type_of_direct_collection_representations(self):
+        for expression, expected in (
+                ('New Array', BSLType.ARRAY),
+                ('New Map', BSLType.MAP),
+                ('New ValueList', BSLType.VALUE_LIST),
+                ('ListValue.Add(1)', BSLType.VALUE_LIST_ITEM)):
+            for allow_extensions in (False, True):
+                with self.subTest(expression=expression, allow_extensions=allow_extensions):
+                    vm = Interpreter(allow_extensions=allow_extensions)
+                    self.addCleanup(vm.close)
+                    vm.execute('ListValue = New ValueList;')
+                    self.assertEqual(vm.execute(f'TypeOf({expression})'), expected)
+
     def test_constructor_parameter_array_and_multidimensional_shape(self):
         self.vm.execute('args = New Array; args.Add(2); args.Add(3); x = New(Type("Array"), args); '
                         'x[0][1] = "Я😀";')
@@ -51,6 +69,31 @@ class DynamicNewTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('x[0][1]'), 'Я😀')
         self.assertIsNone(self.vm.execute('x[1][1]'))
         self.assertEqual(self.vm.execute('args[0]'), Decimal(2))
+
+    def test_published_native_argument_array_is_read_without_python_hooks(self):
+        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+
+        class HostArray(list):
+            def __iter__(self):
+                raise AssertionError("host iteration")
+
+        source = 'New("Array", Args).Count()'
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                vm.execute('Args = New Array; Args.Add(3);')
+                self.assertIs(type(vm.variables['args']), PlainArray)
+                plan = vm.prepare_program(parse(source)) if prepared else None
+
+                def run():
+                    return vm.execute_prepared(plan) if prepared else vm.execute(source)
+
+                with (patch.object(PlainArray, '__iter__', side_effect=AssertionError("patched iteration")),
+                      patch.object(PlainArray, '__len__', side_effect=AssertionError("patched length"))):
+                    self.assertEqual(run(), Decimal(3))
+                vm.variables['args'] = HostArray([Decimal(3)])
+                self.assertEqual(run(), Decimal(0))
 
     def test_structure_values_keep_references(self):
         self.vm.execute('child = New Array; args = New Array; args.Add("Имя,Данные"); '

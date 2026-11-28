@@ -7,12 +7,12 @@ from unittest.mock import patch
 
 import test_sqlite_catalog_sections as fixtures
 from test_sqlite_catalog_sections import ConnectionFault
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     BackendError, CatalogComparison, CatalogOrder, CatalogPredicate,
     CatalogScanRequest, CatalogSectionPage, CatalogSectionRecord, CatalogKey,
     CatalogDraft, TabularRow, TabularSectionRows,
 )
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class CatalogSectionScanTests(unittest.TestCase):
@@ -177,14 +177,14 @@ class CatalogSectionScanTests(unittest.TestCase):
         assignments = (
             ('row_id', 'not-a-uuid'), ('row_id', str(uuid4()).upper()),
             ('row_id', str(UUID(int=0))), ('row_number', 9),
-            (self.field(1), 'NaN'), (self.field(1), '1.001'),
+            (self.field(1), 'NaN'), (self.field(1), 10**12),
             (self.field(3), 'not-a-date'), (self.field(4), str(uuid4())),
         )
         for column, value in assignments:
             previous = self.sql('SELECT '+column+' FROM '+self.table()+' WHERE owner_id=? AND row_number=2',
                                 (str(bad.key.record_id),))[0][0]
             self.sql('UPDATE '+self.table()+' SET '+column+'=? WHERE owner_id=? AND row_number=2',
-                     (value, str(bad.key.record_id)))
+                     (value, str(bad.key.record_id)), corrupt=True)
             view = self.backend.begin_read()
             try:
                 with self.subTest(column=column, value=value), self.assertRaises(BackendError):
@@ -212,7 +212,7 @@ class CatalogSectionScanTests(unittest.TestCase):
             return connection.execute(sql, parameters)
         view._connection = ConnectionFault(view._connection, guard)
         try:
-            with patch('yadinassi.sqlite_catalog.'+limit, value):
+            with patch('yadinassi.db.sqlite.sqlite_catalog.'+limit, value):
                 with self.assertRaises(BackendError):
                     self.scan(view, CatalogScanRequest(page_size=1), section)
         finally: view.close()

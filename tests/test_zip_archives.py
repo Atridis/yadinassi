@@ -11,13 +11,16 @@ from unittest import mock
 import zipfile
 
 from yadinassi import Interpreter
-from yadinassi.binary_streams import BSLMemoryStream, BSLPositionInStream, BSLBinaryDataBuffer
-from yadinassi.zip_archives import (BSLZipFileReader as Reader, BSLZipFileWriter as Writer,
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.syntax.parser import parse
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.streams.binary_streams import BSLMemoryStream, BSLPositionInStream, BSLBinaryDataBuffer
+from yadinassi.streams.zip_archives import (BSLZipFileReader as Reader, BSLZipFileWriter as Writer,
     BSLZIPStorePathMode as Paths, BSLZIPSubDirProcessingMode as Recurse,
     BSLZIPRestoreFilePathsMode as Restore, BSLZIPCompressionMethod as Method,
     BSLZIPCompressionLevel as Level, BSLFileNamesEncodingInZipFile as Encoding,
     BSLZIPEncryptionMethod as Encryption, _preflight_zip)
-from yadinassi import zip_archives as module
+from yadinassi.streams import zip_archives as module
 
 
 ANCHORED = os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW') and hasattr(os, 'O_DIRECTORY')
@@ -165,6 +168,259 @@ class ZIPTests(unittest.TestCase):
         z=self.root/'z.zip';w=Writer(str(z));w.add(str(self.src/'a.bin'));w.write();out=[]
         Interpreter(out.append).execute(f'r=New ЧтениеZipФайла("{z}"); Message(TypeOf(r)=Type("ZipFileReader")); Message(r.Items[0].Name); For Each x In r.Items Do Message(x.UncompressedSize); EndDo; Try r.Items[0]=1; Except Message("readonly"); EndTry; r.Close();')
         self.assertEqual(out,['Да','a.bin','3','readonly'])
+    def test_direct_writer_file_and_binary_workflows(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        path = self.root / 'direct.zip'
+        vm.variables.update(path=str(path), source=str(self.src / 'a.bin'))
+        vm.execute("""
+            W=New ЗаписьZipФайла(Path,"","note",ZIPCompressionMethod.Copy);
+            W.Добавить(Source); W.Записать();
+            R=New ZipFileReader(Path); Comment=R.Comment; R.Close();
+            W=New ZipFileWriter; W.Add(Source);
+            Raw=W.GetBinaryData(); Raw.Write(Path);
+        """)
+        self.assertEqual(vm.variables['comment'], 'note')
+        with zipfile.ZipFile(path) as archive:
+            self.assertEqual(archive.read('a.bin'), b'a\x00\xff')
+
+    def test_direct_writer_rejects_foreign_values_and_stream_targets(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables.update(writer=Writer(), stream=BSLMemoryStream())
+        with mock.patch.object(module, '_write_file') as write:
+            with self.assertRaisesRegex(BoundaryViolation, 'foreign ZIP writer'):
+                vm.execute('Writer.Write();')
+            with self.assertRaisesRegex(BSLRuntimeError, 'ZIP: ожидается имя файла'):
+                vm.execute('W=New ZipFileWriter(Stream);')
+            write.assert_not_called()
+
+    def test_direct_owned_memory_stream_zip_roundtrip_and_readonly_binary_stream(self):
+        path = self.root / 'input.zip'
+        path.write_bytes(raw_zip([('binary.txt', b'a\x00\xff')]))
+        code = """
+            S=New MemoryStream; W=New ZipFileWriter;
+            W.Open(S); W.Add(Source); W.Write();
+            Written=S.Size(); S.Seek(0,PositionInStream.Begin);
+            R=New ZipFileReader; R.Open(S); Count=R.Items.Count(); R.Close();
+            D=New BinaryData(Path); Readonly=D.OpenStreamForRead();
+            R=New ZipFileReader(Readonly); Name=R.Items[0].Name; R.Close();
+            After=S.Size(); ReadAfter=Readonly.Size();
+            Try W.Open(Readonly); Except DirectionDenied=True; EndTry;
+        """
+        for prepared in False, True:
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                vm.variables.update(path=str(path), source=str(self.src/'a.bin'))
+                if prepared:
+                    vm.execute_prepared(vm.prepare(code))
+                else:
+                    vm.execute(code)
+                values = vm.variables
+                self.assertEqual(values['count'], 1)
+                self.assertEqual(values['name'], 'binary.txt')
+                self.assertEqual(values['written'], values['after'])
+                self.assertEqual(values['readafter'], path.stat().st_size)
+                self.assertIs(values['directiondenied'], True)
+                with zipfile.ZipFile(io.BytesIO(values['s']._state.data)) as written:
+                    self.assertEqual(written.read('a.bin'), b'a\x00\xff')
+
+    def test_direct_zip_does_not_borrow_other_family_or_unregistered_views(self):
+        owner, other = Interpreter(), Interpreter()
+        self.addCleanup(owner.close)
+        self.addCleanup(other.close)
+        owner.execute('S=New MemoryStream; View=S.GetReadonlyStream();')
+        other.variables.update(s=owner.variables['s'], view=owner.variables['view'])
+        for statement in ('R=New ZipFileReader(S);', 'W=New ZipFileWriter(S);',
+                          'R=New ZipFileReader(View);'):
+            with self.subTest(statement=statement), self.assertRaisesRegex(BSLRuntimeError, 'имя файла'):
+                other.execute(statement)
+        with self.assertRaisesRegex(BSLRuntimeError, 'имя файла'):
+            owner.execute('R=New ZipFileReader(View);')
+
+    def test_direct_zip_revalidates_retained_memory_target_before_writing(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables['source'] = str(self.src/'a.bin')
+        vm.execute('S=New MemoryStream; W=New ZipFileWriter(S); W.Add(Source);')
+        stream, writer = vm.variables['s'], vm.variables['w']
+        original = writer._target
+        with mock.patch.object(module, '_write_file') as write:
+            try:
+                writer._target = str(self.root/'not-created.zip')
+                with self.assertRaises(BoundaryViolation):
+                    vm.execute('W.Write();')
+            finally:
+                writer._target = original
+            write.assert_not_called()
+        self.assertEqual(stream.size(), 0)
+        vm.execute('S.Close(); Try W.Write(); Except Refused=True; EndTry;')
+        self.assertIs(vm.variables['refused'], True)
+        self.assertEqual(stream._state.data, bytearray())
+
+    def test_direct_zip_rejects_malformed_memory_before_archive_processing(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('S=New MemoryStream;')
+        state = vm.variables['s']._state
+        state.position = None
+        with mock.patch.object(module, '_preflight_zip') as preflight:
+            with self.assertRaises(BoundaryViolation):
+                vm.execute('R=New ZipFileReader(S);')
+            preflight.assert_not_called()
+        self.assertNotIn('r', vm.variables)
+
+    def test_memory_constructor_seal_uses_the_canonical_allocator(self):
+        from yadinassi.streams import binary_streams
+
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        with mock.patch.object(binary_streams, 'bytearray', create=True) as allocate:
+            with self.assertRaises(BoundaryViolation):
+                vm.execute('S=New MemoryStream;')
+            allocate.assert_not_called()
+        self.assertNotIn('s', vm.variables)
+
+    def test_custom_host_wrapper_operates_but_does_not_issue_zip_authority(self):
+        from yadinassi.types.values import HostFunction
+
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        original = HostFunction.__call__
+        calls = []
+
+        def wrapped(function, *arguments):
+            if function.function is BSLMemoryStream:
+                calls.append(function)
+            return original(function, *arguments)
+
+        with mock.patch.object(HostFunction, '__call__', wrapped):
+            vm.execute('S=New MemoryStream;')
+        self.assertEqual(len(calls), 1)
+        self.assertIs(type(vm.variables['s']), BSLMemoryStream)
+        with self.assertRaisesRegex(BSLRuntimeError, 'имя файла'):
+            vm.execute('W=New ZipFileWriter(S);')
+
+    def test_direct_reader_open_metadata_and_reject_reflection(self):
+        path = self.root / 'read.zip'
+        path.write_bytes(raw_zip([('entry.txt', b'abc')]))
+        unsafe = self.root / 'unsafe.zip'
+        unsafe.write_bytes(raw_zip([('../entry.txt', b'data')]))
+        code = """
+            R=New ZipFileReader;
+            Try R.Open(Unsafe); Except Rejected=True; EndTry;
+            R.Открыть(Path); Items=R.Элементы;
+            Entry=Items.Find("entry.txt");
+            Size=Entry.UncompressedSize; Count=Items.Count();
+            Try Items.__iter__(); Except ReflectionDenied=True; EndTry;
+            R.Закрыть();
+        """
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                vm.variables.update(path=str(path), unsafe=str(unsafe))
+                with mock.patch.object(BoundaryContext, '_check',
+                                       side_effect=AssertionError('unexpected Light check')):
+                    if prepared:
+                        vm.execute_prepared(vm.prepare_program(parse(code)))
+                    else:
+                        vm.execute(code)
+                self.assertEqual((vm.variables['size'], vm.variables['count']), (3, 1))
+                self.assertTrue(vm.variables['rejected'])
+                self.assertTrue(vm.variables['reflectiondenied'])
+
+    def test_direct_reader_extract_file_and_flatten_all(self):
+        archive = self.root / 'archive.zip'
+        archive.write_bytes(raw_zip([('nested/a.bin', b'abc'), ('b.bin', b'xyz')]))
+        single, flat = self.root / 'single', self.root / 'flat'
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables.update(path=str(archive), single=str(single), flat=str(flat))
+        vm.execute('R=New ZipFileReader(Path);')
+        one = 'R.Extract(R.Items[0], Single);'
+        all_entries = 'R.ИзвлечьВсе(Flat, ZIPRestoreFilePathsMode.DontRestore);'
+        with mock.patch.object(BoundaryContext, '_check',
+                               side_effect=AssertionError('unexpected Light check')):
+            if ANCHORED:
+                vm.execute(one + all_entries)
+                self.assertEqual((single / 'nested' / 'a.bin').read_bytes(), b'abc')
+                self.assertFalse((single / 'b.bin').exists())
+                self.assertEqual((flat / 'a.bin').read_bytes(), b'abc')
+                self.assertEqual((flat / 'b.bin').read_bytes(), b'xyz')
+            else:
+                for command in (one, all_entries):
+                    with self.assertRaises(BSLRuntimeError):
+                        vm.execute(command)
+                self.assertFalse(single.exists())
+                self.assertFalse(flat.exists())
+
+    def test_direct_extraction_refuses_foreign_and_stale_entries_before_writes(self):
+        archive = self.root / 'archive.zip'
+        archive.write_bytes(raw_zip([('a.bin', b'abc')]))
+        target = self.root / 'not-created'
+        vm, foreign = Interpreter(), Interpreter()
+        self.addCleanup(vm.close)
+        self.addCleanup(foreign.close)
+        for owner in (vm, foreign):
+            owner.variables.update(path=str(archive), target=str(target))
+            owner.execute('R=New ZipFileReader(Path); Entry=R.Items[0];')
+        vm.variables['foreign'] = foreign.variables['entry']
+        vm.execute('R.Close(); R.Open(Path);')
+        with mock.patch.object(module, '_write_file') as write:
+            with self.assertRaises(BoundaryViolation):
+                vm.execute('R.Extract(Foreign, Target);')
+            with self.assertRaises(BSLRuntimeError):
+                vm.execute('R.Extract(Entry, Target);')
+            write.assert_not_called()
+        self.assertFalse(target.exists())
+
+    def test_direct_reader_missing_registration_remains_fatal_before_arguments(self):
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        calls = []
+        vm.register_function('GetPath', lambda: calls.append('argument'))
+        del vm.types['zipfilereader']
+        with mock.patch.object(module, '_read_file') as read:
+            with self.assertRaisesRegex(BoundaryViolation, 'ZIP constructor requires canonical registration'):
+                vm.execute('Try R=New ZipFileReader(GetPath()); Except EndTry;')
+            read.assert_not_called()
+        self.assertEqual(calls, [])
+
+    def test_direct_reader_rechecks_constructor_before_file_access(self):
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        calls = []
+        factory = vm.types['zipfilereader']
+
+        def mutate():
+            factory.function = lambda *unused: calls.append('factory')
+            return str(self.root / 'not-opened.zip')
+
+        vm.register_function('Mutate', mutate)
+        with mock.patch.object(module, '_read_file') as read:
+            with self.assertRaisesRegex(BoundaryViolation, 'ZIP constructor binding changed'):
+                vm.execute('New ZipFileReader(Mutate())')
+            read.assert_not_called()
+        self.assertEqual(calls, [])
+
+    def test_direct_reader_rejects_foreign_values_without_hooks(self):
+        a, b = Interpreter(), Interpreter()
+        self.addCleanup(a.close)
+        self.addCleanup(b.close)
+        path = self.root / 'archive.zip'
+        path.write_bytes(raw_zip([('entry.txt', b'x')]))
+        a.variables['p'] = str(path)
+        a.execute('R=New ZipFileReader(P); Items=R.Items; Entry=Items[0];')
+        b.variables.update(r=a.variables['r'], items=a.variables['items'],
+                           entry=a.variables['entry'], host=Reader())
+        with mock.patch.object(Reader, '_open', side_effect=AssertionError('foreign hook')):
+            for expression in ('R.Comment', 'Items.Count()', 'Entry.Name', 'Host.Items'):
+                with self.subTest(expression=expression), self.assertRaisesRegex(
+                        BoundaryViolation, 'foreign ZIP reader or metadata'):
+                    b.execute(expression)
+
     def test_foreign_and_stale_entry_rejected(self):
         raw=raw_zip([('a',b'x')]);a=reader_bytes(raw);b=reader_bytes(raw);entry=a.get_member('Items').get(0)
         with self.assertRaises(TypeError):b.extract(entry,str(self.root/'out'))

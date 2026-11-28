@@ -13,9 +13,9 @@ from types import SimpleNamespace
 import webbrowser
 
 from .. import Interpreter
-from ..database_context import SQLiteDBContext
-from ..form_replication import ReplicatedFormServer
-from ..invocation import InvocationBinding
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.forms.form_replication import ReplicatedFormServer
+from yadinassi.execution.invocation import InvocationBinding
 from .form_app import FormController, FormProcess, PROTOCOL as FORM_PROTOCOL
 from .form_package import load_client, load_server
 from .local_app import LocalTransportError, LocalUIServer, _Handler
@@ -471,7 +471,7 @@ class ReferenceWorkspaceHandler(_Handler):
     methods = ('workspace.hello', 'workspace.list', 'workspace.open', 'workspace.form', 'workspace.close')
 
 
-from ..execution_policy import backend_entrypoint, UI_BACKENDS
+from yadinassi.execution.execution_policy import backend_entrypoint, UI_BACKENDS
 
 
 @backend_entrypoint

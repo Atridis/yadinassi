@@ -24,6 +24,40 @@ CONCURRENCY = (
 )
 
 
+LINUX_OWNERSHIP_STEP_NAME = '      - name: Verify strict Linux-owned SQLite client replay\n'
+LINUX_OWNERSHIP_CONDITION = "matrix.target == 'linux'"
+LINUX_OWNERSHIP_STEP = (
+    LINUX_OWNERSHIP_STEP_NAME
+    + '        if: ' + LINUX_OWNERSHIP_CONDITION + '\n'
+    "        shell: bash\n"
+    "        run: |\n"
+    "          python -I -B - <<'PY'\n"
+    "          from pathlib import Path\n"
+    "          import sys\n"
+    "\n"
+    "          root = Path.cwd().resolve(strict=True)\n"
+    "          sys.path.insert(0, str(root / 'scripts'))\n"
+    "          import native_1c_full_host as host\n"
+    "\n"
+    "          host.verify_client_interpreter(root, root / host.CLIENT_SOURCE,\n"
+    "                                         host.PREPROCESSOR_SOURCE_SHA256)\n"
+    "          PY\n"
+)
+LIGHT_PARTITION_STEP = (
+    '      - name: Run every light module (unknown tests included)\n'
+    '        id: partition\n'
+    '        run: python -m scripts.test_partition --tier light --report test-results/partition.json\n'
+)
+
+
+def assert_linux_ownership_step(case, steps):
+    # The exact verifier must be a direct, mandatory Linux step. The exact
+    # adjacent partition step has no condition or error bypass: GitHub runs it
+    # only on success, leaving nothing for stamp/upload if the verifier fails.
+    case.assertEqual(steps.count(LINUX_OWNERSHIP_STEP_NAME), 1)
+    case.assertIn(LINUX_OWNERSHIP_STEP + LIGHT_PARTITION_STEP + '      - ', steps)
+
+
 def assert_concurrency_contract(case, source):
     case.assertEqual(source.count(CONCURRENCY), 1)
     # Only a top-level block between the existing permissions and env sections.
@@ -31,6 +65,21 @@ def assert_concurrency_contract(case, source):
     remainder = source.replace(CONCURRENCY, '', 1)
     for forbidden in ('concurrency:', 'cancel-in-progress:'):
         case.assertNotIn(forbidden, remainder)
+
+
+def assert_error_bypass_contract(case, source):
+    """The known-divergence report is the only permitted nonblocking job."""
+    advisory = '\n  compatibility:\n'
+    case.assertEqual(source.count(advisory), 1)
+    block = re.split(r'\n  [a-z][a-z0-9-]*:\n', source.split(advisory, 1)[1], maxsplit=1)[0]
+    header = block.split('    steps:\n', 1)[0]
+    case.assertEqual(re.findall(r'(?m)^    continue-on-error: (.+)$', header), ['true'])
+    case.assertEqual(source.count('continue-on-error'), 1)
+    # Do not let an advisory result be a direct or transitive dependency
+    # of required validation/release. Cover flow and block needs lists.
+    for needs in re.findall(r'(?m)^    needs:[^\n]*(?:\n {6,}[^\n]*)*', source):
+        case.assertNotRegex(needs, r'(?<![\w-])compatibility(?![\w-])')
+    case.assertNotIn('needs.compatibility', source)
 
 
 def scheduling_example(event, run_id, attempt, pr=None):
@@ -69,11 +118,16 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
                              ['${{ fromJSON(needs.admission.outputs.' + output + ') }}'])
             self.assertNotRegex(header, r'(?m)^\s*(include|exclude)\s*:')
             # Only diagnostic stamp/upload may run after an ordinary failure.
-            conditions = re.findall(r'^        if: (.+)$', steps, re.M)
-            self.assertEqual(conditions, [] if job == 'build' else [
-                "${{ !cancelled() && (steps.partition.outcome == 'success' || steps.partition.outcome == 'failure') && hashFiles('test-results/partition.json') != '' }}",
-                "${{ !cancelled() && steps.stamp.outcome == 'success' }}",
-            ])
+            expected_conditions = []
+            if job == 'light':
+                assert_linux_ownership_step(self, steps)
+                expected_conditions.append(LINUX_OWNERSHIP_CONDITION)
+            if job != 'build':
+                expected_conditions.extend([
+                    "${{ !cancelled() && (steps.partition.outcome == 'success' || steps.partition.outcome == 'failure') && hashFiles('test-results/partition.json') != '' }}",
+                    "${{ !cancelled() && steps.stamp.outcome == 'success' }}",
+                ])
+            self.assertEqual(re.findall(r'^        if: (.+)$', steps, re.M), expected_conditions)
             if job != 'light':
                 self.assertIn("    if: needs.admission.outputs.heavy == 'true'\n", header)
         # Package and light consume the SAME matrix, including ARM on every tag.
@@ -82,12 +136,54 @@ class BuildWorkflowPolicyTests(unittest.TestCase):
         self.assertNotIn('inputs.', self.source)
         self.assertNotIn('--platforms', self.source)
 
+    def test_linux_ownership_cannot_be_moved_or_bypassed(self):
+        steps = self.source.split('\n  light:\n', 1)[1].split('\n  heavy:\n', 1)[0].split('    steps:\n', 1)[1]
+        mutations = {
+            'removed verifier': steps.replace(LINUX_OWNERSHIP_STEP, ''),
+            'verifier after partition': steps.replace(LINUX_OWNERSHIP_STEP + LIGHT_PARTITION_STEP,
+                                                       LIGHT_PARTITION_STEP + LINUX_OWNERSHIP_STEP),
+            'Linux verdict skips verifier': steps.replace(LINUX_OWNERSHIP_CONDITION, "matrix.target == 'windows'"),
+            'ignored verifier exit': steps.replace("<<'PY'\n", "<<'PY' || true\n"),
+            'nonblocking verifier': steps.replace(LINUX_OWNERSHIP_STEP_NAME,
+                                                   LINUX_OWNERSHIP_STEP_NAME + '        continue-on-error: true\n'),
+            'partition ignores verifier failure': steps.replace('        id: partition\n',
+                                 '        id: partition\n        if: ${{ always() }}\n'),
+        }
+        for label, candidate in mutations.items():
+            with self.subTest(mutation=label):
+                self.assertNotEqual(candidate, steps)
+                with self.assertRaises(AssertionError):
+                    assert_linux_ownership_step(self, candidate)
+
     def test_no_skip_paths_or_error_bypass(self):
         for forbidden in ('paths:', 'paths-ignore:', 'branches-ignore:',
-                          'tags-ignore:', 'continue-on-error:', 'pull_request_target:',
+                          'tags-ignore:', 'pull_request_target:',
                           'workflow_run:', 'pull_request.draft'):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, self.source)
+        assert_error_bypass_contract(self, self.source)
+
+    def test_error_bypass_is_rejected_outside_advisory_and_in_gate_dependencies(self):
+        flag = '    continue-on-error: true\n'
+        mutations = {
+            'required job': self.source.replace('\n  light:\n', '\n  light:\n' + flag),
+            'advisory step': self.source.replace(flag, '', 1).replace(
+                '      - name: Compare historical ValueTable ordering with 1C\n',
+                '      - name: Compare historical ValueTable ordering with 1C\n  ' + flag
+            ),
+            'verdict depends on advisory': self.source.replace(
+                'build, regex-python310, javascript]', 'build, regex-python310, javascript, compatibility]'
+            ),
+            'release depends on advisory': self.source.replace(
+                'needs: [build, regex-python310, verdict]',
+                'needs:\n      - build\n      - regex-python310\n      - verdict\n      - compatibility'
+            ),
+        }
+        for label, source in mutations.items():
+            with self.subTest(mutation=label):
+                self.assertNotEqual(source, self.source)
+                with self.assertRaises(AssertionError):
+                    assert_error_bypass_contract(self, source)
 
     def test_only_exact_top_level_first_attempt_pr_concurrency(self):
         assert_concurrency_contract(self, self.source)

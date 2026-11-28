@@ -4,9 +4,9 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.queries import BSLQuery
-from yadinassi.sqlite_catalog import _View
-from yadinassi.values import NULL
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.types.values import NULL
 import test_catalog_queries as fixtures
 
 
@@ -209,7 +209,7 @@ Message(З.ВыполнитьПакет()[1].Выгрузить()[0].Итог);�
     def test_manager_table_count_budget_rolls_back_package(self):
         manager=self.manager()
         self.rows('SELECT Amount INTO Original FROM Catalog.Products',manager)
-        with patch('yadinassi.query_packages.MAX_TABLES',1):
+        with patch('yadinassi.db.query.query_packages.MAX_TABLES',1):
             with self.assertRaises(ValueError):
                 self.rows('SELECT Amount INTO Added FROM Catalog.Products',manager)
         self.assertEqual(self.rows('SELECT COUNT(*) AS N FROM Original',manager),((Decimal(3),),))
@@ -218,24 +218,24 @@ Message(З.ВыполнитьПакет()[1].Выгрузить()[0].Итог);�
     def test_manager_row_cell_and_text_budgets_fail_atomically(self):
         for limit,value,projection in [('MAX_ROWS',2,'Amount'),('MAX_CELLS',2,'Amount'),('MAX_TEXT',2,'Text')]:
             manager=self.manager()
-            with self.subTest(limit=limit),patch('yadinassi.query_packages.'+limit,value):
+            with self.subTest(limit=limit),patch('yadinassi.db.query.query_packages.'+limit,value):
                 with self.assertRaises(ValueError):
                     self.rows('SELECT '+projection+' INTO Prepared FROM Catalog.Products',manager)
             with self.assertRaises(ValueError):self.rows('SELECT '+projection+' FROM Prepared',manager)
 
     def test_package_output_budget_counts_all_results(self):
-        with patch('yadinassi.query_packages.MAX_CELLS',5):
+        with patch('yadinassi.db.query.query_packages.MAX_CELLS',5):
             with self.assertRaises(ValueError):
                 self.query('SELECT Amount FROM Catalog.Products; SELECT Amount FROM Catalog.Products').execute_batch()
 
     def test_package_statement_budget_is_checked_before_scanning(self):
-        with patch('yadinassi.query_parser.MAX_STATEMENTS',2):
+        with patch('yadinassi.db.query.query_parser.MAX_STATEMENTS',2):
             with patch.object(_View,'scan_catalog_values',side_effect=AssertionError('must not scan')):
                 with self.assertRaises(ValueError):
                     self.query(';'.join(['SELECT Amount FROM Catalog.Products']*3)).execute_batch()
 
     def test_materialization_does_not_hide_source_overflow_behind_top(self):
-        with patch('yadinassi.query_parser.MAX_ROWS',2):
+        with patch('yadinassi.db.query.query_parser.MAX_ROWS',2):
             with self.assertRaises(ValueError):
                 self.rows('SELECT TOP 1 Amount INTO Prepared FROM Catalog.Products; SELECT Amount FROM Prepared')
         self.context.backend.begin_read().close()

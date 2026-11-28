@@ -69,18 +69,28 @@ class TotalHostBoundaryTests(host_fixtures.SyntheticFilesystemCase):
                         path.write_bytes(source);inputs[f'integrational_tests/tests/{name}.bsl']=host.digest(source)
                     outputs=dict.fromkeys(host.SCENARIOS,payload);outputs['collections']=native
                     capture=host.quarantine_outputs(root,outputs)
-                    report=host_fixtures.fixture(payload,input_hashes=inputs)[0]['report']['stage3']
+                    # Admit the same complete synthetic MAP_MODE context as the
+                    # semantic host tests; only the Total payload is malformed.
+                    context=host_fixtures.fixture(payload,input_hashes=inputs)[0]['report']
+                    report=context['stage3']
                     report['cases'][0].update(output_size=len(native),output_sha256=host.digest(native),message_count=1023)
-                    context={'stage3':report,'trusted_input_sha256':inputs}
+                    context.update(invocation_nonce=host_fixtures.NONCE,container_exit_code=0,
+                        image=host.APPROVED_IMAGE,platform='linux/amd64',native_target=host.LINUX_TARGET,
+                        comparison_mode=host.MAP_MODE,trusted_input_sha256=inputs,
+                        configured_timezone='Etc/UTC',configured_native_locale='ru_RU',
+                        container_cleanup_verified=True,native_cases_completed=True,
+                        native_transport_validated=True,native_evidence_accepted=True)
                     module=host.map_contract()
-                    with mock.patch.object(host,'validate_semantic_context'), mock.patch.object(host,'map_contract',return_value=module), \
+                    with mock.patch.object(host,'map_contract',return_value=module), \
                             mock.patch.object(module,'compare_collections',side_effect=AssertionError('semantic equality reached')) as equality:
                         result=host.compare_outputs(root,capture,report,inputs,
                             runner=lambda args,cwd,**limits:(0,actual if Path(args[-3]).stem=='collections' else payload,b''),
                             native_target=host.LINUX_TARGET,comparison_mode=host.MAP_MODE,runtime_evidence=context)
                     equality.assert_not_called()
-                    self.assertEqual(result['cases'][0]['failure_kind'],'tree_total_observation_invalid')
-                    self.assertEqual(result['cases'][0]['acceptance_status'],'rejected')
+                    row=result['cases'][0]
+                    self.assertEqual((row['status'],row['failure_kind'],row['acceptance_status']),
+                                     ('error','tree_total_observation_invalid','rejected'))
+                    self.assertIsNone(row['semantic'])
                     self.assertEqual(result['acceptance_status'],'rejected')
 
     def test_matching_bad_total_cannot_export_as_valid_artifact(self):

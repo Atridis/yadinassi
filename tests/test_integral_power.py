@@ -5,7 +5,7 @@ import sys
 import unittest
 
 from yadinassi.numeric.powers import integral_power
-from yadinassi.values import divide
+from yadinassi.types.values import divide
 
 
 class IntegralPowerTests(unittest.TestCase):

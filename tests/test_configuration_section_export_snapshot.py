@@ -13,12 +13,12 @@ from uuid import uuid4
 
 from test_configuration_export_snapshot import InterleavingConnection
 from test_sqlite_catalog_backend import configuration
-from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogKey, FieldSchema,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogDraft, CatalogKey, FieldSchema,
                                       TabularRow, TabularSectionRows, TabularSectionSchema)
-from yadinassi.configuration_xml import ConfigurationFile
-import yadinassi.sqlite_catalog as storage
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.configuration.configuration_xml import ConfigurationFile
+import yadinassi.db.sqlite.sqlite_catalog as storage
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class ConfigurationSectionExportSnapshotTests(unittest.TestCase):
@@ -52,7 +52,6 @@ class ConfigurationSectionExportSnapshotTests(unittest.TestCase):
             tx.commit()
         finally: tx.close()
         self.original = self.read()
-        self.receipt = self.backend.committed_operation(self.operation)
 
     def read(self):
         view = self.backend.begin_read()
@@ -73,24 +72,22 @@ class ConfigurationSectionExportSnapshotTests(unittest.TestCase):
                 try:
                     if writing: view.update(self.changed_draft(), self.original.revision)
                     expected = view.read_catalog(self.key)
-                    changes, intents = view._changes, view._intents
+                    changes, outcomes = view._changes, view._outcomes
                     budget = (view._section_write_bytes, view._section_write_rows)
                     before = self.path.read_bytes()
                     self.assertEqual(self.backend.export_configuration(), self.expected_files)
                     self.assertIs(self.backend._active, view)
                     self.assertFalse(view._closed)
                     self.assertIs(view._changes, changes)
-                    self.assertIs(view._intents, intents)
+                    self.assertIs(view._outcomes, outcomes)
                     self.assertEqual((view._section_write_bytes, view._section_write_rows), budget)
                     self.assertEqual(view.read_catalog(self.key), expected)
                     self.assertEqual(self.path.read_bytes(), before)
                     if writing:
                         revisions = view.commit()
                         self.assertEqual(revisions, (expected.revision,))
-                        self.assertEqual(self.backend.committed_operation(operation)[1], revisions)
                 finally: view.close()
                 self.assertEqual(self.read(), expected)
-        self.assertEqual(self.backend.committed_operation(self.operation), self.receipt)
         self.assertEqual(self.backend.export_configuration(), self.expected_files)
 
     def test_v3_interleave_source_owner_and_rows_cannot_bypass_export_preflight(self):
@@ -146,7 +143,6 @@ class ConfigurationSectionExportSnapshotTests(unittest.TestCase):
                 expected_rows = (replace(first, values=('interleaved row',) + first.values[1:]),) + before_card.tabular_sections[0].rows[1:]
                 self.assertEqual(changed.tabular_sections, (
                     replace(before_card.tabular_sections[0], rows=expected_rows), before_card.tabular_sections[1]))
-        self.assertEqual(self.backend.committed_operation(self.operation), self.receipt)
 
     def test_v3_failed_export_releases_only_export_connection_and_not_pending_view(self):
         with closing(sqlite3.connect(self.path)) as db, db:
@@ -155,12 +151,12 @@ class ConfigurationSectionExportSnapshotTests(unittest.TestCase):
         try:
             view.update(self.changed_draft(), self.original.revision)
             expected = view.read_catalog(self.key)
-            changes, intents = view._changes, view._intents
+            changes, outcomes = view._changes, view._outcomes
             with self.assertRaisesRegex(BackendError, 'integrity'): self.backend.export_configuration()
             self.assertIs(self.backend._active, view)
             self.assertFalse(view._closed)
             self.assertIs(view._changes, changes)
-            self.assertIs(view._intents, intents)
+            self.assertIs(view._outcomes, outcomes)
             self.assertEqual(view.read_catalog(self.key), expected)
         finally: view.rollback()
         with closing(sqlite3.connect(self.path, isolation_level=None, timeout=0)) as db:
@@ -171,4 +167,3 @@ class ConfigurationSectionExportSnapshotTests(unittest.TestCase):
         self.assertIsNone(self.backend._active)
         self.assertEqual(self.read(), self.original)
         self.assertEqual(self.backend.export_configuration(), self.expected_files)
-        self.assertEqual(self.backend.committed_operation(self.operation), self.receipt)

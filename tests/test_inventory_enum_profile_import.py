@@ -7,9 +7,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from yadinassi.configuration_profile_import import prepare_files,prepare_directory,create_prepared
-from yadinassi.configuration_inventory_enums import PROFILE
-from yadinassi.configuration_diagnostics import ImportRefusal
+from yadinassi.configuration.configuration_profile_import import prepare_files,prepare_directory,create_prepared
+from yadinassi.configuration.configuration_inventory_enums import PROFILE
+from yadinassi.configuration.configuration_diagnostics import ImportRefusal
 from yadinassi.runtime import Interpreter
 from test_configuration_inventory_enums import source,FIXTURE
 

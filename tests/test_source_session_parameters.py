@@ -4,11 +4,12 @@ import unittest
 from uuid import uuid5, NAMESPACE_URL
 
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
-from yadinassi.maps import BSLMap, BSLFixedMap
-from yadinassi.configuration_source_session import source_session_definitions
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
+from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap
+from yadinassi.configuration.configuration_source_session import source_session_definitions
 
 
 def declaration(name, body):
@@ -41,6 +42,29 @@ class SourceSessionTests(unittest.TestCase):
         _, output = self.run_source(package('M=New Map; M.Insert("key",42);\n'
             'SessionParameters.State=New FixedMap(M); Message(SessionParameters.State.Get("key"));'))
         self.assertEqual(output, ['42'])
+
+    def test_text_and_undefined_snapshot_stays_detached(self):
+        app, output = self.run_source(package("""
+            M = New Map; M.Insert("key", 42); M.Insert(Undefined, 7);
+            SessionParameters.State = New ФиксированноеСоответствие(M);
+            M.Insert("key", 99); M.Insert(Undefined, 100);
+            Message(SessionParameters.State.Get("key"));
+            Message(SessionParameters.State.Get(Undefined));
+        """))
+        self.assertEqual(output, ['42', '7'])
+        self.assertIs(type(app.session_parameters._values['state']), BSLFixedMap)
+
+    def test_non_text_source_and_standalone_keep_plain_lookup(self):
+        _, output = self.run_source(package("""
+            M = New Map; M.Insert(1, "number");
+            Fixed = New FixedMap(M); Message(Fixed.Get(True) = Undefined);
+            Message(Fixed.Get(1));
+        """))
+        self.assertEqual(output, ['Да', 'number'])
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('M=New Map; M.Insert("key",42); F=New FixedMap(M);')
+        self.assertIs(type(vm.variables['f']), PlainFixedMap)
 
     def test_dot_and_index_share_value(self):
         _, output = self.run_source(package('M=New Map; M.Insert("key",42);\n'
@@ -141,8 +165,12 @@ class SourceSessionTests(unittest.TestCase):
             'CommonModules/Helpers/Ext/Module.bsl': b'Function Value() Export\nMessage("compute"); M=New Map; M.Insert("key",42); Return New FixedMap(M);\nEndFunction'})
 
     def test_same_side_cached_fixed_map_is_reused(self):
-        _, output = self.run_source(self.cached_source())
-        self.assertEqual(output, ['compute', '42', '42'])
+        _, output = self.run_source(self.cached_source(body="""
+            First = Helpers.Value(); Second = Helpers.Value();
+            Message(First.Get("key")); Message(Second.Get("key"));
+            Message(First = Second);
+        """))
+        self.assertEqual(output, ['compute', '42', '42', 'Да'])
 
     def test_session_reuse_survives_next_request(self):
         app, output = self.run_source(self.cached_source())
@@ -226,18 +254,18 @@ class SourceUnboundedStringSessionTests(unittest.TestCase):
         with self.assertRaises(BSLError):self.app('SessionParameters.State=42;').start()
 
     def test_old_profile_stays_closed(self):
-        from yadinassi.configuration_session_parameters import read_session_parameters
+        from yadinassi.configuration.configuration_session_parameters import read_session_parameters
         files={f.path:f.content for f in self.configuration('').files}
         with self.assertRaises(ValueError):read_session_parameters(files,['State'],set(),[])
 
     def test_resource_limit_does_not_truncate(self):
         import unittest.mock
-        with unittest.mock.patch('yadinassi.session_parameters._SOURCE_STRING_MAX_UNITS',4):
+        with unittest.mock.patch('yadinassi.application.session_parameters._SOURCE_STRING_MAX_UNITS',4):
             with self.assertRaisesRegex(BSLError,'resource limit'):
                 self.app('SessionParameters.State="abcde";').start()
 
     def test_utf16_resource_limit(self):
         import unittest.mock
-        with unittest.mock.patch('yadinassi.session_parameters._SOURCE_STRING_MAX_UNITS',3):
+        with unittest.mock.patch('yadinassi.application.session_parameters._SOURCE_STRING_MAX_UNITS',3):
             with self.assertRaisesRegex(BSLError,'resource limit'):
                 self.app('SessionParameters.State="😀😀";').start()

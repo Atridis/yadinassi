@@ -4,8 +4,8 @@ import sqlite3
 import tempfile
 import unittest
 from test_source_manager_modules import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 
 class SourceExtensionTests(unittest.TestCase):

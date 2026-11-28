@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi import xml_io as x
+from yadinassi.formats.xml import xml_io as x
 
 
 class XMLReaderTests(unittest.TestCase):
@@ -39,6 +39,26 @@ class XMLReaderTests(unittest.TestCase):
         self.assertEqual(r.get_member('NodeType'),x.T.NONE)
         self.assertEqual(context.lookup_prefix('urn:p'),'p')
 
+    def test_attribute_indices_accept_direct_integers_in_all_accessors(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('R = New XMLReader; R.SetString("<r xmlns:p=""urn:p"" p:a=""я""/>"); R.Read();')
+        for prepared in (False, True):
+            run = (lambda source: vm.execute_prepared(vm.prepare(source))) if prepared else vm.execute
+            for expression, expected in (
+                ('AttributeName(0)', 'p:a'), ('AttributeLocalName(0)', 'a'),
+                ('AttributePrefix(0)', 'p'), ('AttributeNamespaceURI(0)', 'urn:p'),
+                ('AttributeValue(0)', 'я'), ('GetAttribute(0)', 'я'),
+                ('GetAttribute("a", "urn:p")', 'я'),
+            ):
+                with self.subTest(prepared=prepared, expression=expression):
+                    self.assertEqual(run('R.' + expression), expected)
+            for index in ('True', '0.5', '-1', '1'):
+                with self.subTest(prepared=prepared, index=index), self.assertRaises(BSLError):
+                    run('R.AttributeName(' + index + ')')
+                with self.subTest(prepared=prepared, index=index), self.assertRaises(BSLError):
+                    run('R.AttributeValue(' + index + ')')
+
     def test_skip_content_and_attribute_cursor(self):
         r=self.reader('<!--a--><?p v?><r><skip a="1"><deep/></skip><keep/></r>')
         self.assertEqual(r.move_to_content(),x.T.START)
@@ -49,6 +69,22 @@ class XMLReaderTests(unittest.TestCase):
         r.read(); self.assertEqual(r.get_member('Name'),'keep')
         r.skip(); r.read(); self.assertEqual(r.get_member('Name'),'r')
         self.assertEqual(r.get_member('NodeType'),x.T.END)
+
+    def test_prepared_string_reader_uses_concrete_methods_through_close(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        plan = vm.prepare('R=Новый ЧтениеXML; R.УстановитьСтроку("<a v=""7""/>"); '
+                          'Ok=R.Прочитать(); V=R.GetAttribute(0); R.Закрыть();')
+        self.assertIsNone(vm.execute_prepared(plan))
+        self.assertIs(vm.variables['ok'], True)
+        self.assertEqual(vm.variables['v'], '7')
+        self.assertIs(vm.variables['r'].get_member('NodeType'), x.T.NONE)
+        code = plan._plan.generated_source
+        for method in ('_bsl_proc_setstring', '_bsl_value_read',
+                       '_bsl_value_getattribute', '_bsl_proc_close'):
+            self.assertIn('r.' + method + '(', code)
+        self.assertFalse(hasattr(x.BSLXMLReader, '_bsl_proc_openfile'))
+        self.assertFalse(hasattr(x.BSLXMLReader, '_bsl_proc_openstream'))
 
     def test_settings_declaration_cdata_whitespace(self):
         settings=x.BSLXMLReaderSettings(ignore_declaration=False,ignore_whitespace=False,use_whitespace=True)
@@ -62,6 +98,36 @@ class XMLReaderTests(unittest.TestCase):
         r=self.reader('<a><![CDATA[x]]><!--c--><?p v?></a>',settings)
         self.assertTrue(r.read()); self.assertTrue(r.read()); self.assertEqual(r.get_member('NodeType'),x.T.TEXT)
         self.assertTrue(r.read()); self.assertEqual(r.get_member('NodeType'),x.T.END)
+
+    def test_standalone_cursor_names_match_archived_xml33(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        # Native XML33 XF-04 and XF-05.
+        self.assertEqual(vm.execute('R=New XMLReader; R.SetString("<p:r xmlns:p=""urn:p""/>"); '
+                                    'R.Read(); R.Name+":"+R.LocalName+":"+R.Prefix+":"+R.NamespaceURI;'),
+                         'p:r:r:p:urn:p')
+        self.assertEqual(vm.execute('R.SetString("<r xmlns=""urn:d""><x/></r>"); R.Read(); R.Read(); '
+                                    'R.Имя+":"+R.Префикс+":"+R.URIПространстваИмен;'),
+                         'x::urn:d')
+        with self.assertRaises(BSLError):
+            vm.execute('R.Name="changed";')
+        self.assertEqual(vm.execute('R.Name'), 'x')
+
+    def test_standalone_xml_surface_does_not_take_source_owned_reader(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.python_direct_xml_ownership import mark_source_owned
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        reader = self.reader('<r a="1"/>')
+        reader.read()
+        mark_source_owned(reader)
+        vm.variables['r'] = reader
+        before = dict(vars(reader))
+        for source in ('R.Name;', 'R.Read();', 'R.GetAttribute(0);',
+                       'R.SetString("<other/>");', 'R.Close();'):
+            with self.subTest(source=source), self.assertRaises(BoundaryViolation):
+                vm.execute(source)
+            self.assertEqual(vars(reader), before)
 
     def test_preserved_space_language_and_scopes(self):
         r=self.reader('<r xml:space="preserve" xml:lang="ru" xmlns:p="one"> <a xmlns:p="two"/> </r>')

@@ -2,20 +2,19 @@
 from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal, localcontext
-import json
 import sqlite3
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi.accumulation_movements import (
+from yadinassi.db.registers.accumulation_movements import (
     AccumulationDirection, AccumulationMovementRow, AccumulationRegisterSchema,
     AccumulationReplacement,
 )
-from yadinassi.catalog_backend import BackendError, FieldSchema
-from yadinassi.document_backend import DocumentKey
-from yadinassi.sqlite_accumulation_movements import (
-    ACCUMULATION_DDL, AccumulationMovementPort, _hash, _json, schema_data,
+from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema
+from yadinassi.db.document.document_backend import DocumentKey
+from yadinassi.db.sqlite.sqlite_accumulation_movements import (
+    ACCUMULATION_DDL, AccumulationMovementPort, _json, schema_data, accumulation_movement_ddls,
 )
 
 
@@ -31,7 +30,9 @@ class AccumulationStorageTests(unittest.TestCase):
             (FieldSchema(uuid4(), 'Item', 'string', (8,)),),
             (FieldSchema(uuid4(), 'Quantity', 'number', (10, 2, 'Any')),),
             (FieldSchema(uuid4(), 'Verified', 'boolean'),))
-        for ddl in ACCUMULATION_DDL:
+        from yadinassi.db.sqlite.sqlite_movement_layout import references
+        self.table, self.columns = references('accumulation', self.schema)
+        for ddl in (*ACCUMULATION_DDL,*accumulation_movement_ddls((self.schema,),None)):
             self.c.execute(ddl)
         self.c.execute('INSERT INTO document_schema VALUES(?)', (str(self.doc),))
         self.c.execute('INSERT INTO accumulation_register_schema VALUES(?,?)',
@@ -58,90 +59,70 @@ class AccumulationStorageTests(unittest.TestCase):
         rows = (self.row, replace(self.row, line_number=2, active=False,
                                 direction=AccumulationDirection.EXPENSE, resources=(Decimal('-0.00'),)))
         request = self.request(rows=rows)
-        outcome = self.port.replace(uuid4(), request)
+        outcome = self.port.replace(request)
         actual = self.port.read(self.reg, self.key)
         self.assertEqual(actual.rows, rows)
         self.assertIs(type(actual.rows[0].direction), AccumulationDirection)
-        self.assertEqual(actual.rows[1].resources[0].as_tuple(), Decimal('-0.00').as_tuple())
+        self.assertEqual(actual.rows[1].resources[0].as_tuple(), Decimal('0.00').as_tuple())
         self.assertEqual(actual.snapshot, outcome.snapshot)
         self.assertEqual(outcome.row_count, 2)
 
     def test_identical_dimensions_periods_payloads_are_occurrences_not_unique_keys(self):
         rows = (self.row, replace(self.row, line_number=2))
-        self.port.replace(uuid4(), self.request(rows=rows))
+        self.port.replace(self.request(rows=rows))
         other = self.other_key()
-        self.port.replace(uuid4(), self.request(other, rows))
+        self.port.replace(self.request(other, rows))
         self.assertEqual(self.port.read(self.reg, self.key).rows, rows)
         self.assertEqual(self.port.read(self.reg, other).rows, rows)
-        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM accumulation_movement').fetchone(), (4,))
+        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM ' + self.table).fetchone(), (4,))
 
-    def test_immutable_receipt_survives_later_partition_replacement(self):
-        request, operation = self.request(), uuid4()
-        outcome = self.port.replace(operation, request)
-        self.port.replace(uuid4(), self.request(rows=()))
-        self.assertEqual(self.port.resolve(operation, request), outcome)
-        self.assertEqual(self.port.resolve(operation, request), outcome)
-        self.assertEqual(self.port.read(self.reg, self.key).rows, ())
-
-    def test_receipt_resolution_does_not_read_current_corrupt_movements(self):
-        request, operation = self.request(), uuid4()
-        outcome = self.port.replace(operation, request)
-        self.c.execute("UPDATE accumulation_movement SET values_json='[]'")
-        self.assertEqual(self.port.resolve(operation, request), outcome)
+    def test_corrupt_movements_rejected_after_write(self):
+        request = self.request()
+        self.port.replace(request)
+        self.c.execute('PRAGMA ignore_check_constraints=ON')
+        self.c.execute('UPDATE ' + self.table + ' SET ' + self.columns[1] + '=?', ('wrong',))
         with self.assertRaises(BackendError):
             self.port.read(self.reg, self.key)
 
     def test_empty_partition_revision_prevents_aba(self):
         original = self.request(rows=())
-        self.port.replace(uuid4(), original)
-        self.port.replace(uuid4(), self.request(rows=()))
+        self.port.replace(original)
+        self.port.replace(self.request(rows=()))
         self.assertEqual(self.port.read(self.reg, self.key).revision, 2)
         with self.assertRaises(BackendError):
-            self.port.replace(uuid4(), original)
+            self.port.replace(original)
 
-    def test_stale_snapshot_cannot_replace_and_emits_no_receipt(self):
+    def test_stale_snapshot_cannot_replace(self):
         request = self.request()
-        self.port.replace(uuid4(), request)
-        operation = uuid4()
+        self.port.replace(request)
         with self.assertRaises(BackendError) as caught:
-            self.port.replace(operation, request)
+            self.port.replace(request)
         self.assertEqual(caught.exception.code, 'conflict')
-        self.assertIsNone(self.port.resolve(operation, request))
 
-    def test_duplicate_operation_never_replays_a_replacement(self):
-        request, operation = self.request(), uuid4()
-        outcome = self.port.replace(operation, request)
-        with self.assertRaises(BackendError):
-            self.port.replace(operation, self.request(rows=()))
-        self.assertEqual(self.port.read(self.reg, self.key).snapshot, outcome.snapshot)
-        self.assertEqual(self.port.resolve(operation, request), outcome)
-
-    def test_outer_rollback_removes_rows_partition_and_receipt(self):
-        request, operation = self.request(), uuid4()
-        self.port.replace(operation, request)
+    def test_outer_rollback_removes_rows_and_partition(self):
+        request = self.request()
+        self.port.replace(request)
         self.assertTrue(self.c.in_transaction)
         self.c.execute('ROLLBACK')
         self.c.execute('BEGIN')
         self.assertEqual(self.port.read(self.reg, self.key).revision, 0)
-        self.assertIsNone(self.port.resolve(operation, request))
 
     def test_missing_recorder_fk_rolls_back_only_new_partition(self):
-        original = self.port.replace(uuid4(), self.request())
+        original = self.port.replace(self.request())
         missing = replace(self.key, record_id=uuid4())
-        request, operation = self.request(missing), uuid4()
+        request = self.request(missing)
         with self.assertRaises(sqlite3.IntegrityError):
-            self.port.replace(operation, request)
+            self.port.replace(request)
         self.assertTrue(self.c.in_transaction)
         self.assertEqual(self.port.read(self.reg, self.key).snapshot, original.snapshot)
         self.assertEqual(self.port.read(self.reg, missing).revision, 0)
-        self.assertIsNone(self.port.resolve(operation, request))
 
     def test_requires_caller_transaction_and_never_creates_one(self):
         request = self.request()
         self.c.execute('ROLLBACK')
         for action in (lambda: self.port.read(self.reg, self.key),
                        lambda: self.port.scan(self.reg), lambda: self.port.describe(request),
-                       lambda: self.port.replace(uuid4(), request), lambda: self.port.resolve(uuid4(), request)):
+                       lambda: self.port.replace(request)):
             with self.subTest(action=action), self.assertRaises(BackendError) as caught:
                 action()
             self.assertEqual(caught.exception.code, 'closed')
@@ -174,20 +155,10 @@ class AccumulationStorageTests(unittest.TestCase):
         changed_database = AccumulationMovementPort(self.c, other_db, 1, (self.schema,))
         self.assertNotEqual(changed_database.read(self.reg, replace(self.key, database_id=other_db)).snapshot, snapshot)
 
-    def test_describe_binds_period_active_direction_and_groups(self):
-        request = self.request()
-        digest = self.port.describe(request)[0]
-        for row in (replace(self.row, period=datetime(2026, 1, 3)), replace(self.row, active=False),
-                    replace(self.row, direction=AccumulationDirection.EXPENSE),
-                    replace(self.row, dimensions=('B',)), replace(self.row, resources=(Decimal('8'),)),
-                    replace(self.row, attributes=(True,))):
-            with self.subTest(row=row):
-                self.assertNotEqual(self.port.describe(replace(request, rows=(row,)))[0], digest)
-
     def test_scan_is_bounded_raw_occurrences_including_empty_partitions(self):
         other = self.other_key()
-        self.port.replace(uuid4(), self.request())
-        self.port.replace(uuid4(), self.request(other, ()))
+        self.port.replace(self.request())
+        self.port.replace(self.request(other, ()))
         result = dict(self.port.scan(self.reg))
         self.assertEqual(result[self.key].rows, (self.row,))
         self.assertEqual(result[other].rows, ())
@@ -202,34 +173,75 @@ class AccumulationStorageTests(unittest.TestCase):
         with self.assertRaises(BackendError):
             self.port.read(self.reg, self.key)
 
-    def test_corrupt_scalar_shape_tags_or_noncanonical_json_is_rejected(self):
-        self.port.replace(uuid4(), self.request())
-        for raw in ('[]', '[[["s","A"]],[["n","7.250"]],[["b",false]]]',
-                    '[[["s","A"]],[["n",7.25]],[["b",false]]]',
-                    '[[["s","A"]],[["n","NaN"]],[["b",false]]]',
-                    '[[["s","A"]],[["n","7.25"]],[["b",0]]]',
-                    ' [[["s","A"]],[["n","7.25"]],[["b",false]]]'):
-            with self.subTest(raw=raw):
-                self.c.execute('UPDATE accumulation_movement SET values_json=?', (raw,))
+    def test_corrupt_physical_scalar_or_payload_size_is_rejected(self):
+        self.port.replace(self.request())
+        self.c.execute('PRAGMA ignore_check_constraints=ON')
+        for column, failed, original in (
+                (self.columns[0], 'too long string', 'A'),
+                (self.columns[1], 'NaN', 725),
+                (self.columns[1], 7.25, 725),
+                (self.columns[1], b'wrong', 725),
+                (self.columns[2], 2, 0),
+                ('payload_bytes', 0, None)):
+            if original is None:
+                original = self.c.execute('SELECT ' + column + ' FROM ' + self.table).fetchone()[0]
+            with self.subTest(column=column, failed=failed):
+                sql = 'UPDATE ' + self.table + ' SET ' + column + '=?'
+                self.c.execute(sql, (failed,))
                 with self.assertRaises(BackendError) as caught:
                     self.port.read(self.reg, self.key)
                 self.assertEqual(caught.exception.code, 'integrity')
+                self.c.execute(sql, (original,))
+
+    def test_sql_sees_physical_scalar_columns(self):
+        from yadinassi.db.sqlite.sqlite_movement_layout import references
+        self.port.replace(self.request())
+        text, number, boolean = self.columns
+        sql = f'SELECT typeof({text}),typeof({number}),{number},typeof({boolean}) FROM {self.table}'
+        self.assertEqual(self.c.execute(sql).fetchone(), ('text','integer',725,'integer'))
+        wide = replace(self.schema, identity=uuid4(), name='Wide',
+                       resources=(replace(self.schema.resources[0], identity=uuid4(),
+                                          qualifiers=(38, 2, 'Any')),))
+        for ddl in accumulation_movement_ddls((wide,), None):
+            self.c.execute(ddl)
+        self.c.execute('INSERT INTO accumulation_register_schema VALUES(?,?)',
+                       (str(wide.identity), _json(schema_data(wide))))
+        self.c.execute('INSERT INTO accumulation_register_document VALUES(?,?)',
+                       (str(wide.identity), str(self.doc)))
+        port = AccumulationMovementPort(self.c, self.db, 1, (wide,))
+        values = (Decimal('-99999999999999999999999999999999999.97'),
+                  Decimal('99999999999999999999999999999999999.98'))
+        rows = tuple(replace(self.row, line_number=i, resources=(value,))
+                     for i, value in enumerate(reversed(values), 1))
+        old = port.read(wide.identity, self.key)
+        outcome = port.replace(AccumulationReplacement(wide.identity, self.key, rows, old.snapshot))
+        actual = port.read(wide.identity, self.key)
+        self.assertEqual(actual.rows, rows)
+        self.assertEqual(actual.snapshot, outcome.snapshot)
+        table, (_, weight, _) = references('accumulation', wide)
+        sql = f'SELECT typeof({weight}),line_number FROM {table} ORDER BY {weight}'
+        self.assertEqual(self.c.execute(sql).fetchall(), [('blob',2),('blob',1)])
+        from yadinassi.db.registers.accumulation_movements import _sum_resource_vectors
+        with localcontext() as ambient:
+            ambient.prec = 2
+            self.assertEqual(_sum_resource_vectors(wide, tuple(r.resources for r in actual.rows), (1,1)),
+                             (Decimal('0.01'),))
 
     def test_corrupt_period_direction_active_or_line_is_rejected(self):
         request = self.request()
-        self.port.replace(uuid4(), request)
+        self.port.replace(request)
         self.c.execute('PRAGMA ignore_check_constraints=ON')
         for column, corrupt, original in (('period', '20260230000000', '20260102030405'),
                                           ('direction', 'Receipt', 'receipt'),
                                           ('active', 2, 1), ('line_number', 2, 1)):
             with self.subTest(column=column):
-                self.c.execute('UPDATE accumulation_movement SET ' + column + '=?', (corrupt,))
+                self.c.execute('UPDATE ' + self.table + ' SET ' + column + '=?', (corrupt,))
                 with self.assertRaises(BackendError):
                     self.port.read(self.reg, self.key)
-                self.c.execute('UPDATE accumulation_movement SET ' + column + '=?', (original,))
+                self.c.execute('UPDATE ' + self.table + ' SET ' + column + '=?', (original,))
 
     def test_orphaned_recorder_is_not_hidden_on_read_or_scan(self):
-        self.port.replace(uuid4(), self.request())
+        self.port.replace(self.request())
         self.c.execute('PRAGMA defer_foreign_keys=ON')
         self.c.execute('DELETE FROM document_record')
         with self.assertRaises(BackendError):
@@ -240,84 +252,38 @@ class AccumulationStorageTests(unittest.TestCase):
     def test_row_and_partition_payload_budgets_apply_before_writes(self):
         request = self.request()
         for constant in ('MAX_ROW_BYTES', 'MAX_BYTES'):
-            with self.subTest(constant=constant), patch('yadinassi.sqlite_accumulation_movements.' + constant, 1):
+            with self.subTest(constant=constant), patch('yadinassi.db.sqlite.sqlite_accumulation_movements.' + constant, 1):
                 with self.assertRaises(BackendError):
-                    self.port.replace(uuid4(), request)
+                    self.port.replace(request)
         self.assertEqual(self.port.read(self.reg, self.key).revision, 0)
-        self.assertEqual(self.c.execute('SELECT COUNT(*) FROM accumulation_movement_receipt').fetchone(), (0,))
 
-    def test_database_row_budget_rolls_back_rows_revision_and_receipt(self):
-        original = self.port.replace(uuid4(), self.request())
-        request, operation = self.request(rows=(self.row, replace(self.row, line_number=2))), uuid4()
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_DATABASE_ROWS', 1), self.assertRaises(BackendError):
-            self.port.replace(operation, request)
+    def test_database_row_budget_rolls_back_rows_and_revision(self):
+        original = self.port.replace(self.request())
+        request = self.request(rows=(self.row, replace(self.row, line_number=2)))
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_DATABASE_ROWS', 1), self.assertRaises(BackendError):
+            self.port.replace(request)
         self.assertEqual(self.port.read(self.reg, self.key).snapshot, original.snapshot)
-        self.assertIsNone(self.port.resolve(operation, request))
 
     def test_database_byte_budget_failure_keeps_previous_state(self):
-        request, operation = self.request(), uuid4()
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_DATABASE_BYTES', 1), self.assertRaises(BackendError):
-            self.port.replace(operation, request)
+        request = self.request()
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_DATABASE_BYTES', 1), self.assertRaises(BackendError):
+            self.port.replace(request)
         self.assertEqual(self.port.read(self.reg, self.key).revision, 0)
-        self.assertIsNone(self.port.resolve(operation, request))
 
     def test_partition_budget_includes_empty_partitions(self):
-        self.port.replace(uuid4(), self.request(rows=()))
+        self.port.replace(self.request(rows=()))
         other = self.other_key()
-        request, operation = self.request(other, ()), uuid4()
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_DATABASE_PARTITIONS', 1), self.assertRaises(BackendError):
-            self.port.replace(operation, request)
+        request = self.request(other, ())
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_DATABASE_PARTITIONS', 1), self.assertRaises(BackendError):
+            self.port.replace(request)
         self.assertEqual(self.port.read(self.reg, other).revision, 0)
-        self.assertIsNone(self.port.resolve(operation, request))
-
-    def test_receipt_budget_does_not_prune_or_mutate_old_receipts(self):
-        request, operation = self.request(), uuid4()
-        original = self.port.replace(operation, request)
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_DATABASE_RECEIPTS', 1), self.assertRaises(BackendError):
-            self.port.replace(uuid4(), self.request(rows=()))
-        self.assertEqual(self.port.resolve(operation, request), original)
-        self.assertEqual(self.port.read(self.reg, self.key).snapshot, original.snapshot)
 
     def test_read_and_scan_enforce_payload_budgets(self):
-        self.port.replace(uuid4(), self.request())
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_ROW_BYTES', 1), self.assertRaises(BackendError):
+        self.port.replace(self.request())
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_ROW_BYTES', 1), self.assertRaises(BackendError):
             self.port.read(self.reg, self.key)
-        with patch('yadinassi.sqlite_accumulation_movements.MAX_DATABASE_ROWS', 0), self.assertRaises(BackendError):
+        with patch('yadinassi.db.sqlite.sqlite_accumulation_movements.MAX_DATABASE_ROWS', 0), self.assertRaises(BackendError):
             self.port.scan(self.reg)
-
-    def test_missing_receipt_is_none_and_different_request_cannot_resolve(self):
-        request, operation = self.request(), uuid4()
-        self.assertIsNone(self.port.resolve(operation, request))
-        self.port.replace(operation, request)
-        changed = replace(request, rows=(replace(self.row, direction=AccumulationDirection.EXPENSE),))
-        with self.assertRaises(BackendError):
-            self.port.resolve(operation, changed)
-        with self.assertRaises(BackendError):
-            self.port.resolve(operation, self.request())
-
-    def test_corrupt_receipt_shapes_are_rejected(self):
-        request, operation = self.request(), uuid4()
-        self.port.replace(operation, request)
-        for raw in ('[]', 'null', 'x' * 4097, '[NaN]', '["accumulation_outcome_v1",NaN,0,0,0,0,0]', '{'):
-            with self.subTest(raw=raw[:20]):
-                self.c.execute('UPDATE accumulation_movement_receipt SET outcome_json=?', (raw,))
-                with self.assertRaises(BackendError) as caught:
-                    self.port.resolve(operation, request)
-                self.assertEqual(caught.exception.code, 'integrity')
-
-    def test_rebound_receipt_still_requires_the_original_snapshot_outcome(self):
-        request, operation = self.request(), uuid4()
-        self.port.replace(operation, request)
-        raw = self.c.execute('SELECT outcome_json FROM accumulation_movement_receipt').fetchone()[0]
-        data = json.loads(raw)
-        data[5] = '0' * 64
-        raw = _json(data)
-        digest = self.port.describe(request)[0]
-        self.c.execute('UPDATE accumulation_movement_receipt SET request_hash=?,outcome_json=?',
-                       (_hash([digest, raw]), raw))
-        with self.assertRaises(BackendError) as caught:
-            self.port.resolve(operation, request)
-        self.assertEqual(caught.exception.code, 'integrity')
 
     def test_decimal_round_trip_ignores_host_precision_and_traps(self):
         request = self.request()
@@ -326,13 +292,13 @@ class AccumulationStorageTests(unittest.TestCase):
             context.Emin, context.Emax = -1, 1
             for signal in context.traps:
                 context.traps[signal] = True
-            self.port.replace(uuid4(), request)
+            self.port.replace(request)
             self.assertEqual(self.port.read(self.reg, self.key).rows, request.rows)
 
     def test_accumulation_tables_do_not_touch_recorder_ir_storage(self):
         self.c.execute('CREATE TABLE recorder_movement(marker TEXT)')
         self.c.execute("INSERT INTO recorder_movement VALUES('unchanged')")
-        self.port.replace(uuid4(), self.request())
+        self.port.replace(self.request())
         self.assertEqual(self.c.execute('SELECT * FROM recorder_movement').fetchall(), [('unchanged',)])
-        columns = {row[1] for row in self.c.execute('PRAGMA table_info(accumulation_movement)')}
+        columns = {row[1] for row in self.c.execute('PRAGMA table_info(' + self.table + ')')}
         self.assertNotIn('dimension_key', columns)

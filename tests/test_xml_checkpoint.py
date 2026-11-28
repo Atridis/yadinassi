@@ -8,7 +8,7 @@ from integrational_tests.test_launcher import collect_scripts
 from yadinassi import Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse, parse_expression
-from yadinassi.values import BSLObject, HostFunction
+from yadinassi.types.values import BSLObject
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/values.bsl'
@@ -16,6 +16,11 @@ HELPERS_START = '// Нативный checkpoint скалярного XML.'
 BODY_START = '// Скалярный XML: наблюдения без заранее заданных ответов.'
 NULL_BODY = '// Значение, тип и настоящий прямой/обратный кодек.'
 FINAL = 'xml.checkpoint.complete: [ok]'
+XML_MANAGER_DECLARATIONS = 'Перем ОбработкаСтрокиXML, XMLStringProcessing;\n'
+XML_MANAGER_MODULE_ALIASES = '''
+ОбработкаСтрокиXML = ЭтотОбъект;
+XMLStringProcessing = ЭтотОбъект;
+'''
 
 
 def historical_source():
@@ -100,7 +105,7 @@ class XMLCheckpointTests(unittest.TestCase):
 
     def test_error_paths_do_not_hide_following_observations(self):
         output = []
-        vm = Interpreter(output=output.append)
+        vm = Interpreter(output=output.append, allow_extensions=True)
         vm.register_function('HostOnly', lambda: object())
         vm.execute(helpers() + '''
 НаблюдатьXML("missing", "NoSuchFunction()");
@@ -146,7 +151,7 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertIn('+ 0.9999', probes['date.write.near-carry'])
 
     def test_date_helper_keeps_delta_in_addition_to_coarser_codec(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute(helpers())
         sample = vm.execute('Date(2024,2,29,12,34,56) + 0.1234')
         calls_seen = []
@@ -161,7 +166,7 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertEqual(calls_seen[0][1], 'synthetic')
 
     def test_roundtrip_helper_observes_type_equality_and_nested_codec(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute(helpers())
         sample = Decimal('12.3400')
         seen = []
@@ -176,33 +181,35 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertEqual(result.get('Restored').get('Text'), 'synthetic')
 
     def test_control_and_unicode_inputs_are_bounded_and_output_as_codes(self):
-        vm = Interpreter()
-        vm.execute(helpers())
-        self.assertEqual(vm.execute('КодыXML(УправляющиеXML())').items,
+        plain = Interpreter()
+        self.addCleanup(plain.close)
+        plain.execute(helpers())
+        self.assertEqual(plain.execute('КодыXML(УправляющиеXML())'),
                          [Decimal(n) for n in (0, 1, 8, 9, 10, 11, 12, 13, 14, 31,
                                               32, 127, 132, 133, 134, 159, 160)])
-        self.assertEqual(vm.execute('КодыXML(ГраницыXML())').items,
+        self.assertEqual(plain.execute('КодыXML(ГраницыXML())'),
                          [Decimal(n) for n in (55295, 55357, 56832, 57344, 64976,
                                               65533, 65534, 65535, 55296, 65, 56320)])
-        self.assertEqual(vm.execute('КодыXML("")').items, [])
-        self.assertEqual(vm.execute('КодыXML("😀")').items, [Decimal(55357), Decimal(56832)])
-        # A host stub tests safe packaging only, not native XML validity semantics.
-        calls_seen = []
-        class SyntheticManager(BSLObject):
-            def get_member(self, name):
-                if name.casefold() not in ('удалитьнедопустимыесимволыxml',
-                                          'deletedisallowedxmlcharacters'):
-                    return super().get_member(name)
-                def observe(text, version):
-                    calls_seen.append((name, text, version))
-                    return '\t😀'
-                return HostFunction(name, observe)
-        manager = SyntheticManager()
-        vm.execute("Перем ОбработкаСтрокиXML, XMLStringProcessing;")
-        vm.variables['обработкастрокиxml'] = manager
-        vm.variables['xmlstringprocessing'] = manager
-        output = []
-        vm.output = output.append
+        self.assertEqual(plain.execute('КодыXML("")'), [])
+        self.assertEqual(plain.execute('КодыXML("😀")'), [Decimal(55357), Decimal(56832)])
+
+        output, calls_seen = [], []
+        vm = Interpreter(output=output.append, allow_extensions=True)
+        self.addCleanup(vm.close)
+        # Use ordinary exported BSL fixture methods and a registered recorder.
+        # This exercises packaging, not the real XML character-validity rules.
+        def observe(name, text, version):
+            calls_seen.append((name, text, version))
+            return '\t😀'
+        vm.register_function('ObserveCleanup', observe)
+        vm.execute(XML_MANAGER_DECLARATIONS + helpers() + '''
+Функция УдалитьНедопустимыеСимволыXML(Знач Текст, Знач Версия) Экспорт
+    Возврат ObserveCleanup("УдалитьНедопустимыеСимволыXML", Текст, Версия);
+КонецФункции
+Function DeleteDisallowedXMLCharacters(Val Text, Val Version) Export
+    Return ObserveCleanup("DeleteDisallowedXMLCharacters", Text, Version);
+EndFunction
+''' + XML_MANAGER_MODULE_ALIASES)
         vm.execute('НаблюдатьXML("synthetic", "ОчисткаXML(ГраницыXML(), ""1.1"")");')
         self.assertEqual(len(output), 1)
         self.assertNotIn('\t', output[0])
@@ -212,7 +219,7 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertEqual([entry[0] for entry in calls_seen],
                          ['УдалитьНедопустимыеСимволыXML', 'DeleteDisallowedXMLCharacters'])
         self.assertEqual([entry[2] for entry in calls_seen], ['1.1', '1.1'])
-        self.assertEqual(calls_seen[0][1], vm.execute('ГраницыXML()'))
+        self.assertEqual([entry[1] for entry in calls_seen], [plain.execute('ГраницыXML()')] * 2)
 
     def test_cleanup_api_is_deferred_before_native_module_compilation(self):
         routine = next(node for node in parse(source())
@@ -247,13 +254,16 @@ class XMLCheckpointTests(unittest.TestCase):
         self.assertEqual([call.arguments[0].value for call in deferred],
                          ['ОбработкаСтрокиXML.УдалитьНедопустимыеСимволыXML(Текст, Версия)',
                           'XMLStringProcessing.DeleteDisallowedXMLCharacters(Текст, Версия)'])
-        # A platform without this API must still reach subsequent observations.
+        # An admitted module without the two exported methods models an
+        # unavailable API, not a fatal attempt to call an unregistered host.
         output = []
         vm = Interpreter(output=output.append)
-        vm.execute("Перем ОбработкаСтрокиXML, XMLStringProcessing;")
-        vm.variables["обработкастрокиxml"] = BSLObject()
-        vm.variables["xmlstringprocessing"] = BSLObject()
-        vm.execute(helpers() + '''
+        self.addCleanup(vm.close)
+        vm.execute(XML_MANAGER_DECLARATIONS + helpers() + XML_MANAGER_MODULE_ALIASES)
+        module = vm.execute('ЭтотОбъект')
+        self.assertIs(vm.execute('ОбработкаСтрокиXML'), module)
+        self.assertIs(vm.execute('XMLStringProcessing'), module)
+        vm.execute('''
 НаблюдатьXML("unavailable", "ОчисткаXML(ГраницыXML(), ""1.0"")");
 НаблюдатьXML("following", "XMLString(True)");
 ''')
@@ -268,8 +278,8 @@ class XMLCheckpointTests(unittest.TestCase):
                          'ValueFromStringInternal(ValueToStringInternal(ОбработкаСтрокиXML))')
         output = []
         vm = Interpreter(output=output.append)
-        vm.execute(helpers())
         vm.execute("Перем ОбработкаСтрокиXML, XMLStringProcessing;")
+        vm.execute(helpers())
         # Host object intentionally has no supported internal codec. Both
         # observation errors are isolated, not replaced by a guessed record.
         vm.variables['xmlstringprocessing'] = BSLObject()

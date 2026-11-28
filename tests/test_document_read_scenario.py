@@ -3,8 +3,8 @@ import unittest
 from uuid import UUID
 from dataclasses import FrozenInstanceError
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.document_types import BSLDocumentType, BSLDocumentReference
-from yadinassi.serialization import value_to_string_internal
+from yadinassi.db.document.document_types import BSLDocumentType, BSLDocumentReference
+from yadinassi.formats.storage.serialization import value_to_string_internal
 
 class DocumentScenarioTests(unittest.TestCase):
     def test_unported_namespaces_fail_without_physical_access(self):

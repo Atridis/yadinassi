@@ -7,7 +7,7 @@ Two descendant-only probes were subsequently authenticated in run40469971658.
 import hashlib
 import unittest
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 from test_native_tree_find_measurement import (
     fragments, raw_source, SOURCE_SHA, CALLS_START, CALLS_END,
 )

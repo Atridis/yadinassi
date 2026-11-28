@@ -5,6 +5,7 @@ guard, alias and context tests below protect bounded local compatibility only;
 they are not additional observations of native 1C or claims about Windows.
 """
 from contextlib import nullcontext
+from functools import partial
 import hashlib
 from itertools import product
 import json
@@ -20,13 +21,16 @@ contract = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(contract)
 contract.SOURCE_SHA256 = '42c1fedddb8a689f3ba2ca6a241b1d19d38c0bea4da8a29e5934b3082a43fdfb'
 contract.RECORD_COUNT = 854
+# _records now binds its default at definition time. Keep the historical
+# frame count exact in both direct reads and compare_collections on this copy.
+contract._records = partial(contract._records, expected_count=contract.RECORD_COUNT)
 from yadinassi import BSLRuntimeError, Interpreter
-from yadinassi.native_targets import (
+from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342,
     current_native_target, target_context,
 )
-from yadinassi.structures import BSLFixedStructure, BSLStructure, fill_property_values
-from yadinassi.values import BSLArray
+from yadinassi.collections.structures import BSLFixedStructure, BSLStructure, fill_property_values
+from yadinassi.types.values import BSLArray
 from test_fill_exclude_checkpoint import CASES
 
 
@@ -124,6 +128,11 @@ class FillExcludeNativeRuntimeTests(unittest.TestCase):
         self.assertEqual(self.native['record_count'], 13)
         suffix = b''.join(record[1] for record in self.records[841:])
         self.assertEqual(hashlib.sha256(suffix).hexdigest(), SUFFIX_SHA256)
+        with self.assertRaisesRegex(contract._Reject, '^record_mismatch$'):
+            contract._records(self.native_bytes[:-len(self.records[-1][1])])
+        # The private historical framing must not change the live suite's count.
+        with self.assertRaisesRegex(current_contract._Reject, '^record_mismatch$'):
+            current_contract._records(self.native_bytes)
 
     def test_all_thirteen_records_and_states_come_from_real_output(self):
         self.assertEqual(len(self.native['records']), 13)

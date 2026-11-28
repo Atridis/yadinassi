@@ -1,4 +1,5 @@
 """The mixed grant does not alter durable write uncertainty or source fencing."""
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 import tempfile
@@ -6,14 +7,17 @@ import unittest
 from unittest.mock import patch
 
 from business_configuration_fixture import sources
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_business_profile import import_business_configuration
-from yadinassi.configuration_document import DocumentObjectSession, DocumentImage, DocumentRowImage
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import literal_date
-from yadinassi.errors import BSLError
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from test_catalog_commit_cleanup_recovery import FaultConnection
+from yadinassi.db.document.document_backend import DocumentSelection
+from yadinassi.configuration.configuration_business_profile import import_business_configuration
+from yadinassi.configuration.configuration_document import DocumentObjectSession, DocumentImage, DocumentRowImage
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.temporal.dates import literal_date
+from yadinassi.types.errors import BSLError
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 class BusinessRecoveryTests(unittest.TestCase):
@@ -27,21 +31,28 @@ class BusinessRecoveryTests(unittest.TestCase):
         self.image = DocumentImage((('Number', ''), ('Date', literal_date('20261111000000')), ('DeletionMark', False)),
                                   (('Lines', (DocumentRowImage(None, (('Flag', True),)),)),))
 
-    def test_lost_commit_reply_resolves_original_intent_without_replay(self):
+    def test_lost_commit_reply_keeps_editor_uncertain_until_explicit_reopen(self):
         backend = self.context.backend; original = backend.begin_document_write
-        class LostReply:
-            def __init__(self, tx): self.tx = tx
-            def __getattr__(self, name): return getattr(self.tx, name)
-            def commit(self): self.tx.commit(); raise OSError('lost acknowledgement')
-        with patch.object(backend, 'begin_document_write', side_effect=lambda op: LostReply(original(op))):
+        def lost_reply(operation):
+            view = original(operation)
+            view._view._connection = FaultConnection(view._view._connection, commit_fault='after')
+            return view
+        with patch.object(backend, 'begin_document_write', side_effect=lost_reply):
             result = self.session.save(self.image)
-        self.assertEqual(result.state, 'uncertain')
-        with self.assertRaises(BackendError): self.session.require_discardable()
+        self.assertEqual((result.state, result.error), ('uncertain', 'uncertain_commit'))
+        self.session.require_discardable()
         with patch.object(backend, 'begin_document_write') as begin:
             result = self.session.save(replace(self.image, sections=(('Lines', ()),)))
             begin.assert_not_called()
-        self.assertEqual(result.state, 'saved')
-        self.assertEqual(len(result.image.sections[0][1]), 1)
+        self.assertEqual((result.state, result.error), ('uncertain', 'uncertain_commit'))
+        schema = self.session.schema
+        with closing(backend.begin_document_read()) as view:
+            cards = view.select_documents(schema.identity, DocumentSelection())
+        self.assertEqual(len(cards), 1)
+        fresh = DocumentObjectSession(self.context, schema, self.files, key=cards[0].key)
+        rows = fresh.image().sections[0][1]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].values, (('Flag', True),))
 
     def test_committed_projection_failure_refreshes_without_new_transaction(self):
         def refused_projection(result): raise ValueError('projection refused')
@@ -58,9 +69,30 @@ class BusinessRecoveryTests(unittest.TestCase):
     def test_mixed_form_factory_has_no_transaction_root_authority(self):
         app = ConfigurationApplication.from_database(self.context, side='server')
         self.addCleanup(lambda: app.close(force=True)); app.start()
+        for side, event, parameters in (('Client', 'OnOpen', 'Cancel'),
+                                       ('Server', 'OnCreateAtServer', 'Cancel, Standard')):
+            with self.subTest(side=side):
+                form = FormSession(
+                    f'&At{side}\nProcedure Opening({parameters})\n'
+                    'Try BeginTransaction(); Except EndTry;\n'
+                    'BeginTransaction();\nEndProcedure',
+                    bindings={event:'Opening'}, database_context=self.context,
+                    interpreter_factory=app.form_interpreter_factory)
+                self.addCleanup(form.interpreter.close)
+                self.assertFalse(form.interpreter._transaction_activation_allowed)
+                with patch.object(self.context.backend, 'begin_unit_of_work') as begin:
+                    with self.assertRaisesRegex(BSLError, r':4:\d+: Transactions require synchronous execution'):
+                        form.open()
+                    begin.assert_not_called()
+                self.assertEqual(form.state, 'failed')
+
+    def test_mixed_independent_child_has_no_standalone_entry(self):
+        app = ConfigurationApplication.from_database(self.context, side='server')
+        self.addCleanup(lambda: app.close(force=True)); app.start()
         child = app.interpreter_factory(lambda value: None, database_context=self.context)
         self.addCleanup(child.close)
         self.assertFalse(child._transaction_activation_allowed)
         with patch.object(self.context.backend, 'begin_unit_of_work') as begin:
-            with self.assertRaises(BSLError): child.execute('BeginTransaction();')
+            with self.assertRaisesRegex(PythonDirectUnsupported, 'configuration/server/NoContext contexts are not integrated'):
+                child.execute('BeginTransaction();')
             begin.assert_not_called()

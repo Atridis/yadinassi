@@ -17,7 +17,7 @@ removal, renaming, type changes and arbitrary DDL are unsupported. Authored sche
 without corresponding canonical source packages cannot be used as an update source.
 
 New attributes use qualified empty string, zero, false or empty DateTime defaults.
-Old record identifiers, revisions, values and receipts are preserved. The target
+Existing record identifiers, revision tokens and values are preserved. The target
 must satisfy the same data and file budgets as ordinary readers **before COMMIT**;
 backfill that would make a catalog unreadable is rolled back, not accepted as an
 uncertain successful migration.
@@ -31,8 +31,8 @@ maintenance in effect until apply or recovery has been resolved.
 
 ```python
 from pathlib import Path
-from yadinassi.configuration_import import load_configuration_directory
-from yadinassi.sqlite_configuration_update import (
+from yadinassi.configuration.configuration_import import load_configuration_directory
+from yadinassi.db.sqlite.sqlite_configuration_update import (
     prepare, dump_plan, load_plan, apply, resolve,
 )
 
@@ -72,16 +72,12 @@ marker. `not_committed` requires the unchanged original v11 fingerprint. Missing
 changed or inaccessible evidence means `uncertain`; investigate while maintenance
 remains in effect. Repeated resolve performs no writes.
 
-## Generations and historical receipts
+## Configuration generations
 
 The update increments configuration generation, invalidating old managers and
-write revisions. Reopen current application contexts after maintenance. Old
-unacknowledged catalog/document/register and mixed-unit operations remain resolvable
-with their **original** operation IDs, drafts and revisions. A bounded immutable
-receipt epoch map selects the old canonical schema/generation only on internal
-receipt-resolution paths. Historical schemas cannot authorize current writes,
-Query execution or source activation. Changed requests still fail. New operations
-use the new generation and expanded schemas.
+write revisions. Reopen current application contexts after maintenance. Existing
+records are read normally under the expanded schema. The migration marker verifies
+the configuration transition only; it records no business writes.
 
 The initial read integrity pass remains mandatory. The update does not bypass
 query limits, cache validation across writes, repair corrupt source data, or promise

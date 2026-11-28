@@ -18,7 +18,6 @@ from test_native_tree_profile_host import synthetic_producer_reader
 from test_native_1c_smoke import bootstrap_report
 from test_native_tree_columns_clear_contract import maximum_available_output as maximum_output
 from test_native_tree_columns_clear_contract import maximum_output as maximum_observation_output
-from test_native_tree_columns_clear_measurement import emit
 
 host, tree, full, smoke = budget.host, budget.tree, budget.suite, budget.smoke
 ROOT, NONCE = budget.ROOT, budget.NONCE
@@ -76,12 +75,13 @@ class ColumnsClearProfileTests(unittest.TestCase):
         self.assertEqual(full.SCENARIOS,('collections','dates','functions','numbers','strings','values'))
 
     def test_source_bound_adapter_preserves_capture_and_old_modules(self):
+        from test_native_tree_columns_clear_measurement import emit
         s=spec();template=(ROOT/full.CLIENT_SOURCE).read_text(encoding='utf-8').encode()
         source=(ROOT/s.source).read_text(encoding='utf-8').encode()
         module=tree.client_module(source,template,profile=PROFILE)
         runtime=Interpreter();runtime.execute(module.decode('utf-8-sig'))
         runtime.execute('Result = ВычислитьПробу();')
-        actual=('\n'.join(runtime.variables['result'].items)+'\n').encode()
+        actual=('\n'.join(runtime.variables['result'])+'\n').encode()
         self.assertEqual(actual,emit())
         self.assertEqual(len(tree.validate_observations(actual,profile=PROFILE)),12)
         old_hashes={'tree-v1':'e43224c91c76a1c92dc6c2bf4e6c90a07fe23fbf4aa42d1c6a17630de70a937a',
@@ -216,7 +216,7 @@ class ColumnsClearProfileTests(unittest.TestCase):
             self.assertEqual(result['native_columns_clear_available'],failed_case not in (0,1,2))
 
     def test_exact_matched_noop_and_columns_only_effects_never_make_acceptance_green(self):
-        from test_native_tree_columns_clear_measurement import model
+        from test_native_tree_columns_clear_measurement import emit, model
         for mode in ('noop','columns_only'):
             with self.subTest(model=mode),model(mode): raw=emit()
             envelope,hashes,modules=success_envelope(raw)

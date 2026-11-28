@@ -3,11 +3,11 @@ from decimal import Decimal
 from pathlib import Path
 import unittest
 
-from yadinassi.configuration_forms import load_configuration_forms, bind_parameters
-from yadinassi.form_program import compile_form_module, FormSideProgram
-from yadinassi.form_replication import ReplicatedFormSession, ReplicatedFormServer
-from yadinassi.invocation import InvocationServer, InvocationPort
-from yadinassi.structures import BSLStructure, BSLFixedStructure
+from yadinassi.configuration.configuration_forms import load_configuration_forms, bind_parameters
+from yadinassi.forms.form_program import compile_form_module, FormSideProgram
+from yadinassi.forms.form_replication import ReplicatedFormSession, ReplicatedFormServer
+from yadinassi.execution.invocation import InvocationServer, InvocationPort
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
 
 ROOT = Path(__file__).resolve().parents[1] / 'examples/configuration-forms'
 
@@ -15,6 +15,21 @@ ROOT = Path(__file__).resolve().parents[1] / 'examples/configuration-forms'
 def sources(app='welcome'):
     root = ROOT / app
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+
+
+def contextual_counter_sources():
+    """Keep the Counter layout and RPC, without testing detached dispatch here."""
+    files = sources('counter')
+    files['CommonForms/Counter/Ext/Form/Module.bsl'] = b'''&AtClient
+Procedure IncrementClick(Command)
+ IncrementAtServer();
+EndProcedure
+&AtServer
+Procedure IncrementAtServer()
+ Count = Count + 1;
+EndProcedure
+'''
+    return files
 
 
 def pair(definition, parameters=None):

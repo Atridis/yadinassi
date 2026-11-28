@@ -36,7 +36,7 @@ Ordinary `CatalogObject.Write`/`Записать` in this exact profile cannot s
 - Choices are bounded to 64 records per target catalog, with at most 32 editable rows. Unsupported or unavailable selections remain read-only. Existing larger sections remain visible as a read-only summary; this bounded original-form adapter does not save them.
 - No arbitrary XML/BSL, modified demo archive, additional form fields, or arbitrary handlers are admitted.
 - The existing formatter can render zero as empty for the original `ЧГ=0` expression. A first-row diagnostic may therefore show `Склады[].Склад`; the diagnostic remains visible and saving remains refused. This is not a native formatting-parity claim.
-- Source/schema drift fails closed. Uncertain commits retain the exact submitted object and source; receipt recovery does not replay form handlers. Refresh failure is retried without a second write.
+- Source/schema drift fails closed. An unknown outcome locks the submitted object. Discard and reopen for a fresh read. A failed refresh after confirmed COMMIT is read-only. Neither path replays form handlers.
 
 See [catalog editor](catalog-editor.md), [tabular sections](catalog-tabular-sections.md), and [original kinds/warehouses](demo-directories.md).
 

@@ -5,9 +5,9 @@ from uuid import UUID
 import sqlite3
 import unittest
 from unittest import mock
-from yadinassi.catalog_backend import BackendError, CatalogSchema, FieldSchema, TabularSectionSchema
-from yadinassi.enum_storage_values import EnumValueDomain
-from yadinassi import sqlite_main_demo_profile as profile
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSchema, FieldSchema, TabularSectionSchema
+from yadinassi.db.metadata.enum_storage_values import EnumValueDomain
+from yadinassi.db.sqlite import sqlite_main_demo_profile as profile
 
 class MainDemoStorageShapeTests(unittest.TestCase):
     def fixture(self):
@@ -54,19 +54,35 @@ class MainDemoStorageShapeTests(unittest.TestCase):
             with self.assertRaises(BackendError):profile.create_catalog_tables(db,config,domain)
 
     def test_create_and_exact_ddl_include_sections(self):
-        catalogs,domain=self.fixture();config=SimpleNamespace(catalogs=catalogs,enumerations=())
-        # Exact source admission is deliberately not mocked as proven here.
-        with sqlite3.connect(':memory:',isolation_level=None) as db, mock.patch.object(profile,'_require_config'):
-            profile._storage().register_query_collations(db)
-            db.execute('BEGIN')
-            for ddl in profile._base_ddls():db.execute(ddl)
-            layout,sections=profile.create_catalog_tables(db,config,domain)
-            for ddl in profile._storage().transaction_profile.profile_index_ddls(7,catalogs,layout):db.execute(ddl)
-            profile.validate_main_demo_ddl(db,config,domain)
-            self.assertTrue(db.in_transaction)
-            db.execute('DROP TABLE '+profile._storage().quote_identifier(sections.table_name(catalogs[1].identity,catalogs[1].tabular_sections[0].identity)))
-            with self.assertRaises(BackendError):profile.validate_main_demo_ddl(db,config,domain)
-            db.execute('ROLLBACK')
+        from contextlib import closing
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from test_main_demo_configuration import source
+        from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+        from yadinassi.db.database_context import SQLiteDBContext
+        from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
+
+        # Exact format16 admission includes physical document attributes/parts
+        # and register movements, not just the older catalog-only shim.
+        config = import_main_demo_configuration(source(),profile=PROFILE)
+        product = next(c for c in config.catalogs if c.name=='Номенклатура')
+        part = product.tabular_sections[0]
+        with TemporaryDirectory() as directory:
+            path = Path(directory)/'admitted.sqlite'
+            with SQLiteDBContext.create_main_demo(path,config) as context:
+                domain = EnumValueDomain(context.backend.database_id,config.enumerations)
+                with closing(sqlite3.connect(path,isolation_level=None)) as db:
+                    profile._storage().register_query_collations(db)
+                    db.execute('BEGIN')
+                    _, sections = profile.validate_main_demo_ddl(db,config,domain)
+                    self.assertTrue(db.in_transaction)
+                    db.execute('DROP TABLE '+quote_identifier(sections.table_name(product.identity,part.identity)))
+                    with self.assertRaisesRegex(BackendError,'integrity'):
+                        profile.validate_main_demo_ddl(db,config,domain)
+                    self.assertTrue(db.in_transaction)
+                    db.execute('ROLLBACK')
+                    profile.validate_main_demo_ddl(db,config,domain)
 
     def test_failed_ddl_rolls_back_mapping_without_committing_parent(self):
         catalogs,domain=self.fixture();config=SimpleNamespace(catalogs=catalogs,enumerations=())

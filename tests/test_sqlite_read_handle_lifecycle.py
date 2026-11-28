@@ -1,6 +1,7 @@
 """Short readonly leases: actual-connection epochs, corruption and cleanup."""
 from contextlib import closing
 from dataclasses import replace
+from decimal import Decimal
 import os
 from pathlib import Path
 import shutil
@@ -12,10 +13,10 @@ from uuid import uuid4
 
 import test_catalog_scan_optimization as fixtures
 from test_sqlite_catalog_admission_cleanup import AdmissionFaultConnection
-from yadinassi.catalog_backend import BackendError, CatalogComparison, CatalogScanRequest
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
-from yadinassi.sqlite_catalog_layout import quote_identifier
-from yadinassi.sqlite_read_handles import ReadHandle
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogComparison, CatalogScanRequest
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.sqlite.sqlite_read_handles import ReadHandle
 
 
 class ReadHandleLifecycleTests(unittest.TestCase):
@@ -66,13 +67,24 @@ class ReadHandleLifecycleTests(unittest.TestCase):
     def test_external_same_generation_commit_invalidates_hidden_scalar(self):
         self.seed(3); self.scan('0000')
         generation = self.backend.configuration_generation
-        column = quote_identifier(self.backend._layout.field_name(self.product.identity, self.product.fields[1].identity))
-        self.sql('UPDATE '+self.owner_table()+' SET '+column+'=? WHERE code=?', ('bad-number', '0002'))
+        field = self.product.fields[1].identity
+        column = quote_identifier(self.backend._layout.field_name(self.product.identity, field))
+        statement = 'UPDATE '+self.owner_table()+' SET '+column+'=? WHERE code=?'
+        invalid = ('bad-number', '0002')
+        self.assertTrue(self.backend._read_handle.proofs)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, 'CHECK constraint failed'):
+            self.sql(statement, invalid)
+        self.sql(statement, invalid, corrupt=True)
         with self.assertRaisesRegex(BackendError, 'integrity'): self.scan('0000')
         self.assertEqual(self.backend.configuration_generation, generation)
         self.assertFalse(self.backend._read_handle.proofs)
-        self.sql('UPDATE '+self.owner_table()+' SET '+column+'=? WHERE code=?', ('12.30', '0002'))
+        # Restore with an actual constraint-checked commit on a new peer handle.
+        self.sql(statement, (4567, '0002'))  # Number(12,2) stores 45.67 as 4567.
         self.assertEqual(len(self.scan('0000').rows), 1)
+        with closing(self.backend.begin_read()) as view:
+            request = CatalogScanRequest(predicate=CatalogComparison('code', 'eq', '0002'))
+            self.assertEqual(view.scan_catalog_values(self.product.identity, request, (field,)).rows[0].values,
+                             (Decimal('45.67'),))
 
     def test_external_valid_commit_is_fresh_and_writer_not_blocked_between_calls(self):
         self.seed(2); self.scan()
@@ -104,9 +116,9 @@ class ReadHandleLifecycleTests(unittest.TestCase):
         with patch.object(ReadHandle, 'complete', complete): self.scan()
         with closing(self.backend.begin_read()) as view:
             self.assertEqual(view._validated_sources, {})
-            with patch.object(view, '_preflight_v2', wraps=view._preflight_v2) as validate:
+            with patch.object(view, '_scalar', wraps=view._scalar) as validate:
                 view.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
-            self.assertEqual(validate.call_count, 1)
+            self.assertEqual(validate.call_count, 2)
 
     def test_own_write_invalidates_all_read_proofs_even_after_rollback(self):
         self.seed(2); self.scan(); handle = self.backend._read_handle
@@ -129,7 +141,7 @@ class ReadHandleLifecycleTests(unittest.TestCase):
         self.seed(2)
         view = self.backend.begin_read()
         view.scan_catalog_values(self.category.identity, CatalogScanRequest(), ('code',))
-        with patch.object(view, '_preflight_v2', side_effect=BackendError('integrity')):
+        with patch.object(view, '_scalar', side_effect=BackendError('integrity')):
             with self.assertRaises(BackendError):
                 view.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
         handle = self.backend._read_handle; view.close()
@@ -245,7 +257,7 @@ class ReadHandleLifecycleTests(unittest.TestCase):
                 self.assertEqual(len(self.scan().rows),2)
 
     def test_retained_proof_counts_and_owner_identities_are_bounded(self):
-        from yadinassi.sqlite_read_handles import _bounded_proofs, MAX_PROOFS, MAX_OWNER_IDENTITIES
+        from yadinassi.db.sqlite.sqlite_read_handles import _bounded_proofs, MAX_PROOFS, MAX_OWNER_IDENTITIES
         facts={('fact',i):() for i in range(MAX_PROOFS+10)}
         self.assertEqual(len(_bounded_proofs(facts)),MAX_PROOFS)
         owners=frozenset(str(i).zfill(36) for i in range(MAX_OWNER_IDENTITIES))
@@ -265,7 +277,7 @@ class ReadHandleLifecycleTests(unittest.TestCase):
         failure=MemoryError('wrapper admission')
         try:
             with patch.object(self.backend,'_connect',connect), \
-                    patch('yadinassi.sqlite_catalog.DocumentView',side_effect=failure):
+                    patch('yadinassi.db.sqlite.sqlite_catalog.DocumentView',side_effect=failure):
                 with self.assertRaises(MemoryError) as caught:self.backend.begin_query_read()
             self.assertIs(caught.exception,failure)
             self.assertIsNone(self.backend._read_handle)

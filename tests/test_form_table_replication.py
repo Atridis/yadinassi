@@ -5,13 +5,13 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError
-from yadinassi.dates import BSLDate
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.form_replication import (PROTOCOL, ReplicatedFormServer,
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_replication import (PROTOCOL, ReplicatedFormServer,
                                         ReplicatedFormSession)
-from yadinassi.form_tables import FormTableColumn, FormTableSchema
-from yadinassi.invocation import InvocationBinding, InvocationPort, InvocationServer
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_tables import FormTableColumn, FormTableSchema
+from yadinassi.execution.invocation import InvocationBinding, InvocationPort, InvocationServer
+from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.ui.protocol import decode_line, encode_line, encode_value
 
 SCHEMA = FormTableSchema('Lines', (
@@ -71,7 +71,7 @@ def scalar_delta():
 
 
 class ReplicatedTableTests(unittest.TestCase):
-    def pair(self, *, server_source=SERVER, client_source=CLIENT, tables=(SCHEMA,), exchange=None):
+    def pair(self, *, server_source=SERVER, client_source=CLIENT, tables=(SCHEMA,), exchange=None, reuse_tables=False):
         server = ReplicatedFormServer(server_source, {1: 'Work'}, handlers=HANDLERS,
             attributes=attributes(), tables=tables, bindings={'OnCreateAtServer': 'Create'})
         requests = []; replies = []
@@ -80,7 +80,8 @@ class ReplicatedTableTests(unittest.TestCase):
             reply = server.exchange(raw) if exchange is None else exchange(server, raw)
             self.assertIs(type(reply), bytes); replies.append(reply)
             return reply
-        client = ReplicatedFormSession(client_source, transport, handlers=HANDLERS, bindings=(REMOTE,))
+        client = ReplicatedFormSession(client_source, transport, handlers=HANDLERS, bindings=(REMOTE,),
+                                       reuse_tables=reuse_tables)
         return client, server, requests, replies
 
     def command(self, client):
@@ -131,6 +132,25 @@ class ReplicatedTableTests(unittest.TestCase):
         for raw in requests + replies:
             for forbidden in (b'&AtServer', b'EndFunction', b'__dict__', b'0x'):
                 self.assertNotIn(forbidden, raw)
+
+    def test_validated_replica_schema_binds_once_and_live_edits_reuse_the_code(self):
+        from yadinassi.execution.direct import python_direct_forms as direct
+
+        client, _, _, _ = self.pair()
+        initial = client._direct_handlers
+        self.assertNotIn('lines', client._direct_form_schema)
+        with patch.object(direct, 'prepare_form', wraps=direct.prepare_form) as prepare:
+            client.open()
+            self.assertIn('lines', client.form._tables)
+            self.cell(client, value=Decimal('4'))
+            ready = client._direct_handlers
+            self.assertIsNot(ready, initial)
+            self.assertEqual(prepare.call_count, 1)
+            self.cell(client, value=Decimal('5'))
+            snapshot = self.command(client)
+            self.assertEqual(dict(snapshot.attributes)['Total'], Decimal(16))
+            self.assertEqual(prepare.call_count, 1)
+            self.assertIs(client._direct_handlers, ready)
 
     def test_cell_edit_is_local_until_barrier_and_return_uses_flushed_value(self):
         client, server, requests, replies = self.pair(); before = client.open()
@@ -313,14 +333,14 @@ EndFunction
         client, server, requests, replies = self.pair(); client.open()
         delta = scalar_delta(); delta['attributes'] = [['status', encode_value('must not apply')]]
         delta['cells'] = [[1, 1, 0, encode_value('x' * 500)]]
-        with patch('yadinassi.form_tables.MAX_TABLE_DATA_BYTES', 500): self.reject_delta(server, delta)
+        with patch('yadinassi.forms.form_tables.MAX_TABLE_DATA_BYTES', 500): self.reject_delta(server, delta)
 
     def test_valid_multitable_delta_can_grow_then_shrink_atomically(self):
         other = FormTableSchema('Other', (FormTableColumn('Label', BSLTypeDescription('String')),))
         source = SERVER.replace('// extra-create', 'R = Lines.Get(0); R.Label = "'+('a' * 8000)+'"; R = Other.Add();')
         client, server, requests, replies = self.pair(server_source=source, tables=(SCHEMA, other)); client.open()
         delta = scalar_delta(); delta['cells'] = [[2, 1, 0, encode_value('b' * 8000)], [1, 1, 0, encode_value('')]]
-        with patch('yadinassi.form_tables.MAX_TABLE_DATA_BYTES', 9000):
+        with patch('yadinassi.forms.form_tables.MAX_TABLE_DATA_BYTES', 9000):
             response = decode_line(server.exchange(encode_line(self.request(server, delta))))
         self.assertTrue(response['accepted']); self.assertEqual(response['status'], 'ok')
         snapshots = server.session.snapshot().tables
@@ -377,18 +397,45 @@ EndFunction
 
     def test_live_row_cannot_escape_as_scalar_endpoint_result(self):
         source = SERVER.replace('Return Calls;', 'Return Lines.Get(0);')
-        client, server, requests, replies = self.pair(server_source=source); client.open()
-        before = client.snapshot()
-        with self.assertRaises((BSLError, ValueError)): self.command(client)
-        self.assertFalse(client.uncertain)
-        self.assertEqual(decode_line(replies[-1])['reason'], 'server_error')
+        for reuse in (False, True):
+            with self.subTest(reuse_tables=reuse):
+                client, server, requests, replies = self.pair(server_source=source, reuse_tables=reuse)
+                before = client.open()
+                with self.assertRaisesRegex((BSLError, ValueError), 'server_error'):
+                    self.command(client)
+                self.assertFalse(client.uncertain)
+                reply = decode_line(replies[-1])
+                self.assertTrue(reply['accepted'])
+                self.assertEqual(reply['reason'], 'server_error')
+                self.assertNotIn('value', reply)
+                self.assertEqual(client.snapshot().tables, before.tables)
+                self.assertEqual(dict(server.session.snapshot().attributes)['Calls'], Decimal(1))
+                self.assertEqual(dict(client.snapshot().attributes)['Calls'], Decimal(1))
+                self.assertNotIn(b'BSLFormDataCollectionItem', replies[-1])
+                self.assertEqual(len(requests), 2)
+                self.assertEqual(client.dispatch('close', revision=client.revision).state, 'closed')
+                self.assertEqual(len(requests), 3)
+                self.assertEqual(dict(server.session.snapshot().attributes)['Calls'], Decimal(1))
+
+    def test_unrepresentable_reply_state_still_leaves_the_client_uncertain(self):
+        client, server, requests, replies = self.pair()
+        before = client.open()
+        with patch('yadinassi.forms.form_replication._pack_state', side_effect=ValueError('state invalid')):
+            with self.assertRaisesRegex((BSLError, ValueError), 'outcome_unknown'):
+                self.command(client)
+        reply = decode_line(replies[-1])
+        self.assertTrue(reply['accepted'])
+        self.assertEqual(reply['reason'], 'result_unavailable')
+        self.assertIsNone(reply['state'])
+        self.assertTrue(client.uncertain)
         self.assertEqual(client.snapshot().tables, before.tables)
+        with self.assertRaisesRegex((BSLError, ValueError), 'outcome_unknown'):
+            self.command(client)
+        self.assertEqual(len(requests), 2)
         self.assertEqual(dict(server.session.snapshot().attributes)['Calls'], Decimal(1))
-        self.assertEqual(dict(client.snapshot().attributes)['Calls'], Decimal(1))
-        self.assertNotIn(b'BSLFormDataCollectionItem', replies[-1])
 
     def test_date_default_and_fractional_ticks_roundtrip_without_invocation_widening(self):
-        from yadinassi.invocation import _encode_scalar
+        from yadinassi.execution.invocation import _encode_scalar
         temporal = FormTableSchema('Temporal', (FormTableColumn('When', BSLTypeDescription('Date')),))
         source = SERVER.replace('// extra-create', 'R = Temporal.Add();')
         client, server, requests, replies = self.pair(server_source=source, tables=(SCHEMA, temporal))

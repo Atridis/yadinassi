@@ -12,13 +12,13 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError, CatalogKey, CatalogSelection, CatalogScanRequest, TabularRow, TabularSectionRows
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.document_backend import DocumentDraft, DocumentKey, DocumentSelection
-from yadinassi.document_types import BSLDocumentReference
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_documents import DocumentView
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey, CatalogSelection, CatalogScanRequest, TabularRow, TabularSectionRows
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey, DocumentSelection
+from yadinassi.db.document.document_types import BSLDocumentReference
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_documents import DocumentView
 from test_document_configuration_xml import document_files
 
 
@@ -70,6 +70,28 @@ class SQLiteDocumentTests(unittest.TestCase):
         finally:
             for connection in connections:
                 connection.close()
+
+    def test_document_preflight_checks_count_size_and_header_in_one_scan(self):
+        self.vm.execute('D=Documents.Orders.CreateDocument();D.Date=Date(2026,11,9);D.Write();')
+        backend = self.context.backend
+        with closing(backend.begin_document_write(uuid4())) as view:
+            statements = []
+            view._connection.set_trace_callback(statements.append)
+            try:
+                self.assertEqual(view._preflight(self.schema), 1)
+            finally:
+                view._connection.set_trace_callback(None)
+            header = [sql for sql in statements if 'FROM document_record WHERE document_id=' in sql]
+            self.assertEqual(len(header), 1)
+        with closing(backend.begin_document_write(uuid4())) as view:
+            with patch('yadinassi.db.sqlite.sqlite_documents._MAX_TOTAL', 128):
+                with self.assertRaisesRegex(BackendError, 'unsupported'):
+                    view._preflight(self.schema)
+        self.sql("UPDATE document_record SET date='short'")
+        with closing(backend.begin_document_write(uuid4())) as view:
+            with patch('yadinassi.db.sqlite.sqlite_documents._MAX_TOTAL', 128):
+                with self.assertRaisesRegex(BackendError, 'integrity'):
+                    view._preflight(self.schema)
 
     def test_bsl_create_read_update_reopen_with_catalog_reference(self):
         result = self.execute('''C=Catalogs.Categories.CreateItem();C.Code="C";C.Description="Customer";C.Write();
@@ -162,26 +184,88 @@ D.Lines.Delete(A);Message(B.LineNumber);Try Message(A.Flag);Except Message("deta
 D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write();Message(D.Ref.GetObject().Lines.Count());''')
         self.assertEqual(result,['1','2','2','1','detached','1','0'])
 
+    def test_document_section_payload_delta_binds_one_row(self):
+        from yadinassi.db.sqlite.sqlite_document_layout import section_table
+        self.vm.execute('D=Documents.Orders.CreateDocument();'
+                        'For I=1 To 200 Do D.Lines.Add(); EndDo; D.Write();')
+        doc = self.vm.execute('D')
+        old = doc._manager._read(doc._key.record_id)
+        table = section_table(self.schema,self.schema.tabular_sections[0])
+        backend = self.context.backend
+        connect = backend._connect
+        trace = []
+        def traced_connect(**kwargs):
+            connection = connect(**kwargs)
+            connection.set_trace_callback(trace.append)
+            return connection
+        with patch.object(backend,'_connect',side_effect=traced_connect):
+            self.vm.execute('D.Lines[31].Flag=True;D.Write();')
+        mutations = [sql for sql in trace if table in sql and sql.startswith(('INSERT','UPDATE','DELETE'))]
+        self.assertEqual(len(mutations),1)
+        self.assertIn('DO UPDATE SET',mutations[0])
+        self.assertIn(str(old.tabular_sections[0].rows[31].identity),mutations[0])
+        self.assertNotIn(str(old.tabular_sections[0].rows[30].identity),mutations[0])
+        new = doc._manager._read(doc._key.record_id)
+        rows = old.tabular_sections[0].rows
+        expected = (*rows[:31],replace(rows[31],values=(True,)),*rows[32:])
+        self.assertEqual(new.tabular_sections[0].rows,expected)
+        self.assertNotEqual(old.revision,new.revision)
+
+    def test_document_part_reorder_keeps_uuid_and_position(self):
+        self.vm.execute('D=Documents.Orders.CreateDocument();'
+                        'D.Lines.Add().Flag=True;D.Lines.Add();D.Lines.Add().Flag=True;D.Write();')
+        doc = self.vm.execute('D')
+        manager = doc._manager
+        card = manager._read(doc._key.record_id)
+        old = card.tabular_sections[0]
+        first, second, _ = old.rows
+        added = TabularRow(uuid4(),(False,))
+        desired = (TabularSectionRows(old.section_id,(second,added,first)),)
+        draft = DocumentDraft(card.key,card.number,card.date,card.deletion_mark,card.values,desired)
+        tx = self.context.backend.begin_document_write(uuid4())
+        try:
+            tx.update(draft,card.revision)
+            outcome = tx.commit()
+        finally:
+            tx.close()
+        current = manager._read(doc._key.record_id)
+        self.assertEqual(current.tabular_sections,desired)
+        self.assertEqual(current.revision,outcome.revision)
+        tx = self.context.backend.begin_document_write(uuid4())
+        try:
+            with self.assertRaisesRegex(BackendError,'conflict'): tx.update(draft,card.revision)
+        finally:
+            tx.close()
+        self.assertEqual(manager._read(doc._key.record_id),current)
+
     def test_section_and_owner_changes_roll_back_together(self):
         obj = self.object(); obj.get_member('Lines').add().set_member('Flag',True); obj.write()
-        before = self.sql('SELECT revision,values_json,sections_json FROM document_record')
+        from sqlite_document_physical_fixture import table_snapshot
+        with closing(sqlite3.connect(self.path)) as connection:
+            before = table_snapshot(connection,self.schema)
         obj.set_member('Text','uncommitted');obj.get_member('Lines').clear()
         tx = self.context.backend.begin_document_write(uuid4())
         try:
-            original = tx._preflight; calls = [0]
+            original = tx._preflight
             def fail_after_write(schema):
-                calls[0] += 1
-                if calls[0] == 3: raise BackendError('storage_error')
+                revision, = tx._connection.execute(
+                    'SELECT revision FROM document_record WHERE document_id=? AND record_id=?',
+                    (str(obj._key.document_id),str(obj._key.record_id))).fetchone()
+                if revision != int(obj._revision.token): raise BackendError('storage_error')
                 return original(schema)
             with patch.object(tx,'_preflight',side_effect=fail_after_write):
-                with self.assertRaises(BackendError): tx.update(replace(self.draft(),key=obj._key,number=obj.get_member('Number'),values=('uncommitted',Decimal(0),False,datetime(1,1,1),obj._manager._stored(self.schema.fields[-1],obj.get_member('Category'))),tabular_sections=(),auto_number=False),obj._revision)
+                with self.assertRaisesRegex(BackendError, 'storage_error'): tx.update(replace(self.draft(),key=obj._key,number=obj.get_member('Number'),values=('uncommitted',Decimal(0),False,datetime(1,1,1),obj._manager._stored(self.schema.fields[-1],obj.get_member('Category'))),tabular_sections=(),auto_number=False),obj._revision)
+            # Verify rollback at the operation's savepoint before ending this writer.
+            current = table_snapshot(tx._connection,self.schema)
+            self.assertEqual(current,before)
         finally: tx.rollback()
-        self.assertEqual(self.sql('SELECT revision,values_json,sections_json FROM document_record'),before)
+        with closing(sqlite3.connect(self.path)) as connection:
+            self.assertEqual(table_snapshot(connection,self.schema),before)
         tx = self.context.backend.begin_document_write(uuid4())
         try:
             card = tx.read_document(obj._key)
             draft = DocumentDraft(replace(card.key,record_id=uuid4()),'',card.date,False,card.values,(),True)
-            with patch('yadinassi.sqlite_documents.DocumentWriteOutcome',side_effect=MemoryError),self.assertRaises(MemoryError): tx.create(draft)
+            with patch('yadinassi.db.sqlite.sqlite_documents.DocumentWriteOutcome',side_effect=MemoryError),self.assertRaises(MemoryError): tx.create(draft)
             self.assertIsNone(tx.read_document(draft.key))
             tx.create(replace(draft,key=replace(draft.key,record_id=uuid4())))
             outcome = tx.commit()
@@ -189,7 +273,7 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
         finally: tx.close()
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(2,)])
 
-    def test_uncertain_committed_response_resolves_without_replay(self):
+    def test_lost_commit_acknowledgement_never_replays_and_cleanup_is_separate(self):
         from test_catalog_commit_cleanup_recovery import FaultConnection
         faults = ({'commit_fault':'after'}, {'close_fault':'after','close_count':1},
                   {'close_fault':'before','close_count':100}, {'commit_fault':'interrupt'},
@@ -208,9 +292,16 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
                 expected = (KeyboardInterrupt if fault.get('commit_fault') == 'interrupt' else
                             MemoryError if fault.get('commit_fault') == 'memory' else BackendError)
                 with patch.object(backend,'begin_document_write',side_effect=begin),self.assertRaises(expected): obj.write()
-                self.assertTrue(obj.is_new())
-                with self.assertRaises(BackendError): obj.set_member('Text','different')
-                with self.assertRaises(BackendError): section.add()
+                if fault.get('commit_fault'):
+                    self.assertTrue(obj.is_new())
+                    with self.assertRaisesRegex(BackendError,'uncertain_commit'): obj.set_member('Text','different')
+                    with self.assertRaisesRegex(BackendError,'uncertain_commit'): section.add()
+                    with patch.object(backend,'begin_document_write') as retry:
+                        with self.assertRaisesRegex(BackendError,'uncertain_commit'): obj.write()
+                        retry.assert_not_called()
+                else:
+                    self.assertFalse(obj.is_new())
+                    self.assertEqual(obj.get_member('Number'),str(index).zfill(9))
                 if fault.get('close_count') == 100:
                     self.assertIs(backend._active,captured[0]._view)
                     with self.assertRaisesRegex(BackendError,'closed'): captured[0].documents()
@@ -218,26 +309,27 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
                     captured[0]._view._connection.close_count = 0
                     captured[0].close()
                 self.assertIsNone(backend._active)
-                with patch.object(DocumentView,'commit',side_effect=AssertionError('must not replay')): obj.write()
-                self.assertFalse(obj.is_new()); self.assertEqual(obj.get_member('Number'),str(index).zfill(9))
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(len(faults),)])
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM document_commit_receipt'),[(len(faults),)])
-        self.assertEqual(self.sql('SELECT COUNT(*) FROM commit_receipt'),[(0,)])
+        self.assertEqual(self.sql("SELECT name FROM sqlite_schema WHERE type='table' AND name='document_commit_receipt'"),[])
 
-    def test_uncertain_uncommitted_response_retries_same_frozen_intent(self):
+    def test_uncertain_uncommitted_response_refuses_same_frozen_intent(self):
         obj = self.object()
         def fail_before_commit(tx): tx.close(); raise BackendError('uncertain_commit')
-        with patch.object(DocumentView,'commit',fail_before_commit),self.assertRaises(BackendError): obj.write()
+        with patch.object(DocumentView,'_confirm_commit',fail_before_commit),self.assertRaises(BackendError): obj.write()
         self.assertTrue(obj.is_new());self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(0,)])
-        obj.write();self.assertEqual(obj.get_member('Number'),'000000001')
+        with self.assertRaisesRegex(BackendError,'uncertain_commit'): obj.write()
+        fresh = self.object();fresh.write()
+        self.assertEqual(fresh.get_member('Number'),'000000001')
 
     def test_explicit_number_collision_skipped_and_rollback_does_not_consume(self):
         self.execute('D=Documents.Orders.CreateDocument();D.Number="000000001";D.Write();N=Documents.Orders.CreateDocument();N.Write();')
         self.assertEqual(self.vm.execute('N.Number'),'000000002')
         obj = self.object()
-        with patch.object(DocumentView,'commit',new=lambda tx:(tx.close(),(_ for _ in ()).throw(BackendError('uncertain_commit')))[1]),self.assertRaises(BackendError): obj.write()
+        with patch.object(DocumentView,'_confirm_commit',new=lambda tx:(tx.close(),(_ for _ in ()).throw(BackendError('uncertain_commit')))[1]),self.assertRaises(BackendError): obj.write()
         self.assertEqual(self.sql('SELECT next_value FROM document_sequence'),[(3,)])
-        obj.write();self.assertEqual(obj.get_member('Number'),'000000003')
+        with self.assertRaisesRegex(BackendError,'uncertain_commit'): obj.write()
+        fresh = self.object();fresh.write()
+        self.assertEqual(fresh.get_member('Number'),'000000003')
 
     def test_select_order_bounds_snapshot_and_get_object(self):
         self.execute('A=Documents.Orders.CreateDocument();A.Date=Date(2026,11,10);A.Write();B=Documents.Orders.CreateDocument();B.Date=Date(2026,11,9);B.Write();S=Documents.Orders.Select();B.Text="later";B.Write();')
@@ -295,12 +387,24 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
         with self.assertRaises(BackendError): SQLiteCatalogBackend(self.path)
 
     def test_invalid_persisted_scalar_and_sections_never_coerced(self):
-        obj = self.object(); obj.write()
-        original = self.sql('SELECT values_json,sections_json FROM document_record')[0]
-        for assignment in ("values_json='[]'","sections_json='[]'","date='20260230000000'","number=''", "values_json='[null]'"):
-            self.sql('UPDATE document_record SET '+assignment)
+        from yadinassi.db.sqlite.sqlite_document_layout import data_table, section_table
+        from yadinassi.db.sqlite.sqlite_typed_rows import attribute_column
+        obj = self.object(); obj.get_member('Lines').add(); obj.write()
+        data = data_table(self.schema); text = attribute_column(self.schema.fields[0])
+        part = section_table(self.schema,self.schema.tabular_sections[0])
+        cases = (
+            (f'UPDATE "{data}" SET "{text}"=?', (b'not text',),
+             f'UPDATE "{data}" SET "{text}"=?', ('',)),
+            (f'UPDATE "{part}" SET row_number=2',(), f'UPDATE "{part}" SET row_number=1',()),
+            ("UPDATE document_record SET date='20260230000000'",(),
+             "UPDATE document_record SET date='20261109123005'",()),
+            ("UPDATE document_record SET number=''",(),
+             "UPDATE document_record SET number='000000001'",()),
+        )
+        for corrupt,args,restore,original in cases:
+            self.sql(corrupt,args)
             with self.assertRaises(BackendError): obj._manager._read(obj._key.record_id)
-            self.sql('UPDATE document_record SET values_json=?,sections_json=?,date=?,number=?',(*original,'20261109123005','000000001'))
+            self.sql(restore,original)
 
     def test_reference_existence_and_foreign_database_rejected(self):
         draft = self.draft();tx = self.context.backend.begin_document_write(uuid4())
@@ -317,15 +421,6 @@ D.Write();O=D.Ref.GetObject();Message(O.Lines.Count());O.Lines.Clear();O.Write()
     def test_normalized_numbers_and_scalar_qualifiers_apply_before_unique_check(self):
         self.assertEqual(self.execute('D=Documents.Orders.CreateDocument();D.Number="123456789suffix";D.Text="1234567890123456789012345678901234567890";D.Amount=12.345;D.Write();Message(D.Number);Message(D.Text);Message(D.Amount);'),['123456789','12345678901234567890123456789012','12,35'])
         self.assertEqual(self.vm.execute('D.Ref.Amount'),Decimal('12.35'))
-
-    def test_persisted_receipt_mismatch_never_replayed(self):
-        obj = self.object();original = DocumentView.commit
-        with patch.object(DocumentView,'commit',new=lambda tx:(original(tx),(_ for _ in ()).throw(BackendError('uncertain_commit')))[1]),self.assertRaises(BackendError):obj.write()
-        self.sql('UPDATE document_commit_receipt SET number=?',('000000002',))
-        with self.assertRaises(BackendError): obj.write()
-        self.sql('UPDATE document_commit_receipt SET number=?,request_hash=?',('000000001','0'*64))
-        with self.assertRaises(BackendError):obj.write()
-        self.assertTrue(obj.is_new());self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'),[(1,)])
 
     def test_number_exhaustion_leaves_new_object_and_no_changes(self):
         self.sql('UPDATE document_sequence SET next_value=?',(10**9,))

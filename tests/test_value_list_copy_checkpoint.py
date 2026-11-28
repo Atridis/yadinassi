@@ -12,11 +12,12 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, serialization
+from yadinassi import Interpreter
+from yadinassi.formats.storage import serialization
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, HostFunction
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, HostFunction
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/collections.bsl'
@@ -82,7 +83,7 @@ class Instrumentation:
     def __init__(self, policy='fresh'):
         self.policy = policy
         self.copies, self.owners, self.events, self.outputs = [], [], [], []
-        self.vm = Interpreter(output=self.outputs.append)
+        self.vm = Interpreter(output=self.outputs.append, allow_extensions=True)
         self.vm.register_function('ЗначениеВСтрокуВнутр', self.write, 'ValueToStringInternal')
         self.vm.execute(source().split('#Область МассивыИСтруктуры', 1)[0])
 

@@ -1,11 +1,12 @@
 """Observed extended search and independent nonempty-needle algorithm checks."""
+from contextlib import closing
 from decimal import Decimal, localcontext
 import itertools
 import unittest
 
-from yadinassi import BSLError, Interpreter
-from yadinassi.search_directions import BSLSearchDirection as Direction
-from yadinassi.strings import str_find
+from yadinassi import BSLError, BSLRuntimeError, Interpreter
+from yadinassi.collections.search_directions import BSLSearchDirection as Direction
+from yadinassi.text.strings import str_find
 
 BEGIN = Direction.FROM_BEGIN
 END = Direction.FROM_END
@@ -176,19 +177,36 @@ class ExtendedStrFindRuntimeTests(unittest.TestCase):
                 self.vm.execute(code)
 
     def test_override_and_shadow_cannot_inherit_special_omission_policy(self):
-        calls = []
-        self.vm.register_function('StrFind', lambda *args: calls.append(args))
-        with self.assertRaises(BSLError):
-            self.vm.execute('StrFind("abc", "b", , 1)')
-        self.assertEqual(calls, [])
-        self.assertEqual(self.vm.execute('СтрНайти("abcabc", "b", , 3)'), 5)
-        fresh = Interpreter()
-        fresh.execute('StrFind = Find;')
-        with self.assertRaises(BSLError):
-            fresh.execute('StrFind("abc", "b", , 1)')
-        fresh = Interpreter()
-        fresh.execute('Function StrFind(a, b, c = 9, d = 7) Return c + d; EndFunction')
-        self.assertEqual(fresh.execute('StrFind("abc", "b", , 1)'), 10)
+        self.vm.close()
+        with closing(Interpreter(allow_extensions=True)) as overridden:
+            calls = []
+            overridden.register_function('StrFind', lambda *args: calls.append(args))
+            with self.assertRaises(BSLError):
+                overridden.execute('StrFind("abc", "b", , 1)')
+            self.assertEqual(calls, [])
+            self.assertEqual(overridden.execute('СтрНайти("abcabc", "b", , 3)'), 5)
+
+        for prepared in (False, True):
+            def run(vm, source):
+                if prepared:
+                    return vm.execute_prepared(vm.prepare(source))
+                return vm.execute(source)
+
+            with self.subTest(case='bare Find value', prepared=prepared), \
+                    closing(Interpreter(allow_extensions=True)) as fresh:
+                # In direct Yadinassi, Find is available as a named builtin,
+                # not a value that can be assigned to form an alias.
+                with self.assertRaisesRegex(BSLRuntimeError, 'не определена: Find') as denied:
+                    run(fresh, 'Reached=1;\nStrFind = Find;\nFinished=1;')
+                self.assertEqual((denied.exception.line, denied.exception.column), (2, 11))
+                self.assertEqual(fresh.variables, {'reached': 1})
+                self.assertEqual(run(fresh, 'Find("abc", "b")'), 2)
+
+            with self.subTest(case='BSL routine shadow', prepared=prepared), \
+                    closing(Interpreter()) as fresh:
+                run(fresh, 'Function StrFind(a, b, c = 9, d = 7) Return c + d; EndFunction')
+                self.assertEqual(run(fresh, 'StrFind("abc", "b", , 1)'), 10)
+                self.assertEqual(run(fresh, 'StrFind("abc", "b", 8)'), 15)
 
     def test_evaluation_order_and_single_argument_evaluation(self):
         self.vm.execute('''Function Side(Val mark, Val value)

@@ -2,10 +2,9 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.compiled_backend import Engine
-from yadinassi.execution_policy import execution_backend_policy
-from yadinassi.source_forms import _SourceNoContextInterpreter
-from yadinassi.form_runtime import FormLimitError
+from yadinassi.execution.execution_policy import execution_backend_policy
+from yadinassi.forms.source_forms import _SourceNoContextInterpreter
+from yadinassi.forms.form_runtime import FormLimitError
 from yadinassi.syntax.parser import parse
 
 
@@ -24,14 +23,11 @@ class CompiledSourceNoContextTests(unittest.TestCase):
     def test_inline_nocontext_node_budget_precedes_literal_execution(self):
         from test_source_forms import SourceNoContextTests
         fixture=SourceNoContextTests()
-        with execution_backend_policy('compiled-strict'):
+        with execution_backend_policy('python-direct'):
             controller=fixture.controller()
             vm=controller.nocontext.prototype
             program=parse('42;')
-            vm._compiled().prepare(program)
             vm._source_call_budget[0]=100000
-            with patch.object(Interpreter,'visit_Literal',side_effect=AssertionError('legacy visitor')):
-                with self.assertRaisesRegex(FormLimitError,'Source NoContext execution limit'):
-                    vm._scheduler.run_inline(vm.block(program))
+            with self.assertRaisesRegex(FormLimitError,'Source NoContext execution limit'):
+                vm.execute_program(program)
             self.assertEqual(vm._source_call_budget[0],100001)
-            self.assertEqual(vm.compiled_backend_stats['interpreter_fallbacks'],0)

@@ -5,19 +5,20 @@ import unittest
 from unittest import mock
 from uuid import UUID
 
-from yadinassi import value_storage as storage
-from yadinassi import value_storage_table as hooks
-from yadinassi.catalog_types import BSLCatalogType
-from yadinassi.dates import date
-from yadinassi.queries import BSLQuery, BSLQueryResult, _Column
-from yadinassi.structures import BSLStructure
-from yadinassi.type_descriptions import BSLTypeDescription, _query_nullable_description
-from yadinassi.type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
+from yadinassi.formats.storage import value_storage as storage
+from yadinassi.formats.storage import value_storage_table as hooks
+from yadinassi.formats.storage.serialization import value_to_string_internal, value_from_string_internal
+from yadinassi.db.catalog.catalog_types import BSLCatalogType
+from yadinassi.temporal.dates import date
+from yadinassi.db.query.queries import BSLQuery, BSLQueryResult, _Column
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_descriptions import BSLTypeDescription, _query_nullable_description
+from yadinassi.types.type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
                                       BSLDateFractions, BSLDateQualifiers, BSLNumberQualifiers,
                                       BSLStringQualifiers)
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.value_tables import BSLCollectionIndex, BSLValueTable
-from yadinassi.values import BSLArray, BSLType, NULL
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.types.values import BSLArray, BSLType, NULL
 import test_catalog_queries as fixtures
 
 D = Decimal
@@ -79,6 +80,15 @@ class TypedTableRoundtripTests(unittest.TestCase):
         self.assertEqual(result.rows[0].get(D(0)), D('1.24'))
         result.rows[0].set(D(0), D(-1))
         self.assertEqual(result.rows[0].get(D(0)), D(0))
+
+    def test_restored_typed_columns_keep_defaults_for_add_and_insert(self):
+        source = table_with(numeric(), (D('12.30'),))
+        source.columns.add('Label', BSLTypeDescription('String'))
+        source.columns.add('Variant', BSLTypeDescription('Number,String'))
+        result = storage.BSLValueStorage(source).get()
+        self.assertEqual(tuple(result.add()), (D(0), '', None))
+        self.assertEqual(tuple(result.insert(0)), (D(0), '', None))
+        self.assertEqual(result.rows[1].get(0).as_tuple(), D('12.30').as_tuple())
 
     def test_string_fixed_length_and_utf16_qualifiers_remain_active(self):
         description = BSLTypeDescription('String', None,
@@ -160,9 +170,10 @@ class TypedTableRoundtripTests(unittest.TestCase):
             self.assertIs(column.table, result)
             self.assertIs(row.owner(), result)
             self.assertEqual(tuple(row.cells), (column,))
-            self.assertIs(index.table, result)
-            self.assertIs(index.columns[0], column)
-            self.assertEqual(set(index._keys), {row})
+            self.assertIs(result.indexes.table, result)
+            self.assertEqual(index, (0,))
+            self.assertIs(result.columns.items[index[0]], column)
+            self.assertEqual(result._search.cache, {})
         self.assertIsNot(one.columns.items[0].value_type, two.columns.items[0].value_type)
 
     def test_shared_typed_child_is_copied_per_occurrence(self):
@@ -200,20 +211,57 @@ class TypedTableRoundtripTests(unittest.TestCase):
 
 
 class TypedIndexSnapshotTests(unittest.TestCase):
-    def test_ordered_empty_repeated_and_composite_definitions_roundtrip(self):
+    def test_ordered_canonical_composite_definitions_roundtrip(self):
         source = table_with(numeric(), (D(1), D(2)))
         source.columns.add('Label', BSLTypeDescription('String'))
         source.rows[0].set(D(1), 'a'); source.rows[1].set(D(1), 'b')
-        for definition in ('Label,Item', None, 'Item,Item', 'Item'):
+        for definition in ('Label,Item', 'Item'):
             source.indexes.add(definition)
-        source.columns.move('Label', D(-1))
         source.columns.get_index('Item').set_member('Name', 'Amount')
         result = storage.BSLValueStorage(source).get()
-        self.assertEqual([tuple(index) for index in result.indexes.items],
-                         [('Label', 'Amount'), (), ('Amount', 'Amount'), ('Amount',)])
-        self.assertEqual([tuple(index.columns) for index in result.indexes.items],
-                         [(result.columns.items[0], result.columns.items[1]), (),
-                          (result.columns.items[1], result.columns.items[1]), (result.columns.items[1],)])
+        self.assertEqual(result.indexes.items, [(0, 1), (0,)])
+        self.assertEqual([tuple(index) for index in result.indexes],
+                         [('Label', 'Amount'), ('Amount',)])
+        for definition in ('', 'Amount,Amount', 'Label,Amount'):
+            with self.subTest(definition=definition):
+                handle = source.indexes.add(definition)
+                try:
+                    with self.assertRaises(storage.SnapshotError):
+                        storage.capture(source)
+                finally:
+                    source.indexes.delete(handle)
+
+    def test_reverse_index_order_is_private_snapshot_data_not_a_wire_extension(self):
+        source = table_with(None, (D(1), D(2)))
+        source.columns.add('Label')
+        source.rows[0].set(D(1), 'a')
+        handle = source.indexes.add('Label,Item')
+        self.assertEqual(tuple(handle), ('Label', 'Item'))
+        restored = storage.BSLValueStorage(source).get()
+        self.assertEqual(tuple(restored.indexes.get_index(D(0))), ('Label', 'Item'))
+        self.assertEqual(restored._search.declarations, {(0, 1)})
+        # The native internal-string codec still promises its old subset.
+        with self.assertRaises(ValueError):
+            value_to_string_internal(source)
+        source.indexes.clear()
+        source.indexes.add('Item,Label')
+        ordered = value_from_string_internal(value_to_string_internal(source))
+        self.assertEqual(tuple(ordered.indexes.get_index(D(0))), ('Item', 'Label'))
+
+    def test_differently_ordered_duplicate_signatures_still_fail_before_decode(self):
+        source = table_with()
+        source.columns.add('Label')
+        source.indexes.add('Item,Label')
+        source.indexes.add('Label,Item')
+        with self.assertRaises(storage.SnapshotError):
+            storage.capture(source)
+        for definitions in (((0, 1), (1, 0)), ((1, 1),), ((),)):
+            calls = []
+            with self.subTest(definitions=definitions), self.assertRaises(hooks.TableSnapshotError):
+                root = extended_root(source.copy_columns())
+                hooks.restore_table((*root[:3], definitions), decode=calls.append,
+                                    reserve=lambda n: None, charge_text=lambda s: None)
+            self.assertEqual(calls, [])
 
     def test_rebuilt_buckets_serve_lookup_and_subsequent_mutation(self):
         source = table_with(numeric(), (D(1), D(2), D(1)))
@@ -231,31 +279,33 @@ class TypedIndexSnapshotTests(unittest.TestCase):
             def __iter__(self): raise AssertionError('cache iteration')
             def __eq__(self, other): raise AssertionError('cache comparison')
         source = table_with(numeric(), (D(1),)); index = source.indexes.add('Item')
-        index._keys = index._buckets = index._units = Hostile()
+        source._search.cache[index] = Hostile()
         result = storage.BSLValueStorage(source).get()
-        self.assertIs(result.find(D(1), 'Item'), result.rows[0])
-        self.assertEqual(result.indexes.items[0]._units, 1)
+        self.assertEqual(result._search.cache, {})
+        self.assertIs(result.find_rows(BSLStructure('Item', D(1))).items[0], result.rows[0])
+        self.assertEqual(result._search.builds, 1)
 
-    def test_indexed_nested_collections_get_fresh_identity_tokens(self):
+    def test_indexed_nested_collections_restore_without_identity_cache(self):
         child = table_with(numeric(), (D(1),))
         source = table_with(None, (child,)); source.indexes.add('Item')
         result = storage.BSLValueStorage(source).get()
         restored_child = result.rows[0].get(D(0))
-        self.assertIs(result.find(restored_child, 'Item'), result.rows[0])
-        self.assertIsNone(result.find(child, 'Item'))
+        self.assertIsNot(restored_child, child)
+        self.assertEqual(restored_child.rows[0].get(D(0)), child.rows[0].get(D(0)))
+        self.assertEqual(result.indexes.items, [(0,)])
+        self.assertEqual(result._search.cache, {})
 
     def test_invalid_index_owners_flags_containers_and_duplicates_fail(self):
-        for change in ('owner', 'deleted', 'cleared', 'duplicate', 'columns', 'foreign', 'subclass'):
+        class Derived(tuple): pass
+        for change in ('owner', 'mismatch', 'container', 'duplicate', 'columns', 'foreign', 'subclass'):
             table = table_with(numeric()); index = table.indexes.add('Item')
-            if change == 'owner': index.table = table_with()
-            elif change == 'deleted': index._deleted = True
-            elif change == 'cleared': index._cleared = True
+            if change == 'owner': table.indexes.table = table_with()
+            elif change == 'mismatch': table._search.declarations.clear()
+            elif change == 'container': table.indexes.items = (index,)
             elif change == 'duplicate': table.indexes.items.append(index)
-            elif change == 'columns': index.columns = tuple(index.columns)
-            elif change == 'foreign': index.columns = [table_with().columns.items[0]]
-            else:
-                class Derived(BSLCollectionIndex): pass
-                table.indexes.items[0] = Derived(table, index.columns)
+            elif change == 'columns': table.indexes.items[0] = (1,)
+            elif change == 'foreign': table.indexes.items[0] = (table_with().columns.items[0],)
+            else: table.indexes.items[0] = Derived(index)
             with self.subTest(change=change), self.assertRaises(storage.SnapshotError):
                 storage.capture(table)
 
@@ -270,16 +320,18 @@ class TypedIndexSnapshotTests(unittest.TestCase):
 
     def test_invalid_index_key_magnitude_fails_during_capture(self):
         source = table_with(None, (D(1),)); source.indexes.add('Item')
-        source.rows[0].cells[source.columns.items[0]] = D('1e4097')
+        list.__setitem__(source.rows[0], 0, D('1e4097'))
         with self.assertRaises(storage.SnapshotError): storage.capture(source)
 
     def test_index_rebuild_failure_never_returns_partial_table(self):
         snapshot = storage.capture(table_with(numeric()))
         root = snapshot._root
         root = (*root[:3], ((0,),))
-        with mock.patch('yadinassi.value_tables.BSLCollectionIndexes._add_columns',
-                        side_effect=ValueError('runtime budget')):
-            with self.assertRaises(storage.SnapshotError): storage.restore(storage.Snapshot(root))
+        with mock.patch('yadinassi.collections.plain_table_search.SearchIndexes.bind',
+                        side_effect=ValueError('index rebuild failed')) as rebuild:
+            with self.assertRaises(storage.SnapshotError):
+                storage.restore(storage.Snapshot(root))
+        rebuild.assert_called_once()
 
 
 class TypedTableAdmissionTests(unittest.TestCase):
@@ -292,7 +344,7 @@ class TypedTableAdmissionTests(unittest.TestCase):
                                  (BSLTypeDescription('Date', None, None, BSLDateQualifiers(BSLDateFractions.DATE)),
                                   date('20240229123456'))):
             source = table_with(description, ())
-            row = source.add(); row.cells[source.columns.items[0]] = bad
+            row = source.add(); list.__setitem__(row, 0, bad)
             with self.subTest(bad=repr(bad)), self.assertRaises(storage.SnapshotError):
                 storage.capture(source)
 
@@ -305,7 +357,7 @@ class TypedTableAdmissionTests(unittest.TestCase):
 
     def test_uuid_value_not_accepted_in_scalar_typed_column(self):
         source = table_with(numeric())
-        source.rows[0].cells[source.columns.items[0]] = BSLUUID('00000000-0000-0000-0000-000000000001')
+        list.__setitem__(source.rows[0], 0, BSLUUID('00000000-0000-0000-0000-000000000001'))
         with self.assertRaises(storage.SnapshotError): storage.capture(source)
 
     def test_noncanonical_types_and_qualifier_combinations_fail(self):
@@ -433,11 +485,31 @@ class NullableQuerySnapshotTests(unittest.TestCase):
             table.rows[0].set(D(1), D('9.25'))
             self.assertEqual(table.rows[0].get(D(1)), D('9.25'))
 
+    def test_restored_query_insert_is_closed_until_schema_is_replaced(self):
+        source = query_table()
+        restored = storage.BSLValueStorage(source).get()
+        for table in (source, restored):
+            before = rows(table)
+            with self.assertRaisesRegex(ValueError, 'default row values'):
+                table.insert(D(0))
+            self.assertEqual(rows(table), before)
+            table.columns.clear()
+            table.columns.add('Count', BSLTypeDescription('Number'))
+            table.columns.add('Variant', BSLTypeDescription('Number,String'))
+            table.columns.add('Any')
+            self.assertEqual(tuple(table.insert(D(0))), (D(0), None, None))
+            self.assertEqual(tuple(table.add()), (D(0), None, None))
+
     def test_nullable_null_indexes_rebuild_and_each_get_is_independent(self):
         source = query_table(); source.indexes.add('Amount,Label')
         saved = storage.BSLValueStorage(source)
         one, two = saved.get(), saved.get()
-        self.assertEqual(one.find_rows(BSLStructure('Amount,Label', NULL, NULL)).items, [one.rows[1]])
+        self.assertEqual(tuple(one.indexes.get_index(D(0))), ('Amount', 'Label'))
+        self.assertEqual(one._search.declarations, {(0, 1)})
+        self.assertEqual(one._search.cache, {})
+        hits = one.find_rows(BSLStructure('Label,Amount', NULL, NULL)).items
+        self.assertEqual(len(hits), 1)
+        self.assertIs(hits[0], one.rows[1])
         one.rows[0].set(D(1), D(3))
         self.assertEqual(two.rows[0].get(D(1)), D('12.50'))
         self.assertIsNot(one.columns.items[1].value_type._query_scalar, two.columns.items[1].value_type._query_scalar)
@@ -457,7 +529,7 @@ class NullableQuerySnapshotTests(unittest.TestCase):
             elif change == 'types': object.__setattr__(desc, 'types', (BSLType.NUMBER, BSLType.NULL))
             elif change == 'qualifiers': object.__setattr__(desc, 'number_qualifiers', BSLNumberQualifiers(D(2)))
             elif change == 'ordinary_marker': object.__setattr__(desc._query_scalar, 'types', ())
-            else: source.rows[0].cells[source.columns.items[1]] = None
+            else: list.__setitem__(source.rows[0], 1, None)
             with self.subTest(change=change), self.assertRaises(storage.SnapshotError): storage.capture(source)
 
 
@@ -484,6 +556,20 @@ class TypedTableBudgetTests(unittest.TestCase):
         forged = replace_schema(snapshot._root, title=source.columns.items[0].title)
         with self.assertRaises(storage.SnapshotError): storage.restore(storage.Snapshot(forged))
 
+    def test_fixed_string_defaults_share_budget_before_allocation(self):
+        fixed = BSLTypeDescription('String', None,
+                                  BSLStringQualifiers(D(4), BSLAllowedLength.FIXED))
+        source = table_with(fixed, ())
+        snapshot = storage.capture(source)
+        with mock.patch.object(storage, 'MAX_TEXT_UNITS', 8):
+            self.assertEqual(storage.restore(snapshot).add().get(0), '    ')
+            storage.capture(source)
+        with mock.patch.object(storage, 'MAX_TEXT_UNITS', 7):
+            with self.assertRaises(storage.SnapshotError):
+                storage.capture(source)
+            with self.assertRaises(storage.SnapshotError):
+                storage.restore(snapshot)
+
     def test_title_local_limit_one_at_and_one_over(self):
         source = table_with(None, (), title='𐐀' * 5)
         with mock.patch.object(hooks, 'MAX_TITLE_UNITS', 10):
@@ -495,27 +581,33 @@ class TypedTableBudgetTests(unittest.TestCase):
 
     def test_index_count_limit_one_at_and_one_over(self):
         source = table_with(numeric(), ())
-        for _ in range(hooks.MAX_INDEXES): source.indexes.add()
+        for i in range(1, hooks.MAX_INDEXES):
+            source.columns.add(f'C{i}')
+        for column in source.columns.items:
+            source.indexes.add(column.name)
         snapshot = storage.capture(source)
         self.assertEqual(len(storage.restore(snapshot).indexes.items), hooks.MAX_INDEXES)
-        source.indexes.add()
+        source.indexes.add('Item,C1')
         with self.assertRaises(storage.SnapshotError): storage.capture(source)
         with self.assertRaises(storage.SnapshotError):
-            storage.restore(storage.Snapshot((*snapshot._root[:3], snapshot._root[3] + ((),))))
+            storage.restore(storage.Snapshot((*snapshot._root[:3], snapshot._root[3] + ((0, 1),))))
 
     def test_index_column_limit_one_at_and_one_over(self):
         source = table_with(numeric(), ())
-        source.indexes.add(','.join(['Item'] * hooks.MAX_INDEX_COLUMNS))
-        snapshot = storage.capture(source)
-        self.assertEqual(len(storage.restore(snapshot).indexes.items[0].columns), hooks.MAX_INDEX_COLUMNS)
-        source.indexes.items[0].columns.append(source.columns.items[0])
-        with self.assertRaises(storage.SnapshotError): storage.capture(source)
-        with self.assertRaises(storage.SnapshotError):
-            storage.restore(storage.Snapshot((*snapshot._root[:3], ((0,) * (hooks.MAX_INDEX_COLUMNS + 1),))))
+        source.columns.add('Other')
+        source.indexes.add('Item,Other')
+        with mock.patch.object(hooks, 'MAX_INDEX_COLUMNS', 2):
+            snapshot = storage.capture(source)
+            self.assertEqual(storage.restore(snapshot).indexes.items, [(0, 1)])
+            source.indexes.add('Other')
+            with self.assertRaises(storage.SnapshotError): storage.capture(source)
+            with self.assertRaises(storage.SnapshotError):
+                storage.restore(storage.Snapshot((*snapshot._root[:3], ((0, 1), (1,)))))
 
     def test_index_cell_work_limit_before_rebuild_or_cell_traversal(self):
         source = table_with(numeric(), (D(1), D(2)))
-        source.indexes.add('Item,Item')
+        source.columns.add('Other')
+        source.indexes.add('Item,Other')
         with mock.patch.object(hooks, 'MAX_INDEX_CELLS', 4):
             snapshot = storage.capture(source); storage.restore(snapshot)
         with mock.patch.object(hooks, 'MAX_INDEX_CELLS', 3):
@@ -527,8 +619,11 @@ class TypedTableBudgetTests(unittest.TestCase):
             with self.assertRaises(storage.SnapshotError): storage.restore(snapshot)
 
     def test_repeated_index_content_is_bounded_without_copying_caches(self):
-        source = table_with(None, ('a' * 100,)); source.indexes.add('Item,Item')
-        with mock.patch.object(hooks, '_MAX_INDEX_UNITS', 199):
+        source = table_with(None, ('a' * 100,)); source.indexes.add('Item')
+        source.columns.add('Other')
+        source.rows[0].set(1, 'b')
+        source.indexes.add('Item,Other')
+        with mock.patch.object(hooks, '_MAX_INDEX_UNITS', 200):
             with self.assertRaises(storage.SnapshotError): storage.capture(source)
 
     def test_qualifier_maxima_and_malformed_one_over(self):

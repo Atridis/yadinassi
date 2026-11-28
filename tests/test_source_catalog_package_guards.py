@@ -3,10 +3,10 @@ import unittest
 import weakref
 from unittest.mock import patch
 import test_source_catalog_queries as fixture
-from yadinassi.source_query_references import SourcePackageScope
-from yadinassi.source_constant_queries import SourceConstantQuery
-from yadinassi.query_packages import BSLTempTablesManager
-from yadinassi import query_parser as syntax
+from yadinassi.db.query.source_query_references import SourcePackageScope
+from yadinassi.db.query.source_constant_queries import SourceConstantQuery
+from yadinassi.db.query.query_packages import BSLTempTablesManager
+from yadinassi.db.query import query_parser as syntax
 
 class SourceCatalogPackageGuardTests(unittest.TestCase):
     setUp=fixture.SourceCatalogQueryTests.setUp

@@ -2,7 +2,7 @@
 from dataclasses import replace, FrozenInstanceError
 from unittest import TestCase, mock
 from uuid import UUID
-from yadinassi.catalog_backend import (Capabilities, CatalogSchema, CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (Capabilities, CatalogSchema, CatalogKey,
     CatalogValueRow, CatalogValuePage, BackendError)
 from yadinassi.ui.catalog_view import CatalogRepository
 from yadinassi.ui.protocol import UIError

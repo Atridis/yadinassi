@@ -3,9 +3,9 @@ from decimal import Decimal as D, Inexact, Rounded, localcontext
 import unittest
 from unittest import mock
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
-from yadinassi.value_trees import BSLValueTree, BSLValueTreeRow
-from yadinassi.values import NULL
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
+from yadinassi.collections.value_trees import BSLValueTree, BSLValueTreeRow
+from yadinassi.types.values import NULL
 
 
 class Poison:
@@ -131,7 +131,7 @@ class SortLocalPolicyTests(unittest.TestCase):
 
 
     def test_local_resource_limits_reject_before_any_row_reordering(self):
-        from yadinassi import value_tree_sort as sort
+        from yadinassi.collections import value_tree_sort as sort
         cases=(('_MAX_SORT_ROWS',2,'Key'),('_MAX_SORT_COLUMNS',1,'Key'),
                ('_MAX_SORT_CELLS',2,'Key'),('_MAX_SORT_TEXT',2,'Key'),
                ('_MAX_SORT_TOKENS',1,'Key,Second'),('_MAX_SORT_WORK',1,'Key'))
@@ -141,11 +141,11 @@ class SortLocalPolicyTests(unittest.TestCase):
         tree=self.fixture();parent=tree.rows.items[0]
         for _ in range(3):
             parent=parent.rows.add();parent.set_index('Key',D(1));parent.set_index('Second',D(0))
-        with mock.patch('yadinassi.value_trees._MAX_DEPTH',2):
+        with mock.patch('yadinassi.collections.value_trees._MAX_DEPTH',2):
             self.fail_unchanged(tree,'Key',True)
 
     def test_finite_decimal_coefficients_and_exponents_have_explicit_local_bounds(self):
-        from yadinassi import value_tree_sort as sort
+        from yadinassi.collections import value_tree_sort as sort
         for value,constant in ((D('123456789'),'_MAX_SORT_NUMBER_DIGITS'),
                                (D('1e9'),'_MAX_SORT_NUMBER_EXPONENT'),
                                (D('1e-9'),'_MAX_SORT_NUMBER_EXPONENT')):
@@ -198,7 +198,7 @@ class SortLocalPolicyTests(unittest.TestCase):
 
 
     def test_failure_after_private_permutations_never_commits_partial_tree(self):
-        from yadinassi import value_tree_sort as sort
+        from yadinassi.collections import value_tree_sort as sort
         tree=self.fixture();parent=tree.rows.items[0]
         for value in (3,1,2):
             child=parent.rows.add();child.set_index('Key',D(value));child.set_index('Second',D(0))

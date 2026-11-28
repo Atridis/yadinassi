@@ -9,9 +9,11 @@ from yadinassi.ui.local_app import RuntimeBridge
 
 class FrozenLauncherTests(unittest.TestCase):
     def test_first_argument_only_selects_explicit_mode(self):
+        from yadinassi.ui import database_launch, editor_stdio
+
         with mock.patch.object(entrypoint, 'cli_main', return_value=9) as cli, \
-                mock.patch.object(entrypoint.database_launch, 'main', return_value=8) as ui, \
-                mock.patch.object(entrypoint.editor_stdio, 'main', return_value=7) as child:
+                mock.patch.object(database_launch, 'main', return_value=8) as ui, \
+                mock.patch.object(editor_stdio, 'main', return_value=7) as child:
             self.assertEqual(entrypoint.main(['--ui', '--f', 'test.sqlite']), 8)
             ui.assert_called_once_with(['--f', 'test.sqlite'])
             self.assertEqual(entrypoint.main(['--catalog-ui-runtime', 'test.sqlite']), 7)
@@ -29,10 +31,7 @@ class FrozenLauncherTests(unittest.TestCase):
                     bridge = RuntimeBridge('owned.sqlite')
                     try:
                         command = popen.call_args.args[0]
-                        from yadinassi.execution_policy import current_backend
                         expected = ([sys.executable, '--catalog-ui-runtime', 'owned.sqlite']
                             if frozen else [sys.executable, '-m', 'yadinassi.ui.editor_stdio', 'owned.sqlite'])
-                        if current_backend() != 'interpreter':
-                            expected.extend(['--execution-backend', current_backend()])
                         self.assertEqual(command, expected)
                     finally: bridge.close()

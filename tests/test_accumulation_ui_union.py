@@ -7,15 +7,16 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi import Interpreter, BSLRuntimeError, serialization
-from yadinassi.catalog_backend import BackendError
-from yadinassi.values import BSLType
-from yadinassi.configuration_accumulation import import_accumulation_configuration, PROFILE as ACCUMULATION
-from yadinassi.configuration_posting import import_posting_configuration, PROFILE as RECORDER
-from yadinassi.configuration_posting_application import import_posting_application, PROFILE as FORMS
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.database_transactions import RootOperation, require_host_root
-from yadinassi.document_posting_host import RootPostingOperations
+from yadinassi import Interpreter, BSLRuntimeError
+from yadinassi.formats.storage import serialization
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.types.values import BSLType
+from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE as ACCUMULATION
+from yadinassi.configuration.configuration_posting import import_posting_configuration, PROFILE as RECORDER
+from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE as FORMS
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.database_transactions import RootOperation, require_host_root
+from yadinassi.db.document.document_posting_host import RootPostingOperations
 from posting_application_fixture import source as form_source
 from test_sqlite_accumulation_profile import accumulation_source
 from test_configuration_posting import source as recorder_source
@@ -68,7 +69,7 @@ class AccumulationUIUnionTests(unittest.TestCase):
             operation = RootOperation(context.backend, uuid4())
             host = RootPostingOperations(context, configuration)
             host.close()
-        self.assertEqual(operation.receipt.state, 'prepared')
+        self.assertEqual(operation.result.state, 'prepared')
         self.assertIsNone(getattr(context.backend, '_bsl_transaction', None))
 
     def test_forms_configuration_cannot_authorize_v14_backend(self):

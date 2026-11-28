@@ -6,8 +6,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.value_trees import BSLValueTreeRowCollection as Rows
-from yadinassi.values import HostFunction
+from yadinassi.collections.value_trees import BSLValueTreeRowCollection as Rows
+from yadinassi.types.values import HostFunction
 from scripts import native_1c_tree_sort_contract as wire
 
 ROOT = Path(__file__).resolve().parents[1]

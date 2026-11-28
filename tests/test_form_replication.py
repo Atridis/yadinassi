@@ -8,12 +8,13 @@ from queue import Queue, Empty
 from threading import Thread
 import sys
 import unittest
+from unittest.mock import patch
 
 from yadinassi import BSLError
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.form_replication import ReplicatedFormServer, ReplicatedFormSession
-from yadinassi.invocation import InvocationBinding, InvocationPort, InvocationServer
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_replication import ReplicatedFormServer, ReplicatedFormSession
+from yadinassi.execution.invocation import InvocationBinding, InvocationPort, InvocationServer
+from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.ui.protocol import decode_line, encode_line
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -493,19 +494,43 @@ EndProcedure'''
     Return ThisObject.Result;''')
             source = CLIENT.replace('Items.PriceField.Title = "client edited";', '''RemoteCalculate(0.70);
     Try
-        Element.Title = "must not affect replacement";
+        Element.Title = RetiredWriteRhs();
         ThisObject.Status = "old reference survived";
     Except
         ThisObject.Status = "old reference invalidated";
-    EndTry;''')
+    EndTry;''') + '''
+&AtClient
+Function RetiredWriteRhs()
+    Message("retired write must not evaluate its RHS");
+    Return "must not affect replacement";
+EndFunction
+'''
             client, server, requests, replies, output = self.pair(client_source=source, server_source=replacing)
             client.open(); original = client.form.items._values['pricefield']
-            result = client.dispatch('change', revision=client.revision, control='PriceField', value=Decimal(4))
+            with patch.object(original, '_check', side_effect=AssertionError('retired object hook')) as check:
+                result = client.dispatch('change', revision=client.revision, control='PriceField', value=Decimal(4))
+            check.assert_not_called()
             self.assertIsNot(client.form.items._values['pricefield'], original)
             self.assertTrue(original._removed)
             self.assertEqual(dict(result.attributes)['Status'], 'old reference invalidated')
             self.assertEqual(next(item for item in result.items if item[0] == 'PriceField')[2], 'replacement')
             self.assertEqual(len(requests), 2)
+            self.assertNotIn('retired write must not evaluate its RHS', output)
+
+    def test_foreign_and_unregistered_controls_do_not_become_catchable_removals(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.python_direct_form_objects import require
+        from yadinassi.forms.form_model import BSLFormField
+
+        client, server, *_ = self.pair()
+        client.open()
+        foreign = BSLFormField(server.session.form, 'PriceField')
+        foreign._removed = True
+        unregistered = BSLFormField(client.form, 'PriceField')
+        with self.assertRaisesRegex(BoundaryViolation, 'foreign'):
+            require(client, foreign)
+        with self.assertRaisesRegex(BoundaryViolation, 'retired'):
+            require(client, unregistered)
 
     def test_server_endpoint_adds_dynamic_composition_before_client_continuation(self):
         source = SERVER.replace('    Return ThisObject.Result;', '''    A = New Array;

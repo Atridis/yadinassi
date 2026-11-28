@@ -8,12 +8,12 @@ from uuid import UUID, uuid4
 
 import test_sqlite_catalog_sections as section_fixtures
 import test_sqlite_catalog_migration as migration_fixtures
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     BackendError, CatalogCard, CatalogComparison, CatalogDraft, CatalogKey,
     CatalogOrder, CatalogPredicate, CatalogScanRequest, CatalogValueRow,
 )
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class ScanOptimizationTests(unittest.TestCase):
@@ -220,7 +220,10 @@ class ScanOptimizationTests(unittest.TestCase):
         self.seed(2)
         column = quote_identifier(self.backend._layout.field_name(
             self.product.identity, self.product.fields[1].identity))
-        self.sql('UPDATE ' + self.owner_table() + ' SET ' + column + "='NaN' WHERE code='0001'")
+        # Inject a type-correct coefficient outside Number(12, 2) into a
+        # filtered row; read admission must still fail if physical CHECK was bypassed.
+        self.sql('UPDATE ' + self.owner_table() + ' SET ' + column + "=? WHERE code='0001'",
+                 (10**12,), corrupt=True)
         view = self.view()
         request = CatalogScanRequest(CatalogComparison('code', 'eq', '0000'))
         with self.assertRaises(BackendError):
@@ -281,7 +284,7 @@ class ScanOptimizationTests(unittest.TestCase):
 
 
     def test_full_selection_batches_all_owners_without_partial_cards(self):
-        from yadinassi.catalog_backend import CatalogSelection
+        from yadinassi.db.catalog.catalog_backend import CatalogSelection
         drafts = self.seed(1000)
         view = self.view(); statements = []
         view._connection.set_trace_callback(statements.append)
@@ -293,11 +296,13 @@ class ScanOptimizationTests(unittest.TestCase):
         self.assertTrue(all(type(card) is CatalogCard and card.tabular_sections == self.expected()
                             for card in cards))
         self.assertLessEqual(len(statements), 52, statements)
+        # Schema admission happened before tracing; selection reuses that
+        # snapshot while the total statement bound still guards batching.
         self.assertEqual(sum(sql.startswith('SELECT definition FROM catalog_schema')
-                             for sql in statements), 1)
+                             for sql in statements), 0)
 
     def test_selection_corruption_refuses_before_constructing_cards(self):
-        from yadinassi.catalog_backend import CatalogSelection
+        from yadinassi.db.catalog.catalog_backend import CatalogSelection
         for code in ('10', '20'):
             draft = self.draft(self.expected(self.row(text=code)), code=code)
             self.create(draft)
@@ -318,9 +323,9 @@ class ProjectionBoundaryTests(unittest.TestCase):
         self.addCleanup(self.context.close)
 
     def test_projected_ref_cannot_substitute_another_row_identity(self):
-        from yadinassi.catalog_backend import CatalogValuePage
-        from yadinassi.queries import BSLQuery
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.catalog.catalog_backend import CatalogValuePage
+        from yadinassi.db.query.queries import BSLQuery
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         manager = self.vm._catalogs.get_index('Products')
         with closing(manager._view()) as view:
             key = view.scan_catalog_values(manager._schema.identity,
@@ -334,9 +339,9 @@ class ProjectionBoundaryTests(unittest.TestCase):
             pass
 
     def test_hostile_key_components_are_rejected_before_equality_and_release_view(self):
-        from yadinassi.catalog_backend import CatalogValuePage
-        from yadinassi.queries import BSLQuery
-        from yadinassi.sqlite_catalog import _View
+        from yadinassi.db.catalog.catalog_backend import CatalogValuePage
+        from yadinassi.db.query.queries import BSLQuery
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         class Hostile:
             def __eq__(self, other):
                 raise AssertionError('hostile equality executed')
@@ -349,14 +354,27 @@ class ProjectionBoundaryTests(unittest.TestCase):
         for component in ('database_id', 'catalog_id', 'record_id'):
             invalid = replace(key, **{component: Hostile()})
             for bad_key, bad_value in ((invalid, key), (key, invalid)):
-                for mode in ('query', 'find'):
-                    with self.subTest(component=component, row_key=bad_key is invalid, mode=mode):
-                        page = CatalogValuePage((CatalogValueRow(bad_key, (bad_value,)),), None)
-                        with patch.object(_View, 'scan_catalog_values', return_value=page):
-                            with self.assertRaisesRegex(BackendError, 'integrity'):
-                                if mode == 'query':
-                                    BSLQuery(self.vm._catalogs, 'SELECT Ref FROM Catalog.Products').execute()
-                                else:
-                                    manager.find_by_code('1')
-                        with closing(self.context.backend.begin_read()):
-                            pass
+                with self.subTest(component=component, row_key=bad_key is invalid, mode='query'):
+                    page = CatalogValuePage((CatalogValueRow(bad_key, (bad_value,)),), None)
+                    with patch.object(_View, 'scan_catalog_values', return_value=page):
+                        with self.assertRaisesRegex(BackendError, 'integrity'):
+                            BSLQuery(self.vm._catalogs, 'SELECT Ref FROM Catalog.Products').execute()
+                    with closing(self.context.backend.begin_read()):
+                        pass
+            with self.subTest(component=component, mode='find'):
+                with patch.object(_View, '_find_catalog_ref_exact', return_value=(invalid,)):
+                    with self.assertRaisesRegex(BackendError, 'integrity'):
+                        manager.find_by_code('1')
+                with closing(self.context.backend.begin_read()):
+                    pass
+
+        for invalid in (
+                [key], (key,key,key), (object(),),
+                (replace(key,database_id=uuid4()),), (replace(key,catalog_id=uuid4()),),
+                (replace(key,record_id=UUID(int=0)),)):
+            with self.subTest(mode='find', result=invalid):
+                with patch.object(_View, '_find_catalog_ref_exact', return_value=invalid):
+                    with self.assertRaisesRegex(BackendError, 'integrity'):
+                        manager.find_by_code('1')
+                with closing(self.context.backend.begin_read()):
+                    pass

@@ -11,8 +11,8 @@ Designer exports, generated type GUIDs and application modules are not admitted.
 an owned file. `--f application.sqlite` opens an existing file and never creates
 or upgrades one. New configurations containing admitted documents use format 7.
 Catalog-only configurations keep their existing format choice (2/3/4, or the
-separate 5/6 source profiles). Existing v1–v6 files retain their layouts and
-catalog receipt representations; there is no v1–v6-to-v7 migration in this block.
+separate 5/6 source profiles). There is
+no v1–v6-to-v7 migration in this block.
 Documents are unavailable in those older profiles.
 
 A configuration may contain documents without catalogs. Document and catalog
@@ -129,8 +129,8 @@ presentation alone is empty text).
 
 ## Storage, transactions and integrity
 
-Format 7 adds only the distinct `document_schema`, `document_record`,
-`document_sequence` and `document_commit_receipt` tables. Catalog schemas never
+Format 7 adds the distinct `document_schema`, `document_record`, and
+`document_sequence` tables. Catalog schemas never
 contain shadow documents. Catalogs, catalog queries, catalog keys, catalog
 scans and catalog references cannot address document records. The separate
 [document query profile](document-queries.md) reads documents through an explicit
@@ -151,12 +151,11 @@ are optimistic tokens, not native DataVersion. A stale detached update fails.
 Read-only openings reject document transaction creation and object mutation
 writes; reads remain available.
 
-After an uncertain commit response, the object freezes its exact write intent,
-including sections and requested numbering. Calling Write again resolves its
-persisted receipt before any replay. A matching committed receipt restores the
-original revision and generated number. Proved absence permits the same frozen
-intent to retry; mismatch refuses. Catalog and document operation IDs cannot
-collide across receipt tables. An unconfirmed response never clears IsNew.
+An unknown COMMIT response leaves the original object unusable for another
+write; it does not clear `IsNew` or publish a new revision or generated number.
+After releasing the transaction, read the current record using a fresh object.
+That read does not confirm or retry the old write. A confirmed COMMIT followed
+by a refresh failure permits only a fresh read, not another write.
 
 Admission retains the existing private-directory, regular-file, symlink,
 owner/link-count and SQLite marker/DDL checks. Format 7 additionally validates

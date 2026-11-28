@@ -107,7 +107,7 @@ class NullCheckpointTests(unittest.TestCase):
 
     def test_evaluation_and_serialization_failures_are_isolated(self):
         output = []
-        interpreter = Interpreter(output=output.append)
+        interpreter = Interpreter(output=output.append, allow_extensions=True)
         interpreter.register_function('HostOnly', lambda: object())
         interpreter.execute(helper() + '''
 НаблюдатьNull("missing", "NoSuchFunction()");

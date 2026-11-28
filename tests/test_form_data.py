@@ -4,8 +4,8 @@ from dataclasses import FrozenInstanceError
 from decimal import Decimal
 from uuid import UUID
 
-from yadinassi.catalog_backend import FieldSchema
-from yadinassi.form_data import ScalarFormData, ScalarFormField, ScalarFormBinding
+from yadinassi.db.catalog.catalog_backend import FieldSchema
+from yadinassi.forms.form_data import ScalarFormData, ScalarFormField, ScalarFormBinding
 
 
 def field(name, kind='string', qualifiers=(16,), aliases=(), writable=True, identity=1):

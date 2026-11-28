@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 import re
 
-from ..errors import BSLError, IncompleteInput
-from ..dates import literal_date
+from yadinassi.types.errors import BSLError, IncompleteInput
+from yadinassi.temporal.dates import literal_date
 from .preprocessor import ConditionalCompilation, SourceRegions, validate_compilation_profile
 
 

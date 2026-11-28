@@ -7,16 +7,16 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema, BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.catalog_object_preparation import prepare_catalog_object
+from yadinassi.db.catalog.catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema, BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_object_preparation import prepare_catalog_object
 from test_sqlite_catalog_backend import configuration
 
 SOURCE = (Path(__file__).resolve().parents[1] / 'examples/demo/Catalogs/Номенклатура/Ext/ObjectModule.bsl').read_text(encoding='utf-8-sig')
 
 
 class CatalogObjectPreparationTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, *, allow_extensions=False):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         kind, warehouse, product = uuid4(), uuid4(), uuid4()
         # Explicit logical schema, not silently activating imported demo modules.
@@ -29,7 +29,7 @@ class CatalogObjectPreparationTests(unittest.TestCase):
         self.context = SQLiteDBContext.create(Path(self.temp.name) / 'db.sqlite',
                                              replace(configuration(), catalogs=schemas))
         self.addCleanup(self.context.close)
-        self.vm = Interpreter(database_context=self.context)
+        self.vm = Interpreter(database_context=self.context, allow_extensions=allow_extensions)
         self.addCleanup(self.vm.close)
         self.vm.execute('''
             Вид = Справочники.ВидыНоменклатуры.СоздатьЭлемент();
@@ -137,9 +137,11 @@ class CatalogObjectPreparationTests(unittest.TestCase):
 
     def test_partial_mutation_on_error_is_not_rollback_or_success(self):
         source = '''Процедура ПередЗаписью(Отказ)
-                     Наименование="Changed"; ЭтотОбъект.Записать(); КонецПроцедуры'''
-        with self.assertRaises(BSLError): self.prepare(source)
+                     Наименование="Changed"; ПометкаУдаления="Not a boolean"; КонецПроцедуры'''
+        with patch.object(self.context.backend, 'begin_write', side_effect=AssertionError('write')):
+            with self.assertRaises(BSLError): self.prepare(source)
         self.assertEqual(self.card.get_member('Description'), 'Changed')
+        self.assertFalse(self.card.get_member('DeletionMark'))
         self.assertTrue(self.card.is_new())
 
     def test_row_numbers_are_read_only_current_positions_not_uuid(self):

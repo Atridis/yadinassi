@@ -6,23 +6,23 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_inventory_enums import import_inventory_enum_configuration,PROFILE
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_inventory_enums import import_inventory_enum_configuration,PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.runtime import Interpreter
-from yadinassi.values import NULL
+from yadinassi.types.values import NULL
 from test_configuration_inventory_enums import source
 
 ROOT=Path(__file__).resolve().parents[1]
 
 class InventoryEnumQueryTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, *, allow_extensions=False):
         temp=tempfile.TemporaryDirectory(dir=ROOT.parent);self.addCleanup(temp.cleanup)
         self.path=Path(temp.name)/'owned.sqlite'
         self.context=SQLiteDBContext.create_inventory_enum(self.path,import_inventory_enum_configuration(source(),inventory_runtime=PROFILE))
         self.addCleanup(self.context.close)
-        self.vm=Interpreter(database_context=self.context);self.addCleanup(self.vm.close)
+        self.vm=Interpreter(database_context=self.context, allow_extensions=allow_extensions);self.addCleanup(self.vm.close)
         self.vm.execute('P=Catalogs.Products.CreateItem();P.Code="P";P.Unit=Enums.Units.Piece;P.Write(); E=Catalogs.Products.CreateItem();E.Code="E";E.Write(); K=Catalogs.Products.CreateItem();K.Code="K";K.Unit=Enums.Units.Pack;K.Write();')
         self.piece=self.vm.execute('Enums.Units.Piece');self.empty=self.vm.execute('Enums.Units.EmptyRef()')
 
@@ -34,6 +34,28 @@ class InventoryEnumQueryTests(unittest.TestCase):
 
     def seed_document(self):
         self.vm.execute('W=Catalogs.Warehouses.CreateItem();W.Code="W";W.Write(); D=Documents.Receipt.CreateDocument();D.Number="R";D.Date=Date(2024,2,10);D.Warehouse=W.Ref;D.State=Enums.States.Approved;L=D.Lines.Add();L.Product=P.Ref;L.Unit=Enums.Units.Piece;L.Quantity=5;L.Amount=10;L=D.Lines.Add();L.Product=P.Ref;L.Unit=Enums.Units.Pack;L.Quantity=4;L.Amount=8;D.Write(DocumentWriteMode.Posting);')
+
+    def test_cold_scalar_document_and_accumulation_load_only_required_families(self):
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+        self.seed_document()
+        with closing(Interpreter(database_context=self.context)) as other:
+            with mock.patch.object(_View, 'catalogs', side_effect=AssertionError('unused catalog metadata')):
+                rows = other.execute('Q=New Query("SELECT Number FROM Document.Receipt");Q.Execute();')
+                self.assertEqual(rows._rows, (('R',),))
+            self.assertIsNone(other._catalogs._metadata._items)
+        with closing(Interpreter(database_context=self.context)) as other:
+            backend = self.context.backend
+            with mock.patch.object(backend, 'begin_read', side_effect=AssertionError('nested read')):
+                rows = other.execute('Q=New Query("SELECT Number FROM Document.Receipt WHERE Warehouse=Warehouse");Q.Execute();')
+                self.assertEqual(rows._rows, (('R',),))
+            self.assertIsNotNone(other._catalogs._metadata._items)
+        with closing(Interpreter(database_context=self.context)) as other:
+            backend = self.context.backend
+            with mock.patch.object(backend, 'begin_read', side_effect=AssertionError('nested read')):
+                rows = other.execute('Q=New Query("SELECT Quantity FROM AccumulationRegister.Stock ORDER BY Quantity");Q.Execute();')
+                self.assertEqual(rows._rows, ((Decimal(4),), (Decimal(5),)))
+            self.assertIsNotNone(other._documents._metadata._items)
+            self.assertIsNotNone(other._catalogs._metadata._items)
 
     def test_catalog_projection_uses_owned_canonical_objects(self):
         rows=self.query('SELECT Unit FROM Catalog.Products ORDER BY Code')._rows
@@ -57,7 +79,7 @@ class InventoryEnumQueryTests(unittest.TestCase):
                 opened.assert_not_called()
 
     def test_fabricated_equal_parameter_is_not_authority(self):
-        from yadinassi.catalog_backend import BackendError
+        from yadinassi.db.catalog.catalog_backend import BackendError
         for value in (replace(self.piece),replace(self.piece,metadata=object())):
             with self.assertRaises(BackendError):self.query('SELECT Unit FROM Catalog.Products WHERE Unit=&U',U=value)
 
@@ -135,7 +157,8 @@ class InventoryEnumQueryTests(unittest.TestCase):
         self.assertEqual(self.query('SELECT QuantityBalance FROM '
             'AccumulationRegister.Stock.Balance(&EndAt,Unit=&U)',
             U=self.piece,EndAt=end)._rows,((Decimal(5),),))
-        values=self.vm.execute('New Array');values.items.append(self.piece)
+        self.vm.variables['unitfortest'] = self.piece
+        values = self.vm.execute('A=New Array; A.Add(UnitForTest); A;')
         self.assertEqual(self.query('SELECT Unit FROM Catalog.Products WHERE Unit IN (&Units)',Units=values)._rows,
                          ((self.piece,),))
         with self.assertRaises(ValueError):
@@ -166,7 +189,7 @@ class InventoryEnumQueryTests(unittest.TestCase):
 
     def test_unprojected_enum_fields_still_decode_and_raw_condition_stays_closed(self):
         self.seed_document()
-        from yadinassi.accumulation_queries import AccumulationQueryManager
+        from yadinassi.db.query.accumulation_queries import AccumulationQueryManager
         original=AccumulationQueryManager._logical
         decoded=[]
         def observe(manager,field,value):
@@ -177,7 +200,7 @@ class InventoryEnumQueryTests(unittest.TestCase):
                 EndAt=self.vm.execute('Date(2024,3,31,23,59,59)'))
         self.assertEqual(decoded.count(('Unit','enum_ref')),2)
         self.assertEqual(decoded.count(('State','enum_ref')),2)
-        from yadinassi import query_parser
+        from yadinassi.db.query import query_parser
         with self.assertRaises(ValueError):
             query_parser.parse_package('SELECT Quantity FROM AccumulationRegister.Stock(&At,Product=&P)')
         self.assertEqual(len(self.query('SELECT Unit,State FROM AccumulationRegister.Stock')._rows),2)

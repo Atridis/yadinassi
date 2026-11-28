@@ -6,8 +6,8 @@ import re
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.value_trees import BSLValueTree
-from yadinassi.values import HostFunction
+from yadinassi.collections.value_trees import BSLValueTree
+from yadinassi.types.values import HostFunction
 from scripts import native_1c_tree_copy_contract as wire
 
 ROOT = Path(__file__).resolve().parents[1]

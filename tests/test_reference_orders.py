@@ -9,9 +9,9 @@ from unittest import mock
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError, CatalogKey
-from yadinassi.configuration_import import load_configuration_directory
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey
+from yadinassi.configuration.configuration_import import load_configuration_directory
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.form_app import PROTOCOL as FORM_PROTOCOL
 from yadinassi.ui.form_package import load_server
 from yadinassi.ui.reference_orders import OwnedChoice, APPLY_CHOICE_ENDPOINT
@@ -225,7 +225,7 @@ class ReferenceOrdersTests(unittest.TestCase):
         owner = self.open()['session']; before = self.read_order()
         for event in ('cancel', 'close'):
             child = self.choice(owner)
-            with mock.patch('yadinassi.sqlite_catalog.SQLiteCatalogBackend.begin_write', side_effect=AssertionError('no write')):
+            with mock.patch('yadinassi.db.sqlite.sqlite_catalog.SQLiteCatalogBackend.begin_write', side_effect=AssertionError('no write')):
                 closed = self.command(child, 'Cancel') if event == 'cancel' else self.form(child, 'close')
             self.assertEqual(closed['form']['result']['state']['kind'], 'closed')
             self.assertEqual(self.broker.applications[owner].customer, self.refs['C001'])
@@ -514,35 +514,98 @@ class ReferenceOrdersTests(unittest.TestCase):
         self.assertFalse(app.pending_refresh); self.assertFalse(result['form']['result']['state']['dirty'])
         self.assertEqual(app.customer, self.refs['C001'])
 
-    def test_uncertain_commit_resolves_exact_retained_receipt_and_keys(self):
-        from yadinassi.sqlite_catalog import _View
+    def test_unknown_after_commit_discards_draft_and_reads_current_references(self):
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         owner = self.open()['session']; app = self.broker.applications[owner]
-        self.select(self.choice(owner), 'C002'); self.change(owner, 'Description', 'Retained intent')
+        self.select(self.choice(owner), 'C002'); self.change(owner, 'Description', 'Submitted edit')
         commit = _View.commit
-        def lost(tx):
-            commit(tx); raise BackendError('uncertain_commit')
+        def lost(tx, **options):
+            commit(tx, **options); raise BackendError('uncertain_commit')
         with mock.patch.object(_View, 'commit', lost):
             self.command(owner, 'SaveOrder')
         self.assertTrue(app.pending_commit)
-        intent = app.object._pending_write
-        self.assertIsNotNone(intent)
-        with mock.patch.object(_View, 'commit', side_effect=AssertionError('never duplicate')):
-            result = self.command(owner, 'Resolve')
+        stale = app.object
+        self.assertTrue(stale._uncertain_write)
+        backend = app.context.backend
+        with mock.patch.object(backend, 'begin_write', side_effect=AssertionError('no second writer')):
+            self.command(owner, 'Resolve')
+            self.assertTrue(app.pending_commit)
+            result = self.command(owner, 'Discard')
         self.assertFalse(app.pending_commit); self.assertFalse(result['form']['result']['state']['dirty'])
+        self.assertIsNot(app.object, stale)
+        self.assertTrue(stale._uncertain_write)
+        self.assertEqual(app.object._key, self.refs['O001'])
+        self.assertEqual(app.customer, self.refs['C002'])
+        self.assertEqual(item(result, 'FieldDescription')['value']['value'], 'Submitted edit')
+        self.assertIn('not the prior write outcome', item(result, 'FieldStatus')['value']['value'])
         self.assertEqual(self.read_order()[1][0], self.refs['C002'])
 
-    def test_absent_receipt_retries_only_retained_reference_intent(self):
-        from yadinassi.sqlite_catalog import _View
+    def test_unknown_before_commit_discards_draft_and_reads_unchanged_references(self):
+        from yadinassi.db.sqlite.sqlite_catalog import _View
         owner = self.open()['session']; app = self.broker.applications[owner]
+        fresh_before = self.read_order()
         self.select(self.choice(owner), 'C002')
         with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
             self.command(owner, 'SaveOrder')
-        draft, expected, operation = app.object._pending_write
-        self.assertEqual(draft.key, self.refs['O001'])
-        with mock.patch.object(app.context.backend, 'begin_write', wraps=app.context.backend.begin_write) as writes:
+        self.assertTrue(app.pending_commit)
+        stale = app.object
+        self.assertTrue(stale._uncertain_write)
+        self.assertEqual(stale._key, self.refs['O001'])
+        backend = app.context.backend
+        with mock.patch.object(backend, 'begin_write', side_effect=AssertionError('no second writer')):
             self.command(owner, 'Resolve')
-        self.assertEqual(writes.call_args_list, [mock.call(operation)])
-        self.assertEqual(self.read_order()[1][0], self.refs['C002'])
+            self.assertTrue(app.pending_commit)
+            result = self.command(owner, 'Discard')
+        self.assertFalse(app.pending_commit); self.assertFalse(result['form']['result']['state']['dirty'])
+        self.assertIsNot(app.object, stale)
+        self.assertTrue(stale._uncertain_write)
+        self.assertEqual(app.customer, self.refs['C001'])
+        self.assertEqual(self.read_order(), fresh_before)
+
+
+    def test_unknown_new_draft_reads_original_key_if_it_exists(self):
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+        owner = self.open(row=None)['session']; app = self.broker.applications[owner]
+        self.change(owner, 'Code', 'NEW')
+        self.change(owner, 'Description', 'Submitted new record')
+        self.select(self.choice(owner), 'C002')
+        self.command(owner, 'AddLine')
+        self.select(self.choice(owner, 'Product'), 'P002')
+        commit = _View.commit
+        def lost(tx, **options):
+            commit(tx, **options); raise BackendError('uncertain_commit')
+        with mock.patch.object(_View, 'commit', lost):
+            self.command(owner, 'SaveOrder')
+        stale = app.object
+        self.assertTrue(app.pending_commit); self.assertTrue(stale.is_new())
+        with mock.patch.object(app.context.backend, 'begin_write', side_effect=AssertionError('no second writer')), \
+             mock.patch.object(app.manager, 'create_item', side_effect=AssertionError('no new draft')):
+            result = self.command(owner, 'Discard')
+        self.assertFalse(app.pending_commit)
+        self.assertIsNot(app.object, stale)
+        self.assertEqual(app.object._key, stale._key)
+        self.assertEqual(app.customer, self.refs['C002'])
+        self.assertEqual(item(result, 'FieldDescription')['value']['value'], 'Submitted new record')
+
+    def test_unknown_new_draft_missing_does_not_allocate_another_writer(self):
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+        owner = self.open(row=None)['session']; app = self.broker.applications[owner]
+        self.change(owner, 'Code', 'NEW')
+        self.change(owner, 'Description', 'Unconfirmed')
+        self.select(self.choice(owner), 'C002')
+        self.command(owner, 'AddLine')
+        self.select(self.choice(owner, 'Product'), 'P002')
+        with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
+            self.command(owner, 'SaveOrder')
+        stale = app.object
+        self.assertTrue(app.pending_commit); self.assertTrue(stale._uncertain_write)
+        with mock.patch.object(app.context.backend, 'begin_write', side_effect=AssertionError('no second writer')), \
+             mock.patch.object(app.manager, 'create_item', side_effect=AssertionError('no new draft')):
+            result = self.command(owner, 'Discard')
+        self.assertTrue(app.pending_commit)
+        self.assertIs(app.object, stale)
+        self.assertEqual(app.customer, self.refs['C002'])
+        self.assertIn('Reload failed', item(result, 'FieldStatus')['value']['value'])
 
     def test_product_choice_without_selected_row_does_not_allocate_child(self):
         owner = self.open()['session']; result = self.command(owner, 'ChooseProduct')

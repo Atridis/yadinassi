@@ -5,12 +5,13 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi import regex_functions as api, regex_parser as limits
-from yadinassi.regex_parser import Parser, Budget, RegexLimitError
-from yadinassi.regex_vm import Program, run
-from yadinassi.search_directions import BSLSearchDirection as Direction
-from yadinassi.values import BSLType
-from yadinassi import type_values, serialization
+from yadinassi.formats.regex import regex_functions as api, regex_parser as limits
+from yadinassi.formats.regex.regex_parser import Parser, Budget, RegexLimitError
+from yadinassi.formats.regex.regex_vm import Program, run
+from yadinassi.collections.search_directions import BSLSearchDirection as Direction
+from yadinassi.types.values import BSLType
+from yadinassi.types import type_values
+from yadinassi.formats.storage import serialization
 
 
 class RegexFamilyTests(unittest.TestCase):
@@ -40,6 +41,13 @@ Message(СтрЗаменитьПоРегулярномуВыражению("a1b2
         self.assertEqual(len(result.get_groups().items), 2)
         missing = api.str_find('b', '(a)?b').get_groups().items[0]
         self.assertEqual((missing._value, missing._position, missing._length), ('', 0, 0))
+
+    def test_direct_clear_of_boxed_group_array_does_not_modify_result(self):
+        self.assertEqual(self.output('''
+R=StrFindByRegularExpression("ab", "(a)(b)"); G=R.GetGroups();
+G.Clear(); Message(G.Count()); Message(R.GetGroups().Count());
+G=R.GetGroups(); G.Очистить(); Message(G.Count()); Message(R.GetGroups().Count());
+'''), ['0', '2', '0', '2'])
 
     def test_results_readonly_and_type_guards(self):
         self.assertEqual(self.output('''R=StrFindByRegularExpression("a", "(a)");

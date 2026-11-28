@@ -57,6 +57,7 @@ _TYPE_IDS = _CONTAINERS | frozenset({
     b"d47d59f8-73f0-481c-8b5e-f6384c0a4804",  # Type
 })
 _LABEL = re.compile(rb"[A-Za-z][A-Za-z0-9_.-]{0,127}: \[")
+_UUID_TYPE = b"fc01b5df-97fe-449b-83d4-218a090e681e"
 _UUID = re.compile(rb"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}")
 _NUMBER = re.compile(rb"[+-]?[0-9]+(?:\.[0-9]+)?")
 _COUNT = re.compile(rb"0|[1-9][0-9]{0,2}")
@@ -81,7 +82,7 @@ class _Group:
         self.children, self.gaps = tuple(children), tuple(gaps)
 
 
-def _records(data):
+def _records(data, *, expected_count=RECORD_COUNT):
     """Consume frames, not apparent labels embedded in quoted payload strings."""
     if type(data) is not bytes or not 0 < len(data) <= MAX_FILE:
         raise _Reject("input_limit")
@@ -124,14 +125,15 @@ def _records(data):
             raise _Reject("invalid_framing")
         records.append((label, data[start:cursor + 2], data[payload_start:cursor]))
         cursor += 2
-    if len(records) != RECORD_COUNT:
+    if expected_count is not None and len(records) != expected_count:
         raise _Reject("record_mismatch")
     return records
 
 
 class _Parser:
-    def __init__(self, data):
+    def __init__(self, data, *, max_scalar=MAX_SCALAR):
         self.data, self.cursor, self.nodes = data, 0, 0
+        self.max_scalar = max_scalar
 
     def whitespace(self):
         while self.cursor < len(self.data) and self.data[self.cursor] in _WS:
@@ -167,7 +169,7 @@ class _Parser:
         if quoted:
             self.cursor += 1
             while self.cursor < len(data):
-                if self.cursor - start > MAX_SCALAR:
+                if self.cursor - start > self.max_scalar:
                     raise _Reject("payload_limit")
                 if data[self.cursor] == 34:
                     self.cursor += 1
@@ -179,12 +181,12 @@ class _Parser:
         else:
             while self.cursor < len(data) and data[self.cursor] not in b",{} \t\r\n":
                 self.cursor += 1
-                if self.cursor - start > MAX_SCALAR:
+                if self.cursor - start > self.max_scalar:
                     raise _Reject("payload_limit")
         raw = data[start:self.cursor]
         if not raw:
             raise _Reject("unsupported_payload")
-        if len(raw) > MAX_SCALAR:
+        if len(raw) > self.max_scalar:
             raise _Reject("payload_limit")
         return _Atom(raw, quoted)
 
@@ -207,7 +209,16 @@ def _signature(node, children):
     return (b"group", node.gaps, tuple(children))
 
 
-def _scalar_key(node):
+def _canonical_uuid(children):
+    if len(children) != 3 or _atom(children[1]) != _UUID_TYPE:
+        raise _Reject("unsupported_payload")
+    raw = _atom(children[2])
+    if _UUID.fullmatch(raw) is None:
+        raise _Reject("unsupported_payload")
+    return raw
+
+
+def _scalar_key(node, *, associative=False, uuid_scalars=False):
     """Reject duplicate scalar keys, without normalizing comparison signatures.
 
     Container keys have object identity that this restricted grammar cannot
@@ -216,6 +227,10 @@ def _scalar_key(node):
     children = _group(node)
     tag = _atom(children[0], quoted=True)
     if tag == b'"#"':
+        if uuid_scalars and len(children) == 3 and _atom(children[1]) == _UUID_TYPE:
+            return _UUID_TYPE, _canonical_uuid(children)
+        if associative:
+            return b'descriptor', _descriptor_key(node)
         raise _Reject("unsupported_payload")
     raw = _atom(children[1], quoted=tag == b'"S"') if len(children) == 2 else b""
     if tag == b'"N"':
@@ -225,7 +240,44 @@ def _scalar_key(node):
     return tag, raw
 
 
-def _value(node):
+_DESCRIPTOR = b"f5c65050-3bbb-11d5-b988-0050bae0a95d"
+
+
+def _descriptor_key(node):
+    """Only the independently measured unqualified descriptor-key codec subset.
+
+    No object-identity inference, qualifiers or alternative pattern layouts.
+    Ignore formatting for duplicate detection, not for payload equivalence.
+    """
+    children = _group(node)
+    if (len(children) != 3 or _atom(children[0], quoted=True) != b'"#"'
+            or _atom(children[1]) != _DESCRIPTOR):
+        raise _Reject("unsupported_payload")
+    body = _group(children[2])
+    if not body or _atom(body[0], quoted=True) != b'"Pattern"' or len(body) > 5:
+        raise _Reject("unsupported_payload")
+    kinds = []
+    for entry in body[1:]:
+        fields = _group(entry)
+        if len(fields) != 1:
+            raise _Reject("unsupported_payload")
+        kind = _atom(fields[0], quoted=True)
+        if kind not in (b'"B"', b'"N"', b'"S"', b'"D"') or kind in kinds:
+            raise _Reject("unsupported_payload")
+        kinds.append(kind)
+    order = (b'"B"', b'"S"', b'"D"', b'"N"')
+    if tuple(kinds) != tuple(kind for kind in order if kind in kinds):
+        raise _Reject("unsupported_payload")
+    return tuple(kinds)
+
+
+def _raw_signature(node):
+    if isinstance(node, _Atom):
+        return b"atom", _atom(node, quoted=node.quoted)
+    return _signature(node, [_raw_signature(child) for child in _group(node)])
+
+
+def _value(node, *, associative=False, uuid_scalars=False):
     children = _group(node)
     tag = _atom(children[0], quoted=True)
     if tag in (b'"U"', b'"L"') and len(children) == 1:
@@ -248,6 +300,12 @@ def _value(node):
                 raise _Reject("unsupported_payload") from None
     elif tag == b'"#"' and len(children) == 3:
         identifier = _atom(children[1])
+        if uuid_scalars and identifier == _UUID_TYPE:
+            _canonical_uuid(children)
+            return _raw_signature(node)
+        if associative and identifier == _DESCRIPTOR:
+            _descriptor_key(node)
+            return _raw_signature(node)
         if identifier not in _CONTAINERS:
             raise _Reject("unsupported_payload")
         body = children[2]
@@ -257,15 +315,15 @@ def _value(node):
             raise _Reject("unsupported_payload")
         values = []
         if identifier in _ARRAYS:
-            values = [_value(child) for child in items[1:]]
+            values = [_value(child, associative=associative, uuid_scalars=uuid_scalars) for child in items[1:]]
         else:
             keys = set()
             for pair in items[1:]:
                 binding = _group(pair)
                 if len(binding) != 2:
                     raise _Reject("unsupported_payload")
-                values.append(_signature(pair, [_value(child) for child in binding]))
-                key = _scalar_key(binding[0])
+                values.append(_signature(pair, [_value(child, associative=associative, uuid_scalars=uuid_scalars) for child in binding]))
+                key = _scalar_key(binding[0], associative=associative, uuid_scalars=uuid_scalars)
                 if identifier in _STRUCTURES:
                     if key[0] != b'"S"':
                         raise _Reject("unsupported_payload")
@@ -279,7 +337,7 @@ def _value(node):
                 if key in keys:
                     raise _Reject("unsupported_payload")
                 keys.add(key)
-            if identifier in _MAPS:
+            if identifier in _MAPS or (associative and identifier in _STRUCTURES):
                 values.sort()
         body_signature = _signature(body, [(b"atom", count), *values])
         return _signature(node, [(b"atom", tag), (b"atom", identifier), body_signature])

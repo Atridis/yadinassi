@@ -14,7 +14,7 @@ in requests or retained in client stubs.
 
 ```python
 from yadinassi import Interpreter
-from yadinassi.invocation import InvocationBinding, InvocationPort, InvocationServer
+from yadinassi.execution.invocation import InvocationBinding, InvocationPort, InvocationServer
 
 server = InvocationServer('''&AtServerNoContext
 Function Calculate(Val Price, Val Quantity)
@@ -126,7 +126,11 @@ platform limits. There is no serialization of Python objects, pickle or eval.
 Server exceptions become a catchable finite `server_error`, with already emitted
 messages. They **do not promise rollback of earlier server/database effects**.
 Unsupported or unencodable return values produce `result_unavailable`, never a
-fake successful return. If a response is lost, malformed, mismatched or cannot
+fake successful return. If a configured endpoint loses its admitted authority,
+the host returns `result_unavailable` without any result or messages. The
+endpoint's BSL handlers cannot catch that violation; the client port locks
+instead of treating a potentially incomplete response as safe to repeat.
+If a response is lost, malformed, mismatched or cannot
 be delivered to client output, the port locks with `outcome_unknown`; all later
 calls on that port fail before dispatch. It never retries or automatically
 reconnects. Host cancellation or interruption after an exchange starts also locks

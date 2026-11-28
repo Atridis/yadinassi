@@ -53,7 +53,8 @@ class LocalRendererHTTPTests(unittest.TestCase):
         for headers in ({'Host': 'localhost:1234'}, {'Origin': 'https://other.invalid'},
                 {'X-Yadinassi-Session': 'b' * 43}, {'Sec-Fetch-Site': 'cross-site'},
                 {'Content-Type': 'text/plain'}):
-            self.assertEqual(self.request(headers=headers)[0], 403)
+            with self.subTest(header=next(iter(headers))):
+                self.assertEqual(self.request(headers=headers, body=b'')[0], 403)
         self.bridge.exchange.assert_not_called()
 
     def test_static_asset_allowlist_and_no_path_query_access(self):
@@ -99,9 +100,9 @@ class LocalRendererHTTPTests(unittest.TestCase):
             connection.putrequest('POST', '/rpc', skip_host=True)
             for name, value in (('Host', self.server.authority), ('Host', self.server.authority),
                     ('Origin', self.server.origin), ('Content-Type', 'application/x-ndjson'),
-                    ('X-Yadinassi-Session', self.server.token), ('Content-Length', '2')):
+                    ('X-Yadinassi-Session', self.server.token), ('Content-Length', '0')):
                 connection.putheader(name, value)
-            connection.endheaders(b'{}')
+            connection.endheaders()
             response = connection.getresponse(); self.assertEqual(response.status, 403); response.read()
         finally: connection.close()
         self.bridge.exchange.assert_not_called()

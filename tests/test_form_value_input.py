@@ -6,15 +6,15 @@ import unittest
 from unittest.mock import patch
 import weakref
 
-from yadinassi.dates import BSLDate, MAX_TICKS, TICKS_PER_SECOND
-from yadinassi.form_value_input import (ScalarInputSpec, ValueListSelection,
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, TICKS_PER_SECOND
+from yadinassi.forms.form_value_input import (ScalarInputSpec, ValueListSelection,
     MAX_CHOICES, MAX_SELECTION_BYTES, scalar_descriptor, OwnedInput)
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
 from yadinassi.ui.protocol import encode_value, CatalogRef
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, BSLType, NULL
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, BSLType, NULL
 
 D = Decimal
 TD = BSLTypeDescription
@@ -395,7 +395,7 @@ class ValueListSelectionTests(unittest.TestCase):
         source = choices(*(['"'*500]*32))
         with self.assertRaises(ValueError): ValueListSelection.capture(source)
         source, selection, _ = self.pending('small')
-        with patch('yadinassi.form_value_input.MAX_SELECTION_BYTES', 1):
+        with patch('yadinassi.forms.form_value_input.MAX_SELECTION_BYTES', 1):
             with self.assertRaises(ValueError): ValueListSelection.capture(source)
         self.assertLess(len(selection._image), MAX_SELECTION_BYTES)
 
@@ -427,19 +427,19 @@ class ValueListSelectionTests(unittest.TestCase):
 
     def test_choice_collision_refuses_without_publishing_partial_selection(self):
         source = choices('one', 'two')
-        with patch('yadinassi.form_value_input.token_hex', return_value='a'*32):
+        with patch('yadinassi.forms.form_value_input.token_hex', return_value='a'*32):
             with self.assertRaises(ValueError): ValueListSelection.capture(source)
         self.assertEqual([x.value for x in source.items], ['one','two'])
 
     def test_capture_interruption_does_not_change_source(self):
         source = choices('x'); item = source.items[0]
-        with patch('yadinassi.form_value_input.token_hex', side_effect=KeyboardInterrupt):
+        with patch('yadinassi.forms.form_value_input.token_hex', side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt): ValueListSelection.capture(source)
         self.assertIs(source.items[0], item); self.assertFalse(item._detached)
 
     def test_recheck_interruption_retires_before_returning_any_item(self):
         _, selection, rows = self.pending()
-        with patch('yadinassi.form_value_input._list_witness', side_effect=KeyboardInterrupt):
+        with patch('yadinassi.forms.form_value_input._list_witness', side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt): selection.take(rows[0]['choice'])
         self.assertEqual(selection.state, 'stale'); self.assertIsNone(selection._source)
         with self.assertRaises(ValueError): selection.take(rows[0]['choice'])

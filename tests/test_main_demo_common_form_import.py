@@ -4,7 +4,7 @@ from hashlib import sha256
 from unittest.mock import patch
 import unittest
 
-from yadinassi import configuration_main_demo as main
+from yadinassi.configuration import configuration_main_demo as main
 from test_main_demo_configuration import source
 
 
@@ -66,7 +66,7 @@ class MainDemoCommonFormImportTests(unittest.TestCase):
 
     def test_common_forms_never_expand_global_inventory_manifest(self):
         # Even a host-side forged manifest is not a route to CommonForm commands.
-        from yadinassi.configuration_inventory_application import _manifest
+        from yadinassi.configuration.configuration_inventory_application import _manifest
         with self.assertRaises(ValueError):
             _manifest(dict(main.import_main_demo_configuration(source(), profile=main.PROFILE).files)
                       ['InventoryApplication.xml'], {'commonform.operationdraft': object()}, source(), ())

@@ -24,7 +24,7 @@ Stop application owners and retain a verified backup. SQLite locks protect activ
 transactions, not idle owners. Keep maintenance exclusion through resolution.
 
 ```python
-from yadinassi.sqlite_query_index_maintenance import prepare, apply, resolve
+from yadinassi.db.sqlite.sqlite_query_index_maintenance import prepare, apply, resolve
 plan = prepare(path, maintenance=True)
 apply(path, plan, maintenance=True)
 # Only if the apply outcome is unknown:

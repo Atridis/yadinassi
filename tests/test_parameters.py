@@ -1,9 +1,11 @@
 """Positional routine parameters, reference aliases, and Val semantics."""
 from decimal import Decimal
+from pathlib import Path
+import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import IncompleteInput
+from yadinassi.types.errors import IncompleteInput
 from yadinassi.syntax.parser import parse
 
 
@@ -13,14 +15,24 @@ class ParameterTests(unittest.TestCase):
         self.vm = Interpreter(output=self.output.append)
 
     def test_sum_forward_call_and_bilingual_parameters(self):
-        self.vm.execute('''
-            Сообщить(ПолучитьСумму(1, 2));
+        module = '''
             Функция ПолучитьСумму(Знач Первое, vAl Второе) Экспорт
                 Возврат первое + ВТОРОЕ;
             КонецФункции
-        ''')
+        '''
+        self.vm.execute('Сообщить(ПолучитьСумму(1, 2));\n' + module)
         self.assertEqual(self.output, ['3'])
-        self.assertTrue(self.vm.routines['получитьсумму'].exported)
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'Side.bsl').write_text(module, encoding='utf-8')
+            vm = Interpreter()
+            try:
+                result = vm.execute('// #Import Side.bsl\nSide.ПОЛУЧИТЬсумму(3, 4)',
+                                    str(root / 'Main.bsl'))
+            finally:
+                vm.close()
+        self.assertEqual(result, Decimal(7))
 
     def test_reference_rebinding_and_value_isolation(self):
         self.vm.execute('''

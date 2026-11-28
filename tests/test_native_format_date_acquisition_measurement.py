@@ -42,7 +42,7 @@ def fixed_rows(kind):
 
 def emit(kind, witness=None, *, missing=False):
     output = []
-    vm = Interpreter(output.append)
+    vm = Interpreter(output.append, allow_extensions=True)
     if missing:
         vm.functions.pop('format', None)
         vm.functions.pop('формат', None)
@@ -102,7 +102,7 @@ class DateAcquisitionObserverTests(unittest.TestCase):
                 self.assertTrue(any(f';DF={value}")' in r[1] for r in selected))
 
     def test_intended_composite_masks_reach_scanner_without_bare_fallback(self):
-        from yadinassi import formatting
+        from yadinassi.text import formatting
         sentinel = ((False, 'synthetic-token'),)
         for kind, count in [('names', 26), ('tokens', 8)]:
             seen = []

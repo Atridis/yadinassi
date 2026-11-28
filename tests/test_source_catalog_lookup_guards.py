@@ -1,7 +1,7 @@
 """Independent record-preservation and lifecycle guards for reference access."""
 import unittest
 import test_source_catalog_object_modules as modules
-from yadinassi.errors import BSLError
+from yadinassi.types.errors import BSLError
 
 class SourceCatalogLookupGuards(unittest.TestCase):
     setUp=modules.SourceCatalogModuleTests.setUp

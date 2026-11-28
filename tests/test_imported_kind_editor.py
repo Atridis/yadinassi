@@ -10,11 +10,11 @@ from contextlib import closing
 from unittest import mock
 import unittest
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
 from yadinassi.ui.catalog_editor import CatalogEditorApplication
-from yadinassi.ui.protocol import UIError
+from yadinassi.ui.protocol import CatalogRef, UIError
 
 
 class ImportedKindEditorTests(unittest.TestCase):
@@ -38,6 +38,25 @@ class ImportedKindEditorTests(unittest.TestCase):
 
     def change(self, value):
         return self.editor.change('InputData1', value)
+
+    def assert_uncertain(self):
+        state = self.editor.snapshot()
+        self.assertEqual((state['saveState'], state['error']), ('uncertain', 'uncertain_commit'))
+        self.assertTrue(state['editingLocked'])
+        self.assertTrue(state['dirty'])
+        self.assertTrue(self.editor.pending_commit)
+        self.assertFalse(self.editor.pending_refresh)
+
+    def discard_and_reopen(self):
+        key = self.editor.object._key
+        self.app.event('command', control='CancelButton')
+        self.assertIsNone(self.app.editor)
+        self.assertEqual(self.app.view.page(0, 8)['total'], 1)
+        self.assertIn('Previous write outcome remains unknown', self.app.list_notice)
+        self.app.open(CatalogRef(str(key.catalog_id), str(key.record_id)))
+        self.editor = self.app.editor
+        self.assertFalse(self.editor.snapshot()['editingLocked'])
+        self.assertFalse(self.editor.snapshot()['dirty'])
 
     def test_original_change_normalizes_and_displays_field_message(self):
         self.change(' x ')
@@ -84,7 +103,7 @@ class ImportedKindEditorTests(unittest.TestCase):
         self.change(' valid ')
         before = self.editor.snapshot()['fields']
         backend = self.context.backend
-        with mock.patch.object(backend, 'read_form_source', side_effect=BackendError('schema_changed')):
+        with mock.patch.object(backend, 'read_catalog_editor_source', side_effect=BackendError('schema_changed')):
             with self.assertRaises(BackendError): self.change('other')
         with self.assertRaises(BackendError): self.change('another')
         self.assertEqual(self.editor.snapshot()['fields'], before)
@@ -100,33 +119,30 @@ class ImportedKindEditorTests(unittest.TestCase):
             self.editor.command('SaveButton')
         self.assertEqual(self.editor.save_state, 'saved')
 
-    def test_pending_commit_never_prepares_or_replaces_intent(self):
+    def test_unknown_commit_does_not_replay_or_infer_outcome_after_source_changes(self):
         self.change('Valid category')
         original = _View.commit
-        def uncertain(view):
-            original(view)
+        def uncertain(view, **options):
+            original(view, **options)
             raise BackendError('uncertain_commit')
         with mock.patch.object(_View, 'commit', uncertain):
             self.editor.command('SaveButton')
-        self.assertTrue(self.editor.pending_commit)
+        self.assert_uncertain()
+        writer = self.editor.object
         with closing(sqlite3.connect(self.path)) as db, db:
             source = db.execute("SELECT content FROM configuration_file WHERE path='Configuration.xml'").fetchone()[0]
             db.execute("UPDATE configuration_file SET content=? WHERE path='Configuration.xml'", (b'<changed/>',))
         with mock.patch.object(self.editor, '_source_draft', side_effect=AssertionError('BSL replay')), \
+             mock.patch.object(self.editor, '_refresh', side_effect=AssertionError('outcome guessed')), \
              mock.patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
             self.editor.command('SaveButton')
-        self.assertEqual(self.editor.save_state, 'committed')
-        self.assertFalse(self.editor.pending_commit)
-        self.assertTrue(self.editor.pending_refresh)
-        self.assertTrue(self.editor.snapshot()['sourceStale'])
-        with closing(sqlite3.connect(self.path)) as db, db:
-            db.execute("UPDATE configuration_file SET content=? WHERE path='Configuration.xml'", (source,))
-        with mock.patch.object(self.editor, '_source_draft', side_effect=AssertionError('BSL replay')), \
-             mock.patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
+            self.assert_uncertain()
+            with closing(sqlite3.connect(self.path)) as db, db:
+                db.execute("UPDATE configuration_file SET content=? WHERE path='Configuration.xml'", (source,))
             self.editor.command('SaveButton')
-        self.assertEqual(self.editor.save_state, 'saved')
-        self.assertFalse(self.editor.pending_refresh)
-        self.assertTrue(self.editor.snapshot()['sourceStale'])
+            self.assert_uncertain()
+        self.assertIs(self.editor.object, writer)
+        self.discard_and_reopen()
         self.assertEqual(self.editor.object.get_member('Description'), 'Valid category')
 
     def test_create_save_close_database_reopen_persisted_original_form(self):
@@ -185,23 +201,25 @@ class ImportedKindEditorTests(unittest.TestCase):
         self.app.event('closeCard')
         self.assertEqual(self.app.view.page(0, 8)['total'], 1)
 
-    def test_backend_replacement_cannot_resolve_pending_commit(self):
+    def test_unknown_commit_cannot_consult_replacement_backend(self):
         self.change('Valid category')
         commit = _View.commit
-        def uncertain(view):
-            commit(view)
+        def uncertain(view, **options):
+            commit(view, **options)
             raise BackendError('uncertain_commit')
         with mock.patch.object(_View, 'commit', uncertain):
             self.editor.command('SaveButton')
-        pending = self.editor.object._pending_write
+        self.assert_uncertain()
+        writer = self.editor.object
         replacement = SQLiteCatalogBackend(self.path)
         self.addCleanup(replacement.close)
         with mock.patch.object(self.context, '_backend', replacement), \
-             mock.patch.object(self.editor.object, 'write', side_effect=AssertionError('replaced backend')):
+             mock.patch.object(replacement, 'begin_read', side_effect=AssertionError('replacement read')), \
+             mock.patch.object(self.editor, '_refresh', side_effect=AssertionError('replacement refresh')), \
+             mock.patch.object(writer, 'write', side_effect=AssertionError('second write')):
             self.editor.command('SaveButton')
-        self.assertIs(self.editor.object._pending_write, pending)
-        self.assertTrue(self.editor.pending_commit)
-        self.assertTrue(self.editor.snapshot()['sourceStale'])
+            self.assert_uncertain()
+        self.assertIs(self.editor.object, writer)
 
     def test_backend_replacement_cannot_adopt_pending_refresh(self):
         self.change('Valid category')
@@ -279,15 +297,16 @@ class ImportedKindEditorTests(unittest.TestCase):
         self.mark(False); self.editor.command('SaveButton')
         self.assertFalse(self.editor.object.get_member('DeletionMark'))
 
-    def test_kind_mark_uncertain_commit_preserves_exact_value(self):
+    def test_kind_mark_unknown_commit_reopens_the_persisted_value(self):
         self.change('x'); self.mark(True)
         original = _View.commit
-        def uncertain(view): original(view); raise BackendError('uncertain_commit')
+        def uncertain(view, **options): original(view, **options); raise BackendError('uncertain_commit')
         with mock.patch.object(_View, 'commit', uncertain): self.editor.command('SaveButton')
-        self.assertTrue(self.editor.pending_commit)
+        self.assert_uncertain()
         with self.assertRaises(UIError): self.mark(False)
         with mock.patch.object(self.editor, '_source_draft', side_effect=AssertionError('form replay')), \
              mock.patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
             self.editor.command('SaveButton')
-        self.assertEqual(self.editor.save_state, 'saved')
-        self.assertTrue(self.editor.object.get_member('DeletionMark'))
+            self.assert_uncertain()
+        self.discard_and_reopen()
+        self.assertIs(self.editor.object.get_member('DeletionMark'), True)

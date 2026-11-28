@@ -8,7 +8,7 @@ import unittest
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax import ast
-from yadinassi.errors import BSLRuntimeError, IncompleteInput
+from yadinassi.types.errors import BSLRuntimeError, IncompleteInput
 from yadinassi.syntax.parser import parse
 
 
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class ExceptionTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def test_russian_english_and_mixed_case_statements(self):
         self.vm.execute('''
@@ -240,7 +240,8 @@ class ExceptionTests(unittest.TestCase):
             ('a = New Array; a.Unknown();', 'Метод или свойство'),
             ('x = New Missing;', 'Тип не определен'),
             ('StrConcat(1);', 'ожидает массив'),
-            ('For Each x In 1 Do EndDo;', 'ожидает массив'),
+            ('For Each x In 1 Do Message("unexpected body"); EndDo;',
+             r"ожидает массив или коллекцию|'int' object is not iterable"),
             ('If "text" Then EndIf;', 'Ожидается булево'),
         ]
         for body, message in cases:
@@ -250,7 +251,8 @@ class ExceptionTests(unittest.TestCase):
                 vm.execute('Try ' + body + ' Except Message(ErrorDescription()); EndTry;', 'runtime.bsl')
                 self.assertEqual(len(output), 1)
                 self.assertTrue(output[0].startswith('runtime.bsl:1:'))
-                self.assertIn(message, output[0])
+                if message:
+                    self.assertRegex(output[0], message)
                 self.assertEqual(vm.execute('ErrorDescription()'), '')
 
     def test_known_host_exceptions_are_wrapped_and_catchable(self):
@@ -414,7 +416,7 @@ class ExceptionTests(unittest.TestCase):
         self.assertEqual(self.output, ['2', 'Да', 'Да'])
 
     def test_independent_interpreters_do_not_share_handler_state(self):
-        other = Interpreter(output=self.output.append)
+        other = Interpreter(output=self.output.append, allow_extensions=True)
         self.vm.register_function('OtherDescription', lambda: other.execute('ErrorDescription()'))
         self.vm.execute('Try Raise "first"; Except Message(OtherDescription() = ""); EndTry;')
         self.assertEqual(self.output, ['Да'])

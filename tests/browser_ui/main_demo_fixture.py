@@ -15,11 +15,13 @@ import sqlite3
 import sys
 from uuid import UUID
 
-from yadinassi.catalog_backend import CatalogDraft, CatalogKey, CatalogSelection
-from yadinassi.configuration_import import read_configuration_directory
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.document_backend import DocumentSelection
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import CatalogDraft, CatalogKey, CatalogSelection
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.document.document_backend import DocumentSelection
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_movement_layout import references as movement_columns
+from yadinassi.db.sqlite.sqlite_typed_rows import decode_typed_columns
 
 SOURCE = Path(__file__).resolve().parents[2] / 'examples/demo'
 DATABASE = 'main-demo.sqlite'
@@ -64,6 +66,7 @@ def audit(root):
         if backend.export_configuration() != read_configuration_directory(SOURCE):
             raise ValueError('source_changed')
         configuration = backend.accumulation_configuration
+        enum_domain = backend._enum_domain
         with closing(backend.begin_read()) as view:
             catalogs = {schema.name: view.select_catalog(schema.identity,
                 CatalogSelection(limit=71)) for schema in configuration.catalogs}
@@ -86,11 +89,21 @@ def audit(root):
     # Read-only physical movement witness supplements typed catalog/document reads.
     # No interpreter, write API, handler or arbitrary SQL from the browser is used.
     with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)) as connection:
-        movements = connection.execute('SELECT register_id,document_id,record_id,line_number,'
-            'period,active,direction,values_json FROM accumulation_movement '
-            'ORDER BY register_id,document_id,record_id,line_number LIMIT 101').fetchall()
-        if len(movements) > 100:
-            raise ValueError('audit_movement_budget')
+        movements = []
+        for schema in sorted(configuration.registers, key=lambda register: register.identity):
+            table, columns = movement_columns('accumulation', schema)
+            projection = ','.join(('register_id','document_id','record_id','line_number',
+                                   'period','active','direction',*columns))
+            rows = connection.execute('SELECT ' + projection + ' FROM ' + table +
+                ' ORDER BY document_id,record_id,line_number LIMIT ?', (101-len(movements),))
+            left = len(schema.dimensions)
+            right = left + len(schema.resources)
+            for row in rows:
+                flat = decode_typed_columns(row[7:],schema,enum_domain=enum_domain)
+                segments = flat[:left],flat[left:right],flat[right:]
+                movements.append((*row[:7], json.dumps(segments)))
+            if len(movements) > 100:
+                raise ValueError('audit_movement_budget')
         result['movementRows'] = public(movements)
     if sha256(database.read_bytes()).hexdigest() != before:
         raise ValueError('database_changed_during_audit')

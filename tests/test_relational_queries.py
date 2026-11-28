@@ -7,10 +7,10 @@ from unittest.mock import patch
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.queries import BSLQuery
-from yadinassi import query_parser as syntax
-from yadinassi.sqlite_catalog import _View
-from yadinassi.values import NULL
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.query import query_parser as syntax
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.types.values import NULL
 import test_catalog_queries as fixtures
 
 
@@ -158,11 +158,11 @@ S=Q.Execute().Select();While S.Next() Do Message(S.Product);Message(S.Category);
         self.context.backend.begin_read().close()
 
     def test_input_and_intermediate_limits_fail_not_truncate(self):
-        with patch('yadinassi.relational_queries.syntax.MAX_ROWS', 2):
+        with patch('yadinassi.db.query.relational_queries.syntax.MAX_ROWS', 2):
             with self.assertRaisesRegex(ValueError, 'input resource'): self.rows('SELECT TOP 1 SUM(Amount) AS Total FROM Catalog.Products')
-        with patch('yadinassi.relational_queries.MAX_INTERMEDIATE_ROWS', 2):
+        with patch('yadinassi.db.query.relational_queries.MAX_INTERMEDIATE_ROWS', 2):
             with self.assertRaisesRegex(ValueError, 'intermediate'): self.rows('SELECT COUNT(*) AS N FROM Catalog.Products AS P JOIN Catalog.Products AS Q ON P.Text=Q.Text')
-        with patch('yadinassi.relational_queries.MAX_JOIN_PAIRS', 1):
+        with patch('yadinassi.db.query.relational_queries.MAX_JOIN_PAIRS', 1):
             with self.assertRaisesRegex(ValueError, 'join work'): self.rows('SELECT COUNT(*) AS N FROM Catalog.Products AS P JOIN Catalog.Products AS Q ON P.Amount<Q.Amount')
         self.context.backend.begin_read().close()
 
@@ -223,7 +223,7 @@ E=Catalogs.Products.CreateItem();E.Code="30";E.Write();''')
         self.assertEqual(self.rows(text),(('10',Decimal(2),Decimal('22.35')),('20',Decimal(1),Decimal(99)),('30',Decimal(0),NULL)))
 
     def test_filtered_section_group_and_reopen(self):
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         text = 'SELECT L.Ref AS Owner,SUM(L.Amount) AS Total FROM Catalog.Products.Lines AS L WHERE L.Amount<50 GROUP BY L.Ref'
         before=self.rows(text);self.context.close();self.context=SQLiteDBContext(self.path)
         self.vm=Interpreter(database_context=self.context)
@@ -238,13 +238,13 @@ E=Catalogs.Products.CreateItem();E.Code="30";E.Write();''')
         self.assertEqual(self.rows(text),((Decimal(3),Decimal(0)),))
 
     def test_port_has_no_sql_or_backend_handle_dependency(self):
-        from yadinassi.catalog_backend import CatalogValueRow,CatalogValuePage,CatalogSectionPage
+        from yadinassi.db.catalog.catalog_backend import CatalogValueRow,CatalogValuePage,CatalogSectionPage
         # Capture detached logical rows, then remove every SQLite execution path.
         managers=[self.vm._catalogs.get_index(name) for name in ('Products','Categories')]
         backend=self.context.backend
         view=backend.begin_read()
         schemas={m._schema.identity:m._schema for m in managers}
-        cards={key:view.select_catalog(key,__import__('yadinassi.catalog_backend',fromlist=['CatalogSelection']).CatalogSelection()) for key in schemas}
+        cards={key:view.select_catalog(key,__import__('yadinassi.db.catalog.catalog_backend',fromlist=['CatalogSelection']).CatalogSelection()) for key in schemas}
         database_id,generation=view.database_id,view.configuration_generation
         view.close()
         class LogicalView:
@@ -261,15 +261,17 @@ E=Catalogs.Products.CreateItem();E.Code="30";E.Write();''')
                     rows.append(CatalogValueRow(card.key,tuple(values[f] for f in fields)))
                 return CatalogValuePage(tuple(rows),None)
             def scan_catalog_section(self,identity,section_id,request):
-                from yadinassi.catalog_backend import CatalogSectionRecord
+                from yadinassi.db.catalog.catalog_backend import CatalogSectionRecord
                 return CatalogSectionPage(tuple(CatalogSectionRecord(card.key,section_id,row)
                     for card in cards[identity] for section in card.tabular_sections if section.section_id==section_id
                     for row in section.rows),None)
             def close(self):self.closed=True
         logical=LogicalView()
-        with patch.object(backend,'begin_read',return_value=logical):
+        with (patch.object(backend, 'begin_query_read', return_value=logical) as open_port,
+              patch.object(backend, 'begin_read', side_effect=AssertionError('opened a raw read'))):
             result=self.rows('SELECT P.Code AS Owner,SUM(L.Amount) AS Total FROM Catalog.Products AS P '
                              'JOIN Catalog.Products.Lines AS L ON P.Ref=L.Ref GROUP BY P.Code ORDER BY P.Code')
+        open_port.assert_called_once_with(query_language=True)
         self.assertEqual(result,(('10',Decimal('22.35')),('20',Decimal(99))))
         self.assertTrue(logical.closed)
 

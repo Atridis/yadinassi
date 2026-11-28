@@ -4,9 +4,9 @@ from pathlib import Path
 import json
 import sys
 
-from yadinassi.configuration_import import read_configuration_directory
-from yadinassi.dates import BSLDate
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.catalog_view import CatalogRepository
 
 SOURCE = Path(__file__).resolve().parents[2] / 'examples/configuration-catalog-forms'

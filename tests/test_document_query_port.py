@@ -9,10 +9,10 @@ from uuid import uuid4
 
 import test_sqlite_documents as fixtures
 from sqlite_catalog_fixture import configuration_files
-from yadinassi.catalog_backend import BackendError, CatalogKey, CatalogScanRequest
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.document_backend import DocumentKey, DocumentScanRequest, DocumentSelection
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey, CatalogScanRequest
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.document.document_backend import DocumentKey, DocumentScanRequest, DocumentSelection
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 class DocumentQueryPortTests(unittest.TestCase):
@@ -23,13 +23,11 @@ class DocumentQueryPortTests(unittest.TestCase):
 
     def seed(self, count=3):
         """Clone one valid encoded card in a single bounded fixture transaction."""
+        from sqlite_document_physical_fixture import seed_document_headers
         obj = self.object()
+        obj.get_member('Lines').add().set_member('Flag',True)
         obj.write()
-        row = self.sql('SELECT document_id,record_id,revision,number,date,deletion_mark,values_json,sections_json FROM document_record')[0]
-        with closing(sqlite3.connect(self.path)) as connection, connection:
-            connection.executemany('INSERT INTO document_record VALUES(?,?,?,?,?,?,?,?)',
-                ((row[0], str(uuid4()), row[2], str(i).zfill(9), *row[4:])
-                 for i in range(2, count + 1)))
+        seed_document_headers(self.path,self.schema,count)
 
     def view(self):
         view = self.context.backend.begin_query_read()
@@ -202,7 +200,7 @@ class DocumentQueryPortTests(unittest.TestCase):
         self.assertEqual(len(self.view().scan_documents(self.schema.identity, DocumentScanRequest()).rows), 3)
 
     def test_query_view_constructor_failure_releases_transaction(self):
-        with patch('yadinassi.sqlite_catalog.DocumentView', side_effect=BackendError('integrity')):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.DocumentView', side_effect=BackendError('integrity')):
             with self.assertRaisesRegex(BackendError, 'integrity'):
                 self.context.backend.begin_query_read()
         self.assertIsNone(self.context.backend._active)
@@ -238,7 +236,9 @@ class DocumentQueryPortTests(unittest.TestCase):
             numbers.extend(card.number for card in page.rows)
             if page.continuation is None: break
             self.assertIsInstance(view._view._document_scan_stream, sqlite3.Cursor)
-            self.assertEqual(len(view._view._document_scan_lookahead), 7)
+            lookahead = view._view._document_scan_lookahead
+            self.assertIs(type(lookahead),tuple)
+            self.assertEqual(lookahead[2],str(len(numbers)+1).zfill(9))
             self.assertEqual(len(view._view._scan_cursor), 2)
             request = replace(request, continuation=page.continuation)
         self.assertEqual(numbers, [str(i).zfill(9) for i in range(1, 6)])
@@ -314,7 +314,7 @@ class DocumentQueryPortTests(unittest.TestCase):
         # Cleanup must release the connection without replacing an interruption
         # from its owned stream with a later ordinary rollback failure.
         from types import SimpleNamespace
-        from yadinassi.sqlite_catalog import _close_owned_connection
+        from yadinassi.db.sqlite.sqlite_catalog import _close_owned_connection
         class Stream:
             def close(self): raise MemoryError('stream interruption')
         class Connection:

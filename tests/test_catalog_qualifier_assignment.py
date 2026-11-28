@@ -3,7 +3,6 @@ from contextlib import closing, contextmanager
 from dataclasses import replace
 import decimal
 from decimal import Decimal
-import hashlib
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -12,14 +11,14 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogDraft, CatalogKey,
     CatalogSchema, FieldSchema, TabularRow, TabularSectionRows, TabularSectionSchema)
-from yadinassi.catalog_qualifiers import (normalize_string, normalize_number,
+from yadinassi.db.catalog.catalog_qualifiers import (normalize_string, normalize_number,
     validate_string, _MAX_TEXT_CHARS, _MAX_DECIMAL_BYTES)
-from yadinassi.configuration_xml import ConfigurationImport, ConfigurationFile, import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View, _encode, _decode, _json
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.configuration.configuration_xml import ConfigurationImport, ConfigurationFile, import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View, _encode, _decode, _json
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 from catalog_sections_fixture import configuration_files_with_sections
 
 
@@ -179,6 +178,21 @@ class RuntimeQualifierTests(unittest.TestCase):
         self.assertEqual(saved.get_member('Lines').get(Decimal(0)).get_member('Amount'), Decimal('-1.25'))
         self.assertEqual(self.context.backend.export_configuration(), self.files)
 
+    def test_numeric_fields_accept_native_integer_without_dispatcher(self):
+        for receiver, value, expected in ((self.obj, 23, '23.00'),
+                                          (self.row, -1000, '-999.99')):
+            with self.subTest(receiver=type(receiver).__name__):
+                receiver.set_member('Amount', Decimal(value))
+                reference = receiver.get_member('Amount')
+                receiver.set_member('Amount', value)
+                result = receiver.get_member('Amount')
+                self.assertIs(type(result), Decimal)
+                self.assertEqual(result, Decimal(expected))
+                self.assertEqual(result.as_tuple(), reference.as_tuple())
+                with self.assertRaises(TypeError):
+                    receiver.set_member('Amount', True)
+                self.assertEqual(receiver.get_member('Amount'), result)
+
     def test_bad_assignments_preserve_values_bytes_dirty_revision_and_operation(self):
         self.row.set_member('Text', 'old'); self.obj.write()
         for target, name, value in [(self.obj, 'Code', 'ab😀'), (self.obj, 'Description', 'ab😀'),
@@ -197,9 +211,9 @@ class RuntimeQualifierTests(unittest.TestCase):
     def test_conversion_and_budget_exceptions_are_before_mutation(self):
         self.obj.write()
         before = (self.row._bytes, self.section._bytes, self.section._dirty, dict(self.row._values))
-        with patch('yadinassi.catalogs.normalize_field', side_effect=MemoryError('injected')):
+        with patch('yadinassi.db.catalog.catalogs.normalize_field', side_effect=MemoryError('injected')):
             with self.assertRaises(MemoryError): self.row.set_member('Amount', Decimal('1.245'))
-        with patch('yadinassi.catalog_sections._MAX_BUFFER_BYTES', self.obj._section_buffer_bytes()):
+        with patch('yadinassi.db.catalog.catalog_sections._MAX_BUFFER_BYTES', self.obj._section_buffer_bytes()):
             with self.assertRaisesRegex(ValueError, 'buffer limit'): self.row.set_member('Text', 'abcdef')
         self.assertEqual((self.row._bytes, self.section._bytes, self.section._dirty, dict(self.row._values)), before)
 
@@ -223,22 +237,25 @@ class RuntimeQualifierTests(unittest.TestCase):
         self.assertTrue(other.is_new()); self.assertEqual(other.get_member('Code'), '123')
         self.assertIsNone(other._pending_write)
 
-    def test_uncertainty_freezes_normalized_owner_and_rows(self):
+    def test_uncertainty_requires_fresh_read_of_normalized_owner_and_rows(self):
         self.obj.set_member('Code', '123tail'); self.obj.set_member('Amount', Decimal('999.995'))
         self.row.set_member('Text', 'Я😀AB'); self.row.set_member('Amount', Decimal('1.245'))
         commit = _View.commit
-        def lose_response(tx):
-            commit(tx); raise BackendError('uncertain_commit')
+        def lose_response(tx, **kwargs):
+            commit(tx, **kwargs)
+            raise BackendError('uncertain_commit')
         with patch.object(_View, 'commit', lose_response), self.assertRaises(BackendError): self.obj.write()
-        pending = self.obj._pending_write
-        self.assertEqual(pending[0].code, '123')
-        self.assertEqual(pending[0].values[1], Decimal('999.99'))
-        self.assertEqual(pending[0].tabular_sections[0].rows[0].values[:2], ('Я😀', Decimal('1.25')))
+        self.assertTrue(self.obj._uncertain_write)
+        self.assertIsNone(self.obj._pending_write)
         for target in (self.obj, self.row):
             with self.assertRaisesRegex(BackendError, 'uncertain_commit'): target.set_member('Text', 'new')
-        self.assertIs(self.obj._pending_write, pending)
-        with patch.object(_View, 'commit', side_effect=AssertionError('must not recommit')): self.obj.write()
-        self.assertIsNone(self.obj._pending_write); self.assertFalse(self.section._dirty)
+        with patch.object(_View, 'commit', side_effect=AssertionError('must not recommit')):
+            with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+                self.obj.write()
+        fresh = self.vm.execute('Catalogs.Products.FindByCode("123").GetObject()')
+        self.assertEqual(fresh.get_member('Amount'), Decimal('999.99'))
+        row = fresh._sections['lines']._rows[0]
+        self.assertEqual((row.get_member('Text'), row.get_member('Amount')), ('Я😀', Decimal('1.25')))
 
 
 class BackendQualifierTests(unittest.TestCase):
@@ -305,53 +322,56 @@ class BackendQualifierTests(unittest.TestCase):
         finally: tx.close()
         self.assertEqual(self.read(draft.key).values, ('xyz', Decimal('-999.99'), Decimal('999.99')))
 
-    def test_equivalent_normalized_intents_resolve_and_different_result_conflicts(self):
-        draft = self.draft(); operation = uuid4(); revision = self.create(draft, operation)
-        self.assertEqual(self.backend.resolve_write(operation, draft), revision)
+    def test_equivalent_normalized_update_has_its_own_revision(self):
+        draft = self.draft(); revision = self.create(draft)
         card = self.read(draft.key)
         equivalent = replace(draft, code=card.code, description=card.description,
                              values=card.values, tabular_sections=card.tabular_sections)
-        self.assertEqual(self.backend.resolve_write(operation, equivalent), revision)
-        with self.assertRaisesRegex(BackendError, 'conflict'):
-            self.backend.resolve_write(operation, replace(equivalent, code='new'))
+        with closing(self.backend.begin_write(uuid4())) as tx:
+            tx.update(equivalent, revision)
+            updated, = tx.commit()
+        self.assertEqual(int(updated.token), int(revision.token) + 1)
+        self.assertEqual(self.read(draft.key), replace(card, revision=updated))
 
-    def test_update_receipt_resolves_same_normalized_intent_and_expected_revision(self):
-        draft = self.draft(); previous = self.create(draft); operation = uuid4()
+    def test_update_normalizes_with_the_expected_revision(self):
+        draft = self.draft(); previous = self.create(draft)
         changed = replace(draft, values=('longer', Decimal('999.995'), Decimal('-1000')))
-        tx = self.backend.begin_write(operation)
-        try: tx.update(changed, previous); revision = tx.commit()[0]
-        finally: tx.close()
-        self.assertEqual(self.backend.resolve_write(operation, changed, previous), revision)
-        equivalent = replace(changed, values=('lon', Decimal('999.99'), Decimal(0)))
-        self.assertEqual(self.backend.resolve_write(operation, equivalent, previous), revision)
-        with self.assertRaisesRegex(BackendError, 'conflict'):
-            self.backend.resolve_write(operation, equivalent, revision)
+        with closing(self.backend.begin_write(uuid4())) as tx:
+            tx.update(changed, previous)
+            revision, = tx.commit()
+        card = self.read(draft.key)
+        self.assertEqual((card.revision, card.values), (revision, ('lon', Decimal('999.99'), Decimal(0))))
+        with closing(self.backend.begin_write(uuid4())) as tx:
+            with self.assertRaisesRegex(BackendError, 'conflict'):
+                tx.update(changed, previous)
 
-    def test_receipt_normalizes_values_but_keeps_row_uuid_order_significant(self):
+    def test_normalization_keeps_row_uuid_order_significant(self):
         draft = self.draft()
         first = draft.tabular_sections[0].rows[0]
         second = TabularRow(uuid4(), ('abcdef', Decimal('999.995'), Decimal('-1000')))
         draft = replace(draft, tabular_sections=(TabularSectionRows(self.section.identity, (first, second)),))
-        operation = uuid4(); revision = self.create(draft, operation)
+        revision = self.create(draft)
         card = self.read(draft.key)
-        canonical = replace(draft, code=card.code, description=card.description,
-                            values=card.values, tabular_sections=card.tabular_sections)
-        self.assertEqual(self.backend.resolve_write(operation, canonical), revision)
-        reordered = replace(canonical, tabular_sections=(TabularSectionRows(self.section.identity,
-                                tuple(reversed(canonical.tabular_sections[0].rows))),))
-        with self.assertRaisesRegex(BackendError, 'conflict'):
-            self.backend.resolve_write(operation, reordered)
+        self.assertEqual([r.identity for r in card.tabular_sections[0].rows], [first.identity, second.identity])
+        self.assertEqual(card.tabular_sections[0].rows[1].values, ('abc', Decimal('999.99'), Decimal(0)))
+        reordered = replace(draft, tabular_sections=(TabularSectionRows(self.section.identity, (second, first)),))
+        with closing(self.backend.begin_write(uuid4())) as tx:
+            tx.update(reordered, revision); tx.commit()
+        self.assertEqual([r.identity for r in self.read(draft.key).tabular_sections[0].rows],
+                         [second.identity, first.identity])
 
-    def test_legacy_canonical_receipt_with_signed_zero_is_byte_identical(self):
+    def test_signed_zero_has_the_single_physical_numeric_zero(self):
         draft = replace(self.draft(sections=False), code='123', description='abc',
                         values=('old', Decimal('-0.00'), Decimal('1.23000')))
-        operation = uuid4(); self.create(draft, operation)
-        encoded = _json([['s', 'old'], ['n', '-0.00'], ['n', '1.23']])
-        intent = [[str(self.schema.identity), str(draft.key.record_id), '123', 'abc', False, encoded, 1]]
-        expected = hashlib.sha256(_json(intent).encode('utf-8')).hexdigest()
-        self.assertEqual(self.backend.committed_operation(operation)[0], expected)
+        self.create(draft)
+        value = self.read(draft.key).values[1]
+        self.assertEqual(value.as_tuple(), Decimal('0.00').as_tuple())
+        table = quote_identifier(self.backend._layout.table_name(self.schema.identity))
+        field = quote_identifier(self.backend._layout.field_name(self.schema.identity, self.schema.fields[1].identity))
+        with _sqlite_mutation(self.path) as connection:
+            self.assertEqual(connection.execute(f'SELECT typeof({field}),{field} FROM {table}').fetchone(),('integer',0))
 
-    def test_bad_late_row_does_not_mutate_owner_or_receipt_and_prior_change_can_commit(self):
+    def test_bad_late_row_does_not_mutate_owner_and_prior_change_can_commit(self):
         prior = self.draft('old'); operation = uuid4(); tx = self.backend.begin_write(operation)
         try:
             tx.create(prior)
@@ -359,13 +379,13 @@ class BackendQualifierTests(unittest.TestCase):
             rows = bad.tabular_sections[0].rows
             bad = replace(bad, tabular_sections=(TabularSectionRows(self.section.identity,
                 rows + (TabularRow(uuid4(), ('ab😀', Decimal(0), Decimal(0))),)),))
-            before = (list(tx._changes), list(tx._intents), tx._section_write_bytes, tx._section_write_rows)
+            before = (list(tx._changes), list(tx._outcomes), tx._section_write_bytes, tx._section_write_rows)
             with self.assertRaisesRegex(BackendError, 'invalid_input'): tx.create(bad)
-            self.assertEqual((tx._changes, tx._intents, tx._section_write_bytes, tx._section_write_rows), before)
+            self.assertEqual((tx._changes, tx._outcomes, tx._section_write_bytes, tx._section_write_rows), before)
             self.assertIsNone(tx.read_catalog(bad.key))
             self.assertEqual(len(tx.commit()), 1)
         finally: tx.close()
-        self.assertEqual(len(self.backend.committed_operation(operation)[1]), 1)
+        self.assertIsNotNone(self.read(prior.key))
 
     def test_duplicate_code_and_stale_revision_leave_normalized_rows_unchanged(self):
         draft = self.draft(); revision = self.create(draft)
@@ -378,7 +398,7 @@ class BackendQualifierTests(unittest.TestCase):
         try:
             with self.assertRaisesRegex(BackendError, 'conflict'):
                 tx.update(replace(draft, description='newer'), revision)
-            self.assertEqual(tx._changes, []); self.assertEqual(tx._intents, [])
+            self.assertEqual(tx._changes, []); self.assertEqual(tx._outcomes, [])
         finally: tx.close()
         self.assertEqual(self.read(draft.key), before)
 
@@ -390,16 +410,16 @@ class BackendQualifierTests(unittest.TestCase):
             tx = self.backend.begin_write(uuid4())
             try:
                 with self.assertRaisesRegex(BackendError, 'invalid_input'): tx.create(draft)
-                self.assertEqual(tx._changes, []); self.assertEqual(tx._intents, [])
+                self.assertEqual(tx._changes, []); self.assertEqual(tx._outcomes, [])
                 self.assertIsNone(tx.read_catalog(draft.key))
             finally: tx.close()
 
-    def test_conversion_exception_before_sql_and_receipt(self):
+    def test_conversion_exception_before_sql_and_outcomes(self):
         draft = self.draft(); tx = self.backend.begin_write(uuid4())
         try:
-            with patch('yadinassi.sqlite_catalog.normalize_field', side_effect=MemoryError('injected')):
+            with patch('yadinassi.db.sqlite.sqlite_catalog.normalize_field', side_effect=MemoryError('injected')):
                 with self.assertRaises(MemoryError): tx.create(draft)
-            self.assertEqual(tx._changes, []); self.assertEqual(tx._intents, [])
+            self.assertEqual(tx._changes, []); self.assertEqual(tx._outcomes, [])
             self.assertIsNone(tx.read_catalog(draft.key))
         finally: tx.close()
 
@@ -407,27 +427,27 @@ class BackendQualifierTests(unittest.TestCase):
         draft = self.draft(); tx = self.backend.begin_write(uuid4())
         try:
             tx.create(self.draft('old'))
-            before = (list(tx._changes), list(tx._intents), tx._section_write_bytes, tx._section_write_rows)
-            from yadinassi.catalog_qualifiers import normalize_field
+            before = (list(tx._changes), list(tx._outcomes), tx._section_write_bytes, tx._section_write_rows)
+            from yadinassi.db.catalog.catalog_qualifiers import normalize_field
             calls = 0
             def fail_on_section(value, field):
                 nonlocal calls
                 calls += 1
                 if calls == len(self.schema.fields) + 2: raise MemoryError('injected in row')
                 return normalize_field(value, field)
-            with patch('yadinassi.sqlite_catalog.normalize_field', side_effect=fail_on_section):
+            with patch('yadinassi.db.sqlite.sqlite_catalog.normalize_field', side_effect=fail_on_section):
                 with self.assertRaises(MemoryError): tx.create(draft)
-            self.assertEqual((tx._changes, tx._intents, tx._section_write_bytes, tx._section_write_rows), before)
+            self.assertEqual((tx._changes, tx._outcomes, tx._section_write_bytes, tx._section_write_rows), before)
             self.assertIsNone(tx.read_catalog(draft.key))
             self.assertEqual(len(tx.commit()), 1)
         finally: tx.close()
 
     def test_bookkeeping_faults_rollback_sql_and_all_partial_journal_updates(self):
         from contextlib import nullcontext
-        import yadinassi.sqlite_catalog as storage
+        import yadinassi.db.sqlite.sqlite_catalog as storage
         original = _View._record_change
-        stages = ('Revision', 'CatalogWriteOutcome', '_intent', '_json', 'changes_copy', 'intents_copy', 'outcomes_copy',
-                  '_changes', '_intents', '_outcomes', '_section_write_bytes', '_section_write_rows', 'after_all')
+        stages = ('Revision', 'CatalogWriteOutcome', '_json', 'changes_copy', 'outcomes_copy',
+                  '_changes', '_outcomes', '_section_write_bytes', '_section_write_rows', 'after_all')
         case = 0
         for updating in (False, True):
             for stage in stages:
@@ -441,12 +461,12 @@ class BackendQualifierTests(unittest.TestCase):
                         tx = self.backend.begin_write(operation)
                         try:
                             tx.create(prior)
-                            before = (tx._changes, tx._intents, tx._outcomes, tx._section_write_bytes, tx._section_write_rows)
+                            before = (tx._changes, tx._outcomes, tx._section_write_bytes, tx._section_write_rows)
                             def fail(view, *args, **kwargs):
-                                if stage in ('Revision', 'CatalogWriteOutcome', '_intent', '_json'):
+                                if stage in ('Revision', 'CatalogWriteOutcome', '_json'):
                                     guard = patch.object(storage, stage, side_effect=error_type('injected'))
-                                elif stage in ('changes_copy', 'intents_copy', 'outcomes_copy'):
-                                    attribute = {'changes_copy': '_changes', 'intents_copy': '_intents', 'outcomes_copy': '_outcomes'}[stage]
+                                elif stage in ('changes_copy', 'outcomes_copy'):
+                                    attribute = {'changes_copy': '_changes', 'outcomes_copy': '_outcomes'}[stage]
                                     class FailingCopy(list):
                                         def __iter__(self): raise error_type('list allocation fault')
                                     setattr(view, attribute, FailingCopy(getattr(view, attribute)))
@@ -462,15 +482,14 @@ class BackendQualifierTests(unittest.TestCase):
                             with patch.object(_View, '_record_change', fail), self.assertRaises(error_type):
                                 if updating: tx.update(replace(target, description='new'), revision)
                                 else: tx.create(target)
-                            self.assertIs(tx._changes, before[0]); self.assertIs(tx._intents, before[1])
-                            self.assertIs(tx._outcomes, before[2])
-                            self.assertEqual((tx._section_write_bytes, tx._section_write_rows), before[3:])
+                            self.assertIs(tx._changes, before[0]); self.assertIs(tx._outcomes, before[1])
+                            self.assertEqual((tx._section_write_bytes, tx._section_write_rows), before[2:])
                             self.assertFalse(tx._poisoned)
                             self.assertEqual(tx.read_catalog(target.key), expected)
                             revisions = tx.commit()
                             self.assertEqual(tuple(r.record_id for r in revisions), (prior.key.record_id,))
                         finally: tx.close()
-                        self.assertEqual(self.backend.resolve_write(operation, prior), revisions[0])
+                        self.assertEqual(self.read(prior.key).revision, revisions[0])
 
     def test_bookkeeping_cleanup_baseexception_poison_prevents_commit_even_if_close_fails(self):
         from test_sqlite_catalog_sections import ConnectionFault
@@ -490,69 +509,32 @@ class BackendQualifierTests(unittest.TestCase):
                 with self.assertRaisesRegex(BackendError, 'closed'): tx.commit()
             finally: tx.close()
             self.assertIsNone(self.read(draft.key))
-            self.assertIsNone(self.backend.committed_operation(operation))
-
-    def test_matching_digest_requires_exact_canonical_receipt_revision(self):
-        for updating in (False, True):
-            draft = self.draft('upd' if updating else 'crt'); operation = uuid4()
-            previous = self.create(draft) if updating else None
-            if updating:
-                tx = self.backend.begin_write(operation)
-                try: tx.update(draft, previous); revision = tx.commit()[0]
-                finally: tx.close()
-            else: revision = self.create(draft, operation)
-            catalog, record, token = str(self.schema.identity), str(draft.key.record_id), revision.token
-            malformed = [[str(uuid4()), record, token], [catalog, str(uuid4()), token],
-                [catalog, record, str(int(token) + 1)], [catalog, record, int(token)],
-                [catalog, record, '0' + token], ['{' + catalog + '}', record, token],
-                [catalog, record, '9223372036854775808'], [catalog, record, '١']]
-            for entry in malformed:
-                with self.subTest(updating=updating, entry=entry):
-                    with _sqlite_mutation(self.path) as connection:
-                        connection.execute('UPDATE commit_receipt SET revisions_json=? WHERE operation_id=?',
-                                           (_json([entry]), str(operation)))
-                    before = self.path.read_bytes()
-                    with self.assertRaisesRegex(BackendError, 'integrity'):
-                        self.backend.resolve_write(operation, draft, previous)
-                    self.assertEqual(self.path.read_bytes(), before)
-            with _sqlite_mutation(self.path) as connection:
-                connection.execute('UPDATE commit_receipt SET revisions_json=? WHERE operation_id=?',
-                                   (_json([[catalog, record, token]]), str(operation)))
-            self.assertEqual(self.backend.resolve_write(operation, draft, previous), revision)
 
     def test_persisted_out_of_range_strings_and_numbers_are_not_repaired(self):
         draft = self.draft(); self.create(draft)
         table = quote_identifier(self.backend._layout.table_name(self.schema.identity))
         field = quote_identifier(self.backend._layout.field_name(self.schema.identity, self.schema.fields[1].identity))
-        for column, bad, good in [('code', '😀😀', '123'), (field, '1.234', '1.25')]:
+        for column, bad, good in [('code', '😀😀', '123'), (field, 10**self.schema.fields[1].qualifiers[0], 125)]:
             with _sqlite_mutation(self.path) as connection:
+                connection.execute('PRAGMA ignore_check_constraints=ON')
                 connection.execute('UPDATE %s SET %s=?' % (table, column), (bad,))
             with self.assertRaisesRegex(BackendError, 'integrity'): self.read(draft.key)
             with _sqlite_mutation(self.path) as connection:
                 connection.execute('UPDATE %s SET %s=?' % (table, column), (good,))
 
-    def test_legacy_codepoint_only_values_and_receipts_fail_closed_without_repair(self):
+    def test_legacy_codepoint_only_values_fail_closed_without_repair(self):
         draft = replace(self.draft(sections=False), code='123', description='abc',
                         values=('old', Decimal('1.25'), Decimal(0)))
-        operation = uuid4(); self.create(draft, operation)
+        self.create(draft)
         table = quote_identifier(self.backend._layout.table_name(self.schema.identity))
         text = quote_identifier(self.backend._layout.field_name(self.schema.identity, self.schema.fields[0].identity))
-        # Both were within the former three-Python-codepoint bound. One splits
-        # a surrogate; the other would truncate cleanly to a different intent.
-        for legacy_text, failure in [('😀😀', 'invalid_input'), ('😀ab', 'conflict')]:
-            legacy = replace(draft, code=legacy_text, values=(legacy_text,) + draft.values[1:])
-            encoded = _json([['s', legacy_text], ['n', '1.25'], ['n', '0.00']])
-            intent = [[str(self.schema.identity), str(draft.key.record_id), legacy_text, 'abc', False, encoded, 1]]
-            digest = hashlib.sha256(_json(intent).encode('utf-8')).hexdigest()
+        # These were within the former three-Python-codepoint bound.
+        for legacy_text in ('😀😀', '😀ab'):
             with _sqlite_mutation(self.path) as connection:
                 connection.execute('UPDATE %s SET code=?,%s=?' % (table, text), (legacy_text, legacy_text))
-                connection.execute('UPDATE commit_receipt SET request_hash=? WHERE operation_id=?', (digest, str(operation)))
-            before = self.path.read_bytes(); raw = repr(legacy)
+            before = self.path.read_bytes()
             with self.assertRaisesRegex(BackendError, 'integrity'): self.read(draft.key)
-            with self.assertRaisesRegex(BackendError, failure): self.backend.resolve_write(operation, legacy)
-            self.assertEqual(self.backend.committed_operation(operation)[0], digest)
             self.assertEqual(self.path.read_bytes(), before)
-            self.assertEqual(repr(legacy), raw)
 
 
 if __name__ == '__main__': unittest.main()

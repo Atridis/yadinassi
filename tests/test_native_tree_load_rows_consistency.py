@@ -6,8 +6,8 @@ from decimal import Decimal as D
 from contextlib import ExitStack
 ROOT=Path(__file__).resolve().parents[1]
 from yadinassi import Interpreter,BSLError
-from yadinassi.values import BSLObject
-from yadinassi.value_trees import BSLValueTree,BSLValueTreeRow,BSLValueTreeRowCollection,BSLValueTreeColumnCollection
+from yadinassi.types.values import BSLObject
+from yadinassi.collections.value_trees import BSLValueTree,BSLValueTreeRow,BSLValueTreeRowCollection,BSLValueTreeColumnCollection
 START='// Begin bounded ValueTree LoadColumn helpers (measurement only; no native answers).\n';END='// End bounded ValueTree LoadColumn helpers.\n\n'
 def helper():
  s=(ROOT/'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig');return START+s.split(START,1)[1].split(END,1)[0]+END

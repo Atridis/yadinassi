@@ -1,9 +1,9 @@
-"""Pure parse memo does not cache source, schema or database authority."""
+"""Pure parse memo does not grant database or write authority."""
 from dataclasses import replace
 from unittest.mock import patch
 import unittest
 from test_main_demo_configuration import source
-from yadinassi import configuration_main_demo as main
+from yadinassi.configuration import configuration_main_demo as main
 
 class MainDemoParseWitnessTests(unittest.TestCase):
     def setUp(self):
@@ -22,12 +22,29 @@ class MainDemoParseWitnessTests(unittest.TestCase):
         self.assertEqual(main._parsed_source_witness.cache_info().maxsize, 1)
         self.assertEqual(main._parsed_source_witness.cache_info().currsize, 1)
 
-    def test_every_source_file_is_rechecked_on_warm_cache(self):
+    def test_exact_immutable_bytes_reuse_the_already_hashed_witness(self):
+        self.assertIsNone(main.validate_canonical(self.config))
+        # Construct equal file contents with different byte identities.
+        files = tuple((path, memoryview(raw).tobytes()) for path, raw in self.config.files)
+        with patch.object(main, 'sha256', side_effect=AssertionError('rehash on exact bytes hit')):
+            self.assertIsNone(main.validate_canonical(replace(self.config, files=files)))
+
+    def test_warm_cache_does_not_hide_a_manifest_change(self):
+        self.assertIsNone(main.validate_canonical(self.config))
+        hashes = dict(main.SOURCE_SHA256)
+        hashes[self.config.files[0][0]] = '0' * 64
+        with patch.object(main, 'SOURCE_SHA256', hashes):
+            with self.assertRaises(ValueError):
+                main.validate_canonical(self.config)
+
+    def test_warm_cache_still_rejects_a_change_in_any_source_file(self):
         main.canonical(self.config)
-        for path, raw in self.config.files:
-            with self.subTest(path=path):
-                files = tuple((p, b+b'\n' if p == path else b) for p,b in self.config.files)
-                with self.assertRaises(ValueError): main.canonical(replace(self.config, files=files))
+        with patch.object(main, 'import_main_demo_configuration', side_effect=AssertionError('parse before hash')):
+            for path, raw in self.config.files:
+                with self.subTest(path=path):
+                    files = tuple((p, b+b'\n' if p == path else b) for p,b in self.config.files)
+                    with self.assertRaisesRegex(ValueError, 'source mismatch'):
+                        main.canonical(replace(self.config, files=files))
         self.assertEqual(main.canonical(self.config), self.config)
 
     def test_cold_and_warm_schema_grant_drift_is_rejected(self):
@@ -73,3 +90,18 @@ class MainDemoParseWitnessTests(unittest.TestCase):
             def __eq__(self, other):raise AssertionError('foreign equality')
         main.canonical(self.config)
         with self.assertRaises(ValueError):main.canonical(replace(self.config, catalogs=(Foreign(),)))
+
+    def test_validation_only_has_no_copy_or_exposed_witness(self):
+        main.canonical(self.config)
+        with patch.object(main,'deepcopy',side_effect=AssertionError('discarded copy')):
+            self.assertIsNone(main.validate_canonical(self.config))
+            from yadinassi.db.sqlite.sqlite_main_demo_profile import _require_config
+            self.assertIsNone(_require_config(self.config))
+            for bad in (replace(self.config,name='forged'),replace(self.config,catalogs=()),
+                        replace(self.config,files=self.config.files[:-1])):
+                with self.assertRaises(ValueError):main.validate_canonical(bad)
+        owned=main.canonical(self.config)
+        self.assertIsNot(owned,self.config)
+        object.__setattr__(owned.catalogs[0],'name','poison')
+        self.assertIsNone(main.validate_canonical(self.config))
+        with self.assertRaises(ValueError):main.validate_canonical(owned)

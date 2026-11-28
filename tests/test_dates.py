@@ -11,24 +11,26 @@ from decimal import Decimal, Inexact, Rounded, localcontext
 from pathlib import Path
 import re
 import unittest
+from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.dates import (
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.temporal.dates import (
     BSLDate, UnsupportedDateRange, component, date, date_difference,
     literal_date, shift_date,
 )
-from yadinassi.errors import BSLRuntimeError, IncompleteInput
+from yadinassi.types.errors import BSLRuntimeError, IncompleteInput
 from yadinassi.syntax.lexer import Lexer
-from yadinassi.maps import BSLFixedMap, BSLMap
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.syntax.parser import parse, parse_expression
-from yadinassi.serialization import (
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read,
     value_to_string_internal as write,
 )
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.value_checks import value_is_filled
-from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -186,13 +188,15 @@ class DateConstructorTests(unittest.TestCase):
                 date(text)
 
     def test_wrong_arity_and_non_native_component_types_are_rejected(self):
-        for arguments in ((), (Decimal(2024),), (Decimal(2024), Decimal(2)),
+        for arguments in ((), (2024,), (Decimal(2024),), (Decimal(2024), Decimal(2)),
                           tuple(Decimal(1) for _ in range(4)),
                           tuple(Decimal(1) for _ in range(5)),
                           tuple(Decimal(1) for _ in range(7))):
             with self.subTest(arguments=arguments), self.assertRaises((TypeError, ValueError)):
                 date(*arguments)
-        for value in (None, True, False, 2024, 2024.0, [], {}, object(), date(BASE_TEXT)):
+        self.assertEqual(date(2024, Decimal(2), Decimal(29)), date('20240229'))
+        self.assertEqual(date(2024, 2, 29), date('20240229'))
+        for value in (None, True, False, 2024.0, [], {}, object(), date(BASE_TEXT)):
             for arguments in ((value,), (value, Decimal(2), Decimal(29))):
                 with self.subTest(kind=type(value)), self.assertRaises((TypeError, ValueError)):
                     date(*arguments)
@@ -338,7 +342,7 @@ class DateArithmeticTests(unittest.TestCase):
 class DateRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def test_bilingual_constructor_component_and_type_aliases(self):
         for name in ('Date', 'Дата', 'dAtE', 'дАтА'):
@@ -370,10 +374,14 @@ class DateRuntimeTests(unittest.TestCase):
                          shift_date(date(BASE_TEXT), Decimal('-0.0001')))
 
     def test_date_is_a_global_function_not_a_new_constructor(self):
-        for expression in ('New Date', 'Новый Дата', 'New Date(2024, 2, 29)',
+        for expression in ('New Date', 'Новый Дата',
                            'New("Date")', 'New(Type("Date"))', 'New (Type("Дата"))'):
             with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(expression)
+        # The direct compiler handles only the zero-argument diagnostic at
+        # runtime. The argument-bearing static form is not a constructor.
+        with self.assertRaises(PythonDirectUnsupported):
+            self.vm.prepare('New Date(2024, 2, 29)')
 
     def test_unsupported_operators_and_host_reflection_do_not_leak(self):
         self.vm.execute('value = Date(2024, 2, 29);')
@@ -389,6 +397,38 @@ class DateRuntimeTests(unittest.TestCase):
                      'For Each item In value Do Message(item); EndDo;'):
             with self.subTest(code=code), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(code)
+
+    def test_date_receiver_errors_are_catchable_without_running_later_operands(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('''
+            Var marks, value;
+            value = Date(2024, 2, 29);
+            Function Receiver() marks = marks + "R"; Return value; EndFunction
+            Function Later() marks = marks + "L"; Return 0; EndFunction
+            Procedure Accept(slot, Val other) marks = marks + "A"; EndProcedure
+        ''')
+        for statement in ('result=Receiver().Year;', 'Receiver().ticks = Later();',
+                          'result=Receiver()[Later()];', 'Receiver()[Later()]=Later();',
+                          'Receiver().isoformat(Later());',
+                          'Accept(Receiver().ticks, Later());',
+                          'For Each item In Receiver() Do marks=marks+"I"; EndDo;'):
+            with self.subTest(statement=statement):
+                source='marks=""; Try '+statement+' Except marks=marks+"C"; EndTry;'
+                with patch.object(BoundaryContext,'_check',side_effect=AssertionError('Light check')):
+                    vm.execute(source)
+                self.assertEqual(vm.execute('marks'), 'RC')
+        self.assertEqual(vm.execute('Year(value)'), Decimal(2024))
+
+    def test_host_date_subclass_does_not_get_scalar_receiver_diagnostics(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        class ForeignDate(BSLDate):
+            pass
+        self.vm.variables['foreign'] = ForeignDate(0)
+        for expression in ('Foreign.Year', 'Foreign[0]', 'Foreign[0]=1;', 'Foreign.isoformat()'):
+            with self.subTest(expression=expression), self.assertRaises(BoundaryViolation):
+                self.vm.execute(expression)
 
     def test_literals_parse_in_expressions_defaults_eval_and_execute(self):
         self.assertEqual(self.vm.execute("'2024-02-29 12:34:56'"), date(BASE_TEXT))
@@ -464,7 +504,7 @@ class DateRuntimeTests(unittest.TestCase):
         self.vm.register_function('Date', lambda *arguments: 'override')
         self.assertEqual(self.vm.execute('Date(2024, 2, 29)'), 'override')
         self.assertEqual(self.vm.execute('Дата(2024, 2, 29)'), date('20240229'))
-        self.assertEqual(Interpreter().execute('Date(2024, 2, 29)'), date('20240229'))
+        self.assertEqual(Interpreter(allow_extensions=True).execute('Date(2024, 2, 29)'), date('20240229'))
 
 
 class DateCollectionAndCodecTests(unittest.TestCase):

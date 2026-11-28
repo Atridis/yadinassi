@@ -13,7 +13,7 @@ From the repository root, explicitly create a **new** database:
 ```sh
 python - <<'PYTHON'
 from pathlib import Path
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 root = Path('examples/configuration-business-application')
 files = {p.relative_to(root).as_posix(): p.read_bytes()
          for p in root.rglob('*') if p.is_file()}

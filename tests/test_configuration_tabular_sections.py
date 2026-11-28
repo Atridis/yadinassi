@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from yadinassi.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_xml import import_configuration
 from catalog_sections_fixture import configuration_files_with_sections
 
 PATH = 'Catalogs/Products.xml'

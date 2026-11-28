@@ -144,7 +144,7 @@ const action=name=>active().getByRole('button',{name,exact:true});
 const catalog=()=>page.locator('.configuration-catalog');
 function createDatabase(){
   const script=`from pathlib import Path
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 import sys
 root=Path(sys.argv[1]); target=Path(sys.argv[2])
 assert not target.exists()

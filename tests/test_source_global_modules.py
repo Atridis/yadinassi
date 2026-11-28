@@ -1,7 +1,7 @@
 import unittest
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 
 def configuration(code='Message(Answer());', modules=None, server=False):
@@ -52,7 +52,7 @@ class SourceGlobalModuleTests(unittest.TestCase):
 
     def test_local_routine_precedence(self):
         config=configuration('Message(Answer());')
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         files={f.path:f.content for f in config.files}
         files['Ext/ManagedApplicationModule.bsl']+=b'\nFunction Answer()\nReturn 9;\nEndFunction'
         self.assertEqual(self.run_app(import_source(files)),['9'])
@@ -70,7 +70,7 @@ class SourceGlobalModuleTests(unittest.TestCase):
             self.run_app(configuration('Answer = 9; Message(Answer());'))
 
     def test_global_reuse_mode_not_silently_ignored(self):
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         config=configuration()
         files={f.path:f.content for f in config.files}
         path='CommonModules/Helpers.xml'

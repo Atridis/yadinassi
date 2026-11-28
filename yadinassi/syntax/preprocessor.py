@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 import re
 
-from ..errors import BSLError, IncompleteInput
+from yadinassi.types.errors import BSLError, IncompleteInput
 
 
 DIRECTIVES = {

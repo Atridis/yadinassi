@@ -1,4 +1,6 @@
 """Configuration XML -> independent BSL -> OpenForm -> retained UI sessions."""
+from dataclasses import replace
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 import sys
@@ -6,12 +8,12 @@ import unittest
 from unittest import mock
 from yadinassi import launcher as entrypoint
 
-from yadinassi.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_forms import load_configuration_forms
 from yadinassi.ui.configuration_app import (ConfigurationBroker, ConfigurationController,
     ConfigurationProcess, PROTOCOL, load_application, serve_runtime, _parameters)
 from yadinassi.ui.local_app import LocalTransportError
 from yadinassi.ui.protocol import decode_line, encode_line
-from yadinassi.structures import BSLStructure
+from yadinassi.collections.structures import BSLStructure
 from test_configuration_forms import sources
 
 ROOT = Path(__file__).resolve().parents[1] / 'examples/configuration-forms'
@@ -88,6 +90,116 @@ class ConfigurationApplicationTests(unittest.TestCase):
         for _ in range(2):
             self.assertIsNone(self.event(app, sid, control='IncrementButton')['form']['result']['error'])
         self.assertEqual(str(app.sessions[sid][0].session.form._data['count']), '4')
+
+    def test_same_server_nocontext_keeps_the_event_budget_without_a_wire_call(self):
+        files = sources('counter')
+        module = 'CommonForms/Counter/Ext/Form/Module.bsl'
+        files[module] = files[module].replace(b'Count = AddOne(Count);',
+            b'Tmp = AddOne(Count); Count = AddOne(Tmp);').replace(b'Return Value + 1;',
+            b'For I=1 To 4 Do Value=Value+1; EndDo; Return Value;')
+        broker, app = self.setup_app(files=files)
+        sid = self.open(app, 'CommonForm.Counter')['session']
+        server, detached_wire, _ = broker.sessions[sid]
+        with mock.patch.object(detached_wire, 'exchange',
+                               side_effect=AssertionError('same-side helper entered the wire')) as exchange:
+            with mock.patch('yadinassi.forms.form_runtime.MAX_STEPS', 9):
+                failed = self.event(app, sid, control='IncrementButton')['form']['result']
+            self.assertEqual(failed['error'], 'event_failed')
+            self.assertEqual(server.session.form._data['count'], 0)
+            self.assertEqual(server.session.interpreter._context_stack, ['client'])
+            self.assertEqual(server.session.interpreter._module_context_stack, [True])
+            accepted = self.event(app, sid, control='IncrementButton')['form']['result']
+            self.assertIsNone(accepted['error'])
+            self.assertEqual(server.session.form._data['count'], 8)
+            exchange.assert_not_called()
+
+    def test_same_server_nocontext_cannot_access_form_state_service_or_handle(self):
+        module = 'CommonForms/Counter/Ext/Form/Module.bsl'
+        for before, after in ((b'Return Value + 1;', b'Return Count;'),
+                              (b'Return Value + 1;', b'Message("forbidden"); Return Value;'),
+                              (b'Return Value + 1;', b'BeginTransaction(); Return Value;'),
+                              (b'Count = AddOne(Count);', b'Count = AddOne(ThisObject);')):
+            with self.subTest(after=after):
+                files = sources('counter')
+                files[module] = files[module].replace(before, after)
+                broker, app = self.setup_app(files=files)
+                sid = self.open(app, 'CommonForm.Counter')['session']
+                server, _, _ = broker.sessions[sid]
+                failed = self.event(app, sid, control='IncrementButton')['form']['result']
+                self.assertEqual(failed['error'], 'event_failed')
+                self.assertEqual(server.session.form._data['count'], 0)
+                self.assertEqual(failed['state']['messages'], [])
+
+    def test_same_server_nocontext_wrong_arity_precedes_argument_effect(self):
+        files = sources('counter')
+        module = 'CommonForms/Counter/Ext/Form/Module.bsl'
+        files[module] = files[module].replace(b'Count = AddOne(Count);',
+            b'Count = AddOne(Effect(), 2);') + b"""
+&AtServer
+Function Effect()
+ Message("argument evaluated");
+ Return 1;
+EndFunction
+"""
+        _, app = self.setup_app(files=files)
+        sid = self.open(app, 'CommonForm.Counter')['session']
+        failed = self.event(app, sid, control='IncrementButton')['form']['result']
+        self.assertEqual(failed['error'], 'event_failed')
+        self.assertEqual(failed['state']['messages'], [])
+
+    def test_same_server_nocontext_rejects_opaque_date_payload_before_use(self):
+        from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
+
+        files = sources('counter')
+        module = 'CommonForms/Counter/Ext/Form/Module.bsl'
+        files[module] = files[module].replace(b'Count = AddOne(Count);',
+            b'Count = AddOne(HostDate());').replace(b'Return Value + 1;',
+            b"Return Value - '00010101';")
+        broker, app = self.setup_app(files=files)
+        sid = self.open(app, 'CommonForm.Counter')['session']
+        server, _, _ = broker.sessions[sid]
+        vm = server.session.interpreter
+        effects = []
+
+        class Ticks:
+            def __sub__(self, other):
+                effects.append('host tick hook')
+                return TICKS_PER_SECOND
+
+        date = BSLDate(TICKS_PER_SECOND)
+        vm._register_platform_function('HostDate', lambda: date)
+        healthy = self.event(app, sid, control='IncrementButton')['form']['result']
+        self.assertIsNone(healthy['error'])
+        self.assertEqual(server.session.form._data['count'], 1)
+
+        object.__setattr__(date, 'ticks', Ticks())
+        failed = self.event(app, sid, control='IncrementButton')['form']['result']
+        self.assertEqual(effects, [])
+        self.assertEqual(failed['error'], 'event_failed')
+        self.assertEqual(server.session.form._data['count'], 1)
+
+    def test_same_server_nocontext_rechecks_binding_after_argument_effect(self):
+        files = sources('counter')
+        module = 'CommonForms/Counter/Ext/Form/Module.bsl'
+        files[module] = files[module].replace(b'Count = AddOne(Count);', b'Count = AddOne(Invalidate());')
+        broker, app = self.setup_app(files=files)
+        sid = self.open(app, 'CommonForm.Counter')['session']
+        server, _, _ = broker.sessions[sid]
+        vm = server.session.interpreter
+        routine = vm.server_routines['addone']
+        effects = []
+        def invalidate():
+            effects.append('argument')
+            vm.server_routines['addone'] = replace(routine)
+            return Decimal(10)
+        vm._register_platform_function('Invalidate', invalidate)
+        failed = self.event(app, sid, control='IncrementButton')['form']['result']
+        self.assertEqual(effects, ['argument'])
+        self.assertEqual(failed['error'], 'outcome_unknown')
+        self.assertTrue(failed['state']['uncertain'])
+        self.assertEqual(server.session.form._data['count'], 0)
+        self.assertEqual(vm._context_stack, ['client'])
+        self.assertEqual(vm._module_context_stack, [True])
 
     def test_renderer_cannot_choose_source_name_or_parameters(self):
         _, app = self.setup_app()
@@ -178,20 +290,24 @@ class ConfigurationApplicationTests(unittest.TestCase):
         self.assertEqual(self.rpc(app, 'close')['state']['kind'], 'closed')
 
     def test_frozen_configuration_route_is_explicit_and_first_argument_only(self):
-        with mock.patch.object(entrypoint.configuration_app, 'main', return_value=6) as app, mock.patch.object(entrypoint, 'cli_main', return_value=9):
+        with (mock.patch('yadinassi.ui.configuration_app.main', return_value=6) as app,
+              mock.patch.object(entrypoint, 'cli_main', return_value=9) as cli):
             self.assertEqual(entrypoint.main(['--configuration-ui', 'owned']), 6)
             app.assert_called_with(['owned'])
             self.assertEqual(entrypoint.main(['--configuration-ui-runtime', 'owned']), 6)
             app.assert_called_with(['--runtime', 'owned'])
+            app.reset_mock()
             self.assertEqual(entrypoint.main(['-c', '--configuration-ui']), 9)
+            cli.assert_called_once_with(['-c', '--configuration-ui'])
+            app.assert_not_called()
 
     def test_frozen_child_reuses_executable_without_python_mode(self):
-        from yadinassi.execution_policy import execution_backend_policy
-        for mode in ('interpreter', 'compiled-strict'):
-            with self.subTest(backend=mode), execution_backend_policy(mode), mock.patch.object(ConfigurationProcess, '_start') as start, mock.patch.object(sys, 'frozen', True, create=True):
-                ConfigurationProcess(ROOT/'counter', ROOT/'existing.sqlite')
-                command, env = start.call_args.args
-                expected = [sys.executable, '--configuration-ui-runtime', str((ROOT/'counter').resolve()), '--f', str((ROOT/'existing.sqlite').resolve())]
-                expected.extend(['--execution-backend', mode])
-                self.assertEqual(command, expected)
-                self.assertEqual(env['PYTHONIOENCODING'], 'utf-8')
+        with (mock.patch.object(ConfigurationProcess, '_start') as start,
+              mock.patch.object(sys, 'frozen', True, create=True)):
+            ConfigurationProcess(ROOT/'counter', ROOT/'existing.sqlite')
+            command, env = start.call_args.args
+            self.assertEqual(command, [
+                sys.executable, '--configuration-ui-runtime', str((ROOT/'counter').resolve()),
+                '--f', str((ROOT/'existing.sqlite').resolve()),
+            ])
+            self.assertEqual(env['PYTHONIOENCODING'], 'utf-8')

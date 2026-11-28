@@ -1,7 +1,7 @@
 """Canonical demo lifecycle shares modules without acquiring database authority."""
 import unittest
-from yadinassi.invocation import InvocationServer
-from yadinassi.configuration_main_demo import import_main_demo_configuration, PROFILE
+from yadinassi.execution.invocation import InvocationServer
+from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
 from yadinassi.ui.main_demo import form_family
 from test_main_demo_configuration import source
 

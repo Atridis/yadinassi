@@ -1,0 +1,295 @@
+"""Named BSL collections with explicit properties, methods, and output slots."""
+
+from dataclasses import dataclass
+from decimal import Decimal
+
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, current_native_target
+from yadinassi.text.strings import trim_all
+from yadinassi.types.values import BSLFixedCollection, BSLObject, HostFunction, Reference
+
+
+def _key(name: object) -> str:
+    if not isinstance(name, str):
+        raise TypeError("Имя свойства структуры должно быть строкой")
+    if (not name or not (name[0].isalpha() or name[0] == "_")
+            or not all(char.isalnum() or char == "_" for char in name)):
+        raise ValueError(f"Недопустимое имя свойства структуры: {name}")
+    return name.casefold()
+
+
+@dataclass(frozen=True, eq=False)
+class BSLKeyAndValue(BSLObject):
+    key: object
+    value: object
+
+    def __str__(self) -> str:
+        return "КлючИЗначение"
+
+    def get_member(self, name: str) -> object:
+        if name.casefold() in {"ключ", "key"}:
+            return self.key
+        if name.casefold() in {"значение", "value"}:
+            return self.value
+        return super().get_member(name)
+
+    __getitem__ = get_member
+    __setitem__ = BSLObject.set_member
+
+
+class _StructureBase(BSLObject):
+    def __iter__(self):
+        version = self._version
+        keys = iter(self._items)
+        while True:
+            # 1C leaves composition changes during enumeration undefined. Use a
+            # catchable diagnostic rather than leak Python's dictionary errors.
+            if version != self._version:
+                raise ValueError("Изменение состава структуры во время обхода пока не поддерживается")
+            try:
+                key = next(keys)
+            except StopIteration:
+                return
+            name, value = self._items[key]
+            yield BSLKeyAndValue(name, value)
+
+    def get(self, name: object) -> object:
+        key = _key(name)
+        if key not in self._items:
+            raise ValueError(f"Свойство структуры не найдено: {name}")
+        return self._items[key][1]
+
+    def set(self, name: object, value: object) -> None:
+        raise ValueError(f"Свойство фиксированной структуры недоступно для записи: {name}")
+
+    __getitem__ = get
+
+    def __setitem__(self, name, value):
+        self.set(name, value)
+
+    def property(self, name: str, output: object = None) -> bool:
+        # The native probe accepts surrounding U+0020 spaces for Property.
+        # Other whitespace and other key-taking operations have no such evidence.
+        key = _key(name.strip(" ") if isinstance(name, str) else name)
+        found = key in self._items
+        if isinstance(output, Reference):
+            output.set(self._items[key][1] if found else None)
+        return found
+
+    def get_member(self, name: str) -> object:
+        return self.get(name)
+
+    def set_member(self, name: str, value: object) -> None:
+        self.set(name, value)
+
+    def _bsl_value_count(self):
+        return Decimal(len(self._items))
+
+    _bsl_proc_count = _bsl_value_count
+
+    _bsl_value_property = _bsl_proc_property = property
+
+    def get_method(self, name: str) -> object:
+        methods = {
+            "количество": lambda: Decimal(len(self._items)),
+            "count": lambda: Decimal(len(self._items)),
+            "свойство": self.property, "property": self.property,
+        }
+        key = name.casefold()
+        method = methods.get(key)
+        if method is None:
+            raise ValueError(f"Метод структуры не найден: {name}")
+        references = frozenset({1}) if key in {"свойство", "property"} else frozenset()
+        return HostFunction(name, method, reference_parameters=references)
+
+
+class BSLStructure(_StructureBase):
+    def __init__(self, keys: object = "", *values: object):
+        if isinstance(keys, BSLFixedStructure):
+            if values:
+                raise TypeError("Копирование структуры ожидает один аргумент")
+            self._items = keys._items.copy()
+            self._version = 0
+            return
+        if not isinstance(keys, str):
+            raise TypeError("Список свойств структуры должен быть строкой")
+        names = [name for part in keys.split(",") if (name := trim_all(part))]
+        self._items: dict[str, tuple[str, object]] = {}
+        self._version = 0
+        for index, name in enumerate(names):
+            self.insert(name, values[index] if index < len(values) else None)
+
+    def __str__(self) -> str:
+        return "Структура"
+
+    def set(self, name: object, value: object) -> None:
+        key = _key(name)
+        if key not in self._items:
+            raise ValueError(f"Свойство структуры не найдено: {name}")
+        self._items[key] = self._items[key][0], value
+
+    def insert(self, name: str, value: object = None) -> None:
+        key = _key(name)
+        if key not in self._items:
+            self._version += 1
+        # Native collections.bsl: Insert replaces the spelling as well as the
+        # value. Ordinary property/index assignment still keeps the current name.
+        self._items[key] = name, value
+
+    def delete(self, name: str) -> None:
+        key = _key(name)
+        if key in self._items:
+            del self._items[key]
+            self._version += 1
+
+    def clear(self) -> None:
+        if self._items:
+            self._items.clear()
+            self._version += 1
+
+    _bsl_proc_insert = insert
+
+    def get_method(self, name: str) -> object:
+        methods = {
+            "вставить": self.insert, "insert": self.insert,
+            "удалить": self.delete, "delete": self.delete,
+            "очистить": self.clear, "clear": self.clear,
+        }
+        method = methods.get(name.casefold())
+        if method is None:
+            return super().get_method(name)
+        return HostFunction(name, method)
+
+
+class BSLFixedStructure(_StructureBase, BSLFixedCollection):
+    def __init__(self, keys: object = "", *values: object):
+        if isinstance(keys, BSLStructure):
+            if values:
+                raise TypeError("Копирование фиксированной структуры ожидает один аргумент")
+            source = keys
+        elif isinstance(keys, str):
+            source = BSLStructure(keys, *values)
+        else:
+            raise TypeError("ФиксированнаяСтруктура ожидает строку свойств или структуру")
+        self._items = source._items.copy()
+        self._version = 0
+
+    def __str__(self) -> str:
+        return "ФиксированнаяСтруктура"
+
+
+def fill_property_values(target: object, source: object,
+                         properties: object = None, exclude: object = None) -> None:
+    """Native-probed structure path, with separate bounded object/row adapters."""
+    if not ((type(target) is BSLStructure or type(target) is BSLFixedStructure)
+            and (type(source) is BSLStructure or type(source) is BSLFixedStructure)):
+        # Keep function identity and runtime omission dispatch unchanged. All
+        # historical structure-only quirks remain in the code below.
+        from .property_transfer import fill_property_values as transfer, _is_extended_endpoint
+        if _is_extended_endpoint(target) or _is_extended_endpoint(source):
+            return transfer(target, source, properties, exclude)
+        # With no newly admitted endpoint, retain the historical target-first
+        # validation and its exact diagnostics, including invalid scalar calls.
+    # Exact built-in types keep extension hooks out of this bounded helper.
+    if not (type(target) is BSLStructure or type(target) is BSLFixedStructure):
+        raise TypeError("ЗаполнитьЗначенияСвойств: приемник должен быть структурой")
+    if not (type(source) is BSLStructure or type(source) is BSLFixedStructure):
+        raise TypeError("ЗаполнитьЗначенияСвойств: источник должен быть структурой")
+    return _fill_structure_items(target._items, source._items, properties, exclude,
+        target_fixed=type(target) is BSLFixedStructure,
+        source_mutable=type(source) is BSLStructure)
+
+
+def _fill_structure_items(target_items, source_items, properties, exclude, *,
+                          target_fixed, source_mutable):
+    """Pure structure traversal, shared by canonical and direct storage adapters.
+
+    Callers validate storage authority and shape. Payloads remain opaque; only
+    selected property names are validated lazily in native traversal order.
+    """
+    for value in (properties, exclude):
+        if value is not None and type(value) is not str:
+            raise TypeError("ЗаполнитьЗначенияСвойств: список свойств должен быть строкой")
+    if properties is not None and exclude is not None:
+        raise ValueError("Одновременные списки заполнения и исключения пока не поддерживаются")
+    if target_fixed:
+        if properties is not None or exclude is not None:
+            raise ValueError("Списки свойств для фиксированного приемника пока не поддерживаются")
+        # Native 1C accepts this target without changing its immutable values.
+        return
+
+    def selected_names(value: str, *, reverse: bool = False):
+        names = value.split(",")
+        for name in reversed(names) if reverse else names:
+            # Only Linux INCLUDE has measured empty-token/ASCII-space behavior.
+            # Skip raw empties, not whitespace-only tokens; keep validation lazy.
+            if reverse:
+                if name == "":
+                    continue
+                name = name.strip(" ")
+            # Windows INCLUDE, EXCLUDE and unmeasured Unicode whitespace retain
+            # the conservative guard. A normalized empty token remains an error.
+            if not name or name != trim_all(name):
+                raise ValueError("Пустые имена или пробелы в списках свойств пока не поддерживаются")
+            yield name, _key(name)
+
+    if properties is not None:
+        # Resolve and copy lazily, not in a validation pass: assignments survive
+        # a later missing property. Linux 8.3.27.1508 probes traverse INCLUDE
+        # right to left; the historical Windows checkpoint stays left to right.
+        reverse = current_native_target() == LINUX_8_3_27_1508
+        for name, key in selected_names(properties, reverse=reverse):
+            if not dict.__contains__(target_items, key) or not dict.__contains__(source_items, key):
+                raise ValueError(f"Свойство структуры не найдено: {name}")
+            dict.__setitem__(target_items, key, (dict.__getitem__(target_items, key)[0], dict.__getitem__(source_items, key)[1]))
+        return
+
+    excluded = set()
+    deferred_key = None
+    if exclude is not None:
+        defer_missing_target = (current_native_target() == LINUX_8_3_27_1508
+                                and source_mutable)
+        for name, key in selected_names(exclude):
+            if not dict.__contains__(source_items, key):
+                raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
+            if not dict.__contains__(target_items, key):
+                # Native run 40048537592 measures one mutable source-only key,
+                # appearing exactly once in EXCLUDE. Keep mixed-invalid shapes
+                # and fixed-source/default-target calls guarded before writes.
+                if not defer_missing_target or deferred_key is not None:
+                    raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
+                deferred_key = key
+            excluded.add(key)
+    if deferred_key is not None:
+        if dict.keys(source_items) - dict.keys(target_items) != {deferred_key}:
+            raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
+        # Only this measured error path follows source insertion order. Earlier
+        # common, nonexcluded writes survive; do not change valid copy paths.
+        for key, (_, value) in dict.items(source_items):
+            if key == deferred_key:
+                raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
+            if dict.__contains__(target_items, key) and key not in excluded:
+                dict.__setitem__(target_items, key, (dict.__getitem__(target_items, key)[0], value))
+        return
+    for key, (name, _) in dict.items(target_items):
+        if dict.__contains__(source_items, key) and key not in excluded:
+            # Preserve target spelling and composition, and share value references.
+            dict.__setitem__(target_items, key, (name, dict.__getitem__(source_items, key)[1]))
+
+# Captured before optional translated collection code is imported.
+_DIRECT_COLLECTION_CLASS_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items()))
+    for cls in (_StructureBase, BSLStructure, BSLKeyAndValue))
+# Stable dot-address ABI for a restored canonical mutable Structure.
+_DIRECT_STRUCTURE_ADDRESS_ABI = tuple((cls, name, method, method.__code__, method.__defaults__)
+    for cls, name, method in ((_StructureBase, 'get_member', _StructureBase.get_member),
+                              (_StructureBase, 'get', _StructureBase.get),
+                              (_StructureBase, 'set_member', _StructureBase.set_member),
+                              (BSLStructure, 'set', BSLStructure.set)))
+_DIRECT_COLLECTION_TRIM_CHARS = trim_all.__globals__['_WHITESPACE']
+_DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
+    '_key', 'BSLStructure', 'BSLKeyAndValue', 'trim_all', '_DIRECT_COLLECTION_TRIM_CHARS'))
+
+# Definition-time identity and raw storage access for direct shallow thawing.
+_DIRECT_FIXED_STRUCTURE_SNAPSHOT = (BSLFixedStructure, vars(BSLObject)["__dict__"])
+
+_DIRECT_FILL_STRUCTURE_ABI = (fill_property_values, BSLStructure, BSLFixedStructure,
+    vars(BSLObject)["__dict__"], _fill_structure_items)

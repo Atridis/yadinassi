@@ -1,9 +1,11 @@
 """The initial, zero-parameter subset of BSL module routines."""
 from decimal import Decimal
+from pathlib import Path
+import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import IncompleteInput
+from yadinassi.types.errors import IncompleteInput
 from yadinassi.syntax.parser import parse
 
 
@@ -13,17 +15,29 @@ class RoutineTests(unittest.TestCase):
         self.vm = Interpreter(output=self.output.append)
 
     def test_function_procedure_forward_call_export_and_aliases(self):
-        self.vm.execute('''
+        module = '''
             Процедура Показать() Экспорт
                 Сообщить(оТвЕт());
             КонецПроцедуры
             Function Ответ() Export
                 Return 42;
             EndFunction
-            Показать(); Ответ();
-        ''')
+        '''
+        self.vm.execute(module + 'Показать(); Ответ();')
         self.assertEqual(self.output, ['42'])
-        self.assertTrue(self.vm.routines['ответ'].exported)
+
+        output = []
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'Side.bsl').write_text(module, encoding='utf-8')
+            vm = Interpreter(output=output.append)
+            try:
+                result = vm.execute('// #Import Side.bsl\nSide.пОкАзАтЬ(); Side.оТвЕт()',
+                                    str(root / 'Main.bsl'))
+            finally:
+                vm.close()
+        self.assertEqual(output, ['42'])
+        self.assertEqual(result, Decimal(42))
 
     def test_declarations_do_not_execute_bodies(self):
         self.vm.execute('Процедура P() Сообщить("bad"); КонецПроцедуры')

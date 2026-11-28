@@ -9,11 +9,11 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.document_types import BSLDocumentReference
-from yadinassi.queries import BSLQuery
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.document.document_types import BSLDocumentReference
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from test_document_configuration_xml import document_files
 
 
@@ -168,7 +168,7 @@ Message(TypeOf(S.Ref)=Type("DocumentRef.Orders"));Message(S.Ref.Amount);Message(
                 query.execute()
         # Exact host-type admission must not invoke equality/hash hooks on an
         # unsupported value's metaclass, either at SetParameter or key binding.
-        from yadinassi.relational_queries import _key
+        from yadinassi.db.query.relational_queries import _key
         calls = []
         class HostileMeta(type):
             def __eq__(cls, other):
@@ -267,7 +267,7 @@ Message(TypeOf(S.Ref)=Type("DocumentRef.Orders"));Message(S.Ref.Amount);Message(
 
 
     def test_reference_conditionals_preserve_identity_and_reject_wrong_kinds(self):
-        from yadinassi.values import NULL
+        from yadinassi.types.values import NULL
         self.seed()
         query = self.query('SELECT CASE WHEN Active=TRUE THEN Ref ELSE NULL END AS Maybe, ISNULL(Ref,&Empty) AS Owner FROM Document.Orders ORDER BY Number')
         query.set_parameter('Empty', self.vm.execute('Documents.Orders.EmptyRef()'))
@@ -313,8 +313,8 @@ Message(Q.Execute().Unload()[0].Total);''')
         self.assertEqual(self.output, ['20'])
 
     def test_narrow_projection_validates_unprojected_card_and_sections(self):
-        from yadinassi.catalog_backend import BackendError
-        from yadinassi.sqlite_documents import DocumentView
+        from yadinassi.db.catalog.catalog_backend import BackendError
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
         self.seed()
         original = DocumentView.scan_documents
         def corrupt(view, identity, request):
@@ -322,7 +322,7 @@ Message(Q.Execute().Unload()[0].Total);''')
             card = page.rows[0]
             values = ('bad',) + card.values[1:]
             return replace(page, rows=(replace(card, deletion_mark=1, values=values),))
-        with patch('yadinassi.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', corrupt), self.assertRaises(BackendError):
+        with patch('yadinassi.db.query.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', corrupt), self.assertRaises(BackendError):
             self.rows('SELECT Number FROM Document.Orders')
         self.assertIsNone(self.context.backend._active)
         def corrupt_section(view, identity, request):
@@ -332,19 +332,19 @@ Message(Q.Execute().Unload()[0].Total);''')
             line = section.rows[0]
             bad = replace(line, values=(1,) + line.values[1:])
             return replace(page, rows=(replace(card, tabular_sections=(replace(section, rows=(bad,) + section.rows[1:]),)),))
-        with patch('yadinassi.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', corrupt_section), self.assertRaises(BackendError):
+        with patch('yadinassi.db.query.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', corrupt_section), self.assertRaises(BackendError):
             self.rows('SELECT Number FROM Document.Orders')
         self.assertIsNone(self.context.backend._active)
 
     def test_document_input_budget_fails_instead_of_returning_top_partial(self):
         self.seed()
-        with patch('yadinassi.queries._MAX_CELLS', 4), self.assertRaisesRegex(ValueError, 'input resource'):
+        with patch('yadinassi.db.query.queries._MAX_CELLS', 4), self.assertRaisesRegex(ValueError, 'input resource'):
             self.rows('SELECT TOP 1 Number FROM Document.Orders')
         self.assertIsNone(self.context.backend._active)
 
     def test_duplicate_document_records_and_invalid_page_refused(self):
-        from yadinassi.catalog_backend import BackendError
-        from yadinassi.sqlite_documents import DocumentView
+        from yadinassi.db.catalog.catalog_backend import BackendError
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
         self.seed()
         original = DocumentView.scan_documents
         first = []
@@ -352,18 +352,22 @@ Message(Q.Execute().Unload()[0].Total);''')
             page = original(view, identity, request)
             if not first: first.extend(page.rows)
             return replace(page, rows=tuple(first))
-        with patch('yadinassi.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', duplicate), self.assertRaises(BackendError):
+        with patch('yadinassi.db.query.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', duplicate), self.assertRaises(BackendError):
             self.rows('SELECT Number FROM Document.Orders')
         self.assertIsNone(self.context.backend._active)
         def oversized(view, identity, request):
             page = original(view, identity, request)
             return replace(page, rows=page.rows*2)
-        with patch('yadinassi.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', oversized), self.assertRaises(BackendError):
+        # Exercise the residual provider-page boundary which the injected
+        # oversized page belongs to, rather than the separate SQLite aggregate.
+        with patch('yadinassi.db.query.document_queries._owned_projection_view', return_value=False), \
+                patch('yadinassi.db.query.query_pushdown.try_count', return_value=None), \
+                patch.object(DocumentView, 'scan_documents', oversized), self.assertRaises(BackendError):
             self.rows('SELECT COUNT(*) AS N FROM Document.Orders')
         self.assertIsNone(self.context.backend._active)
 
     def test_composite_close_failure_does_not_publish_temporaries(self):
-        from yadinassi.sqlite_documents import DocumentView
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
         self.seed()
         manager = self.vm.execute('New TempTablesManager')
         original = DocumentView.close

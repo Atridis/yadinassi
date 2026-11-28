@@ -5,8 +5,8 @@ import unittest
 
 from scripts.native_historical_replay import without_fill_exclude_probes
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context, current_native_target
-from yadinassi.structures import BSLStructure, BSLFixedStructure, fill_property_values
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context, current_native_target
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, fill_property_values
 from test_fill_include_checkpoint import CASES
 
 ROOT = Path(__file__).resolve().parents[1]

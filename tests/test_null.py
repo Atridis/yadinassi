@@ -14,15 +14,15 @@ from scripts.smoke_test import null_checkpoint_output, null_checkpoint_source
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.lexer import Lexer
-from yadinassi.maps import BSLFixedMap, BSLMap
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.syntax.parser import parse
-from yadinassi.serialization import (
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.value_checks import value_is_filled
-from yadinassi.values import (
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.types.values import (
     BSLArray, BSLFixedArray, BSLNull, BSLType, NULL, boolean, equal, number, to_string,
 )
 
@@ -93,7 +93,7 @@ class NativeNullEvidenceTests(unittest.TestCase):
 
 class NullIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(lambda message: None)
+        self.vm = Interpreter(lambda message: None, allow_extensions=True)
 
     def test_literal_singleton_and_case_handling(self):
         for spelling in ('Null', 'NULL', 'null', 'nUlL'):
@@ -126,6 +126,45 @@ class NullIntegrationTests(unittest.TestCase):
                            'Type("Null").value', 'Null[0]', 'Null()', 'New Null'):
             with self.subTest(expression=expression), self.assertRaises(BSLError):
                 self.vm.execute(expression)
+
+    def test_member_and_index_errors_are_catchable_before_arguments(self):
+        program = parse("""
+            Var Calls;
+            Function Argument()
+                Calls = Calls + 1;
+                Return 0;
+            EndFunction
+            Calls = 0;
+            MemberCaught = False; IndexCaught = False; GroupCaught = False;
+            Try Null.Missing(Argument()); Except MemberCaught = True; EndTry;
+            MemberCalls = Calls;
+            Calls = 0;
+            Try Item = Null[Argument()]; Except IndexCaught = True; EndTry;
+            IndexCalls = Calls;
+            Calls = 0;
+            Try Item = (Null)[Argument()]; Except GroupCaught = True; EndTry;
+            GroupCalls = Calls;
+            Calls = 0;
+            ArrayValue = New Array; ArrayValue.Add(7);
+            MapValue = New Map; MapValue.Insert(0, 8);
+            Item = ArrayValue[Argument()] + MapValue[Argument()];
+        """)
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:
+                    vm.execute_prepared(vm.prepare_program(program))
+                else:
+                    vm.execute_program(program)
+                self.assertIs(vm.variables['membercaught'], True)
+                self.assertIs(vm.variables['indexcaught'], True)
+                self.assertIs(vm.variables['groupcaught'], True)
+                self.assertEqual(vm.variables['membercalls'], 0)
+                self.assertEqual(vm.variables['indexcalls'], 0)
+                self.assertEqual(vm.variables['groupcalls'], 0)
+                self.assertEqual(vm.variables['item'], 15)
+                self.assertEqual(vm.variables['calls'], 2)
 
     def test_default_parameters_and_dynamic_evaluation(self):
         self.vm.execute('''

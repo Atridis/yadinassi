@@ -6,12 +6,12 @@ import unittest
 from unittest.mock import patch
 
 import test_catalog_tabular_runtime as fixtures
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     BackendError, CatalogKey, CatalogScanRequest, CatalogSectionPage,
     CatalogSectionRecord, TabularRow,
 )
-from yadinassi.queries import BSLQuery, _section_value
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.query.queries import BSLQuery, _section_value
+from yadinassi.db.sqlite.sqlite_catalog import _View
 
 
 class CatalogSectionQueryTests(unittest.TestCase):
@@ -87,7 +87,7 @@ T=Q.Execute().Unload();Message(T[0].Owner=O.Ref);''')
                 'SELECT LineNumber FROM Catalog.Products.Lines',
                 'SELECT НомерСтроки FROM Catalog.Products.Lines',
                 'SELECT RowId FROM Catalog.Products.Lines',
-                'SELECT L.Ref.Code FROM Catalog.Products.Lines AS L',
+                'SELECT L.Ref.RowId FROM Catalog.Products.Lines AS L',
                 'SELECT X.Text FROM Catalog.Products.Lines AS L',
                 'SELECT Text FROM Catalog.Products.Lines WHERE Code="10"',
                 'SELECT Text FROM Catalog.Products.Lines ORDER BY Description',
@@ -95,6 +95,12 @@ T=Q.Execute().Unload();Message(T[0].Owner=O.Ref);''')
             ):
                 with self.subTest(text=text), self.assertRaises(ValueError):
                     self.query(text).execute()
+
+    def test_section_owner_code_requires_explicit_path_and_uses_sql(self):
+        self.seed()
+        text = 'SELECT L.Ref.Code AS OwnerCode FROM Catalog.Products.Lines AS L ORDER BY OwnerCode'
+        with patch.object(_View, 'scan_catalog_section', side_effect=AssertionError('must project by SQL')):
+            self.assertEqual(self.query(text).execute()._rows, (('10',), ('10',), ('20',)))
 
     def test_empty_section_and_missing_or_wrong_parameters(self):
         result = self.query().execute()
@@ -202,7 +208,7 @@ T=Q.Execute().Unload();Message(T[0].Owner=O.Ref);''')
 
     def test_top_and_selective_filter_cannot_reduce_source_preflight_budget(self):
         self.seed()
-        with patch('yadinassi.sqlite_catalog._MAX_ROWS', 2):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_ROWS', 2):
             with self.assertRaises(BackendError):
                 self.query('SELECT TOP 1 Text FROM Catalog.Products.Lines WHERE Amount=99').execute()
         view = self.context.backend.begin_read(); view.close()

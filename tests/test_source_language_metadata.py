@@ -1,7 +1,7 @@
 import unittest
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source_metadata import SourceMetadataRoot
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_metadata import SourceMetadataRoot
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 
 
 def package(reference='Language.English', code=b''):

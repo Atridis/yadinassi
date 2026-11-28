@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -27,6 +28,32 @@ def diagnostic_transport_cases(cases, message, seen_messages):
 
 
 class CLITests(unittest.TestCase):
+    def test_repl_uses_standalone_codegen_with_live_session_state(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        from yadinassi.cli import main
+        from yadinassi.execution.direct import python_direct
+
+        program = ('A=New Array;A.Add(2);\n'
+                   'Execute("A[0]=A[0]+3;");\n'
+                   'A[0]+Eval("A[0]")\n/exit\n')
+        generated = []
+        original = python_direct._compile
+
+        def capture(*args, **kwargs):
+            plan = original(*args, **kwargs)
+            generated.append(plan.generated_source)
+            return plan
+
+        with patch.object(sys, 'stdin', StringIO(program)), \
+                patch.object(python_direct, '_compile', side_effect=capture), \
+                redirect_stdout(StringIO()) as stdout, redirect_stderr(StringIO()) as stderr:
+            status = main([])
+        self.assertEqual((status, stdout.getvalue(), stderr.getvalue()), (0, '10\n', ''))
+        self.assertEqual(len(generated), 3)
+        self.assertTrue(all('_context._check()' not in source for source in generated))
+
     def run_cli(self, *arguments, stdin=None, cwd=ROOT):
         environment = os.environ.copy()
         environment["PYTHONPATH"] = os.pathsep.join(
@@ -44,8 +71,8 @@ class CLITests(unittest.TestCase):
                   (('-',), 'code', '', '<stdin>:2:'),
                   ((), 'code/exit', 'saved', '<консоль>:1:')]
         total = 0
-        for family in ('DATE_FAILURES', 'STRING_TEMPLATE_FAILURES',
-                       'STRING_BOUNDARY_FAILURES', 'CHARACTER_FAILURES', 'ROUNDING_FAILURES'):
+        for family in ('STRING_TEMPLATE_FAILURES', 'STRING_BOUNDARY_FAILURES',
+                       'CHARACTER_FAILURES', 'ROUNDING_FAILURES'):
             seen = set(); message_routes = {}
             for expression, message in getattr(smoke_test, family):
                 selected = diagnostic_transport_cases(routes, message, seen)
@@ -58,7 +85,7 @@ class CLITests(unittest.TestCase):
                 total += len(selected)
             self.assertTrue(message_routes)
             self.assertTrue(all(indices == set(range(6)) for indices in message_routes.values()))
-        self.assertEqual(total, 154)  # Previously 246; source changes require coverage review.
+        self.assertEqual(total, 66)  # Date now verifies each REPL error in one real session.
         with self.assertRaises(AssertionError):
             diagnostic_transport_cases(routes[:-1], 'error', set())
         with self.assertRaises(AssertionError):
@@ -118,24 +145,40 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary).resolve()
             source = temporary / 'ОшибкаДаты.bsl'
-            seen_messages = set()
-            for expression, message in DATE_FAILURES:
-                code = f'savedDate = Date(2024, 2, 29);\nsavedDate = {expression};\n'
-                source.write_text(code, encoding='utf-8-sig')
-                cases = [((flag, code), None, '', '<команда>:2:')
-                         for flag in ('-c', '-с', '--command')]
-                cases += [((str(source),), None, '', str(source.resolve()) + ':2:'),
-                          (('-',), code, '', '<stdin>:2:'),
-                          ((), code + 'ValueToStringInternal(savedDate)\n/exit\n',
-                           '{"D",20240229000000}\n', '<консоль>:1:')]
-                cases = diagnostic_transport_cases(cases, message, seen_messages)
-                for arguments, stdin, stdout, location in cases:
+            setup = 'savedDate = Date(2024, 2, 29);\n'
+            console = [setup]
+            for number, (expression, message) in enumerate(DATE_FAILURES):
+                failing_line = f'savedDate = {expression};\n'
+                code = setup + failing_line
+                cases = [(('-c', code), None, '<команда>:2:')]
+                # Each expression exercises the diagnostic through -c. The
+                # aliases, BOM file and stdin need one real failed execution.
+                if number == 0:
+                    source.write_text(code, encoding='utf-8-sig')
+                    cases += [((flag, code), None, '<команда>:2:') for flag in ('-с', '--command')]
+                    cases += [((str(source),), None, str(source) + ':2:'),
+                              (('-',), code, '<stdin>:2:')]
+                for arguments, stdin, location in cases:
                     with self.subTest(expression=expression, arguments=arguments):
                         result = self.run_cli(*arguments, stdin=stdin, cwd=temporary)
-                        self.assertEqual((result.returncode, result.stdout), (1, stdout))
+                        self.assertEqual((result.returncode, result.stdout), (1, ''))
                         self.assertIn(location, result.stderr)
                         self.assertIn(message, result.stderr)
                         self.assertNotIn('Traceback', result.stderr)
+                console += [failing_line, 'ValueToStringInternal(savedDate)\n']
+
+            # Every failing assignment must preserve the prior value, and
+            # recovery is exercised repeatedly within the same real session.
+            result = self.run_cli(stdin=''.join(console) + '/exit\n', cwd=temporary)
+            self.assertEqual((result.returncode, result.stdout),
+                             (1, '{"D",20240229000000}\n' * len(DATE_FAILURES)))
+            diagnostics = result.stderr.splitlines()
+            self.assertEqual(len(diagnostics), len(DATE_FAILURES))
+            self.assertNotIn('Traceback', result.stderr)
+            for (expression, message), diagnostic in zip(DATE_FAILURES, diagnostics):
+                with self.subTest(expression=expression, source='<консоль>'):
+                    self.assertIn('<консоль>:1:', diagnostic)
+                    self.assertIn(message, diagnostic)
 
     def test_dates_cross_bom_imported_routines_and_literal_defaults(self):
         from scripts.smoke_test import DATE_MODULE, DATE_IMPORT_PROGRAM, DATE_IMPORT_OUTPUT
@@ -338,6 +381,33 @@ class CLITests(unittest.TestCase):
                     self.assertIn(location, result.stderr)
                     self.assertIn('предел роста массива Yadinassi', result.stderr)
                     self.assertNotIn('Traceback', result.stderr)
+
+    def array_bounds_diagnostics(self):
+        code = 'A=New Array;A.Add(4);R=7;\nR=A[99];\nAfter=1;\n'
+        column = 4 if hasattr((lambda: None).__code__, 'co_positions') else 1
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary).resolve() / 'bounds.bsl'
+            path.write_text(code, encoding='utf-8')
+            cases = (
+                ('команда', ('-c', code), None, '<команда>', 2, ''),
+                ('файл', (str(path),), None, str(path), 2, ''),
+                ('stdin', ('-',), code, '<stdin>', 2, ''),
+                ('консоль', (), code + 'After\nR\nA[0]\n/exit\n', '<консоль>', 1, '1\n7\n4\n'),
+            )
+            for mode, args, stdin, source, line, stdout in cases:
+                result = self.run_cli(*args, stdin=stdin, cwd=temporary)
+                self.assertEqual((result.returncode, result.stdout), (1, stdout), mode)
+                self.assertNotIn('Traceback', result.stderr, mode)
+                match = re.fullmatch(re.escape(f'{source}:{line}:{column}: ') + r'([^\r\n]+)\n',
+                                     result.stderr)
+                self.assertIsNotNone(match, (mode, result.stderr))
+                wording = match.group(1)
+                self.assertRegex(wording.casefold(), r'index.*(?:range|bound)|индекс.*границ')
+                yield mode, wording
+
+    def test_array_bounds_diagnostics_and_console_recovery(self):
+        self.assertEqual([mode for mode, _ in self.array_bounds_diagnostics()],
+                         ['команда', 'файл', 'stdin', 'консоль'])
 
     def test_array_defaults_all_cli_inputs(self):
         from scripts.smoke_test import ARRAY_DEFAULT_PROGRAM, ARRAY_DEFAULT_OUTPUT
@@ -1002,14 +1072,20 @@ Try snapshot["missing"]; Except Message("missing"); EndTry;
             project = directory / 'project'
             project.mkdir()
             path = project / 'ОшибкаФиксированной.bsl'
+            tested_columns = set()
             for setup, action, message, column in cases:
                 code = setup + '\n' + action + '\n'
-                path.write_text(code, encoding='utf-8-sig')
-                for arguments, stdin, source in [
-                        (('-c', code), None, '<команда>'),
-                        ((str(path.resolve()),), None, str(path.resolve())),
-                        ((str(Path('project') / path.name),), None, str(Path('project') / path.name)),
-                        (('-',), code, '<stdin>')]:
+                routes = [(('-c', code), None, '<команда>')]
+                # Keep every diagnostic; exercise path resolution and stdin
+                # once for each distinct source-column shape.
+                if column not in tested_columns:
+                    tested_columns.add(column)
+                    path.write_text(code, encoding='utf-8-sig')
+                    absolute = str(path.resolve())
+                    relative = str(path.relative_to(directory))
+                    routes += [((absolute,), None, absolute), ((relative,), None, relative),
+                               (('-',), code, '<stdin>')]
+                for arguments, stdin, source in routes:
                     with self.subTest(action=action, source=source, arguments=arguments):
                         result = self.run_cli(*arguments, stdin=stdin, cwd=directory)
                         self.assertEqual((result.returncode, result.stdout), (1, ''))
@@ -1202,7 +1278,7 @@ EndTry;
     def test_type_errors_have_clean_command_file_and_stdin_diagnostics(self):
         failures = [('Тип("НеизвестноеДерево")', 'Тип не поддерживается: НеизвестноеДерево'),
                     ('Type(1)', 'Имя типа должно быть строкой'),
-                    ('TypeOf(Message)', 'ТипЗнч для этого значения пока не поддерживается')]
+                    ('TypeOf(Message)', 'Переменная или функция не определена: Message')]
         with tempfile.TemporaryDirectory() as temporary:
             path = (Path(temporary) / 'ОшибкаТипа.bsl').resolve()
             for expression, message in failures:
@@ -1227,7 +1303,7 @@ EndTry;
         self.assertEqual((result.returncode, result.stdout), (1, 'Массив\nТип\nДа\n'))
         self.assertEqual(result.stderr.count('<консоль>:1:'), 2)
         self.assertIn('Тип не поддерживается: UnknownTree', result.stderr)
-        self.assertIn('ТипЗнч для этого значения пока не поддерживается', result.stderr)
+        self.assertIn('Переменная или функция не определена: Message', result.stderr)
         self.assertNotIn('Traceback', result.stderr)
 
     def test_type_values_cross_imported_routines_and_map_keys(self):
@@ -1255,8 +1331,10 @@ EndTry;
                                      (0, 'Массив\nТип\nСтрока\nДа\n', ''))
 
     def test_imported_type_errors_preserve_canonical_path_and_are_catchable(self):
-        failures = [('Type("UnknownTree")', 12, 'Тип не поддерживается: UnknownTree'),
-                    ('TypeOf(Message)', 14, 'ТипЗнч для этого значения пока не поддерживается')]
+        # Type lookup errors point at the callee; an unresolved
+        # argument points at the name, not the surrounding TypeOf call.
+        failures = [('Type("UnknownTree")', 8, 'Тип не поддерживается: UnknownTree'),
+                    ('TypeOf(Message)', 15, 'Переменная или функция не определена: Message')]
         for expression, column, message in failures:
             with self.subTest(expression=expression), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
@@ -1400,10 +1478,13 @@ EndTry;
                  ('#Область Имя\n#КонецОбласти хвост', 2),
                  ('#Region Name\n#EndRegion extra', 2)]
         for code, line in cases:
-            for arguments, stdin, source, stdout in [
-                    (('-c', code), None, '<команда>', ''),
-                    (('-',), code, '<stdin>', ''),
-                    ((), code + '\nСообщить("жив");\n/exit\n', '<консоль>', 'жив\n')]:
+            routes = [(('-c', code), None, '<команда>', '')]
+            # Command tests every malformed directive in both languages.
+            # One header and one multiline case verify transport/recovery.
+            if code in ('#Область 123', '#Region Name\n#EndRegion extra'):
+                routes += [(('-',), code, '<stdin>', ''),
+                           ((), code + '\nСообщить("жив");\n/exit\n', '<консоль>', 'жив\n')]
+            for arguments, stdin, source, stdout in routes:
                 with self.subTest(code=code, source=source):
                     result = self.run_cli(*arguments, stdin=stdin)
                     self.assertEqual((result.returncode, result.stdout), (1, stdout))

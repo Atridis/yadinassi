@@ -7,8 +7,8 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import test_sqlite_catalog_sections as fixtures
-from yadinassi.catalog_backend import BackendError, CatalogComparison, CatalogScanRequest
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogComparison, CatalogScanRequest
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class QualifierScanIntegrationTests(TestCase):

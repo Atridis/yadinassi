@@ -246,7 +246,7 @@ class ComparatorTests(unittest.TestCase):
     def test_import_failure_is_finite_and_private(self):
         import builtins
         original = builtins.__import__
-        for blocked in ('yadinassi', 'yadinassi.native_targets'):
+        for blocked in ('yadinassi', 'yadinassi.execution.codegen.native_targets'):
             def guarded(name, *args, **kwargs):
                 if name == blocked:
                     raise ImportError('/private/path SECRET import failure')

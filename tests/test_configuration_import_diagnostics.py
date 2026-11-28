@@ -3,12 +3,12 @@ from dataclasses import replace
 import re
 import unittest
 
-from yadinassi.configuration_diagnostics import (ImportDiagnostic, ImportRefusal,
+from yadinassi.configuration.configuration_diagnostics import (ImportDiagnostic, ImportRefusal,
     from_exception, location, safe_path, safe_identifier, MAX_DIAGNOSTICS)
-from yadinassi.configuration_profile_import import prepare_files, ACCUMULATION, POSTING
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.catalog_backend import BackendError
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_profile_import import prepare_files, ACCUMULATION, POSTING
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.types.errors import BSLError
 from sqlite_catalog_fixture import configuration_files
 from test_configuration_accumulation import source as accumulation_source
 from test_configuration_posting import source as posting_source

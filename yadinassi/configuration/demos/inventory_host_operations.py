@@ -1,0 +1,220 @@
+"""Exact full-source inventory UI roots with no operation history.
+
+No renderer value, form callback or core inventory profile supplies root
+transaction authority. Catalog references in an immutable intent carry database,
+metadata and record identity, never a label or a browser capability.
+"""
+from contextlib import contextmanager
+from copy import deepcopy
+from dataclasses import fields
+from threading import Lock
+from uuid import UUID
+
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogKey, TabularSectionRows, TabularRow
+from yadinassi.configuration.configuration_inventory_application import (
+    InventoryApplicationConfiguration, PROFILE, canonical as scalar_canonical,
+)
+from yadinassi.db import database_transactions as transactions
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey, DocumentRevision
+from yadinassi.db.document.document_posting_host import (
+    RootPostingOperations, PostingOperationIntent,
+    _immutable as scalar_immutable,
+)
+from yadinassi.configuration.configuration_inventory_enum_application import (
+    InventoryEnumApplicationConfiguration, PROFILE as ENUM_PROFILE, canonical as enum_canonical)
+from yadinassi.configuration.configuration_main_demo import (MainDemoConfiguration, PROFILE as MAIN_DEMO_PROFILE,
+    canonical as main_demo_canonical)
+from yadinassi.configuration.configuration_inventory_enums import _same
+from yadinassi.db.metadata.enum_storage_values import EnumKey
+
+
+def canonical(configuration):
+    if type(configuration) is MainDemoConfiguration:
+        return main_demo_canonical(configuration)
+    return (enum_canonical(configuration) if type(configuration) is InventoryEnumApplicationConfiguration
+            else scalar_canonical(configuration))
+
+
+def _inventory_profile(backend, *, _admitted=None):
+    """Read-only source check, not a root-execution grant for a form VM."""
+    from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+    if (type(backend) is not SQLiteCatalogBackend
+            or type(backend.accumulation_configuration) not in (InventoryApplicationConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration)
+            or (backend.format_version, type(backend.accumulation_configuration),
+                backend.accumulation_configuration.profile) not in (
+                    (15, InventoryApplicationConfiguration, PROFILE),
+                    (16, InventoryEnumApplicationConfiguration, ENUM_PROFILE),
+                    (16, MainDemoConfiguration, MAIN_DEMO_PROFILE))):
+        raise BackendError('unsupported')
+    if backend._closed:
+        raise BackendError('closed')
+    if _admitted is None:
+        configuration = canonical(backend.accumulation_configuration)
+    else:
+        # A read-only scoped caller cannot create a validation FormSession.
+        # Compare its independently admitted config and recheck exact disk
+        # bytes, instead of reparsing handlers under the caller's authority.
+        if not _same(_admitted, backend.accumulation_configuration):
+            raise BackendError('schema_changed')
+        configuration = _admitted
+    return configuration
+
+
+def _source_configuration(backend, *, _admitted=None):
+    configuration = _inventory_profile(backend, _admitted=_admitted)
+    if backend.export_configuration() != dict(configuration.files):
+        raise BackendError('schema_changed')
+    return configuration
+
+
+def require_inventory_host_root(backend):
+    """Only exact physical15 forms, outside every BSL activation or owner."""
+    transactions.require_admission()
+    if (transactions._execution.get() is not None
+            or transactions._execution_backend.get() is not None
+            or transactions._registered(backend) is not None):
+        raise BackendError('unsupported')
+    _source_configuration(backend)
+
+
+class InventoryRootOperation(transactions.RootOperation):
+    """Use the common root operation with a separate trusted-host admission."""
+    _admit_root = staticmethod(require_inventory_host_root)
+
+
+def _immutable(value):
+    if type(value) is tuple:
+        return tuple(_immutable(item) for item in value)
+    if type(value) is EnumKey:
+        return EnumKey(value.database_id, value.enum_id, value.value_id)
+    if type(value) is CatalogKey:
+        if any(type(item) is not UUID for item in (value.database_id, value.catalog_id, value.record_id)):
+            raise BackendError('invalid_input')
+        if not value.database_id.int or not value.catalog_id.int:
+            raise BackendError('invalid_input')
+        return CatalogKey(value.database_id, value.catalog_id, value.record_id)
+    if type(value) in (DocumentDraft, DocumentKey, DocumentRevision, TabularSectionRows, TabularRow):
+        return type(value)(*(_immutable(getattr(value, field.name)) for field in fields(value)))
+    return scalar_immutable(value)
+
+
+class InventoryRootOperations(RootPostingOperations):
+    """Source-bound inventory posting with its own typed reference admission."""
+    _operation_type = InventoryRootOperation
+
+    def __init__(self, context, configuration):
+        self.context = context
+        self.backend = context.backend
+        require_inventory_host_root(self.backend)
+        self.configuration = canonical(configuration)
+        self._binding = None
+        self._operation_lock = Lock()
+        self._active_operation = None
+        self._closed = False
+        self._verify()
+        self._read_source_witness = deepcopy(self.configuration)
+        from yadinassi.runtime import Interpreter
+        self._interpreter = Interpreter(database_context=context, output=lambda value: None)
+        self._interpreter._documents.posting_runtime()
+
+    def _verify_owner(self):
+        if self._closed or self.context.backend is not self.backend:
+            raise BackendError('schema_changed')
+
+    def _verify_view(self, view, configuration):
+        binding = (view.database_id, view.configuration_generation)
+        if tuple(sorted(view.documents(), key=lambda s: str(s.identity))) != tuple(sorted(configuration.documents, key=lambda s: str(s.identity))):
+            raise BackendError('schema_changed')
+        for schema in configuration.catalogs:
+            if view.catalog_schema(schema.identity) != schema:
+                raise BackendError('schema_changed')
+        if self._binding is not None and binding != self._binding:
+            raise BackendError('schema_changed')
+        return binding
+
+    def _verify(self, *, require_root=True):
+        self._verify_owner()
+        if require_root:
+            require_inventory_host_root(self.backend)
+        self.context.require_active(tabular_sections=True)
+        configuration = _source_configuration(self.backend,
+            _admitted=None if require_root else self._read_source_witness)
+        if not _same(configuration, self.configuration):
+            raise BackendError('schema_changed')
+        view = self.backend.begin_document_read()
+        try:
+            binding = self._verify_view(view, configuration)
+        finally:
+            view.close()
+        self._binding = binding
+
+    def verify_source(self):
+        # Scoped reference normalization needs an integrity read from inside a
+        # form activation. It must not install an execution token or journal.
+        self._clean_before_read()
+        self._verify(require_root=False)
+
+    @contextmanager
+    def _reference_read(self):
+        """One already source-admitted SQLite snapshot for closed form reads."""
+        from yadinassi.configuration.configuration_references import admitted_reference_view
+        self._clean_before_read()
+        self._verify_owner()
+        self.context.require_active(tabular_sections=True)
+        transactions.forbid_transfer(self.backend)
+        config = _inventory_profile(self.backend, _admitted=self._read_source_witness)
+        if not _same(config, self.configuration):
+            raise BackendError('schema_changed')
+        view = self.backend.begin_document_read()
+        try:
+            # The raw document read already admitted exact persisted source,
+            # schemas and layout under this lock. No export or second handle.
+            base = admitted_reference_view(self.backend, view)
+            self._verify_view(view, config)
+            yield base
+            self.backend._check_file()
+        finally:
+            view.close()
+
+    def _intent(self, operation_id, draft, expected, form, command):
+        if type(operation_id) is not UUID or not operation_id.int:
+            raise BackendError('invalid_input')
+        if type(draft) is not DocumentDraft or (expected is not None and type(expected) is not DocumentRevision):
+            raise BackendError('invalid_input')
+        if type(form) is not str or type(command) is not str:
+            raise BackendError('invalid_input')
+        grant = next((g for g in self.configuration.commands if (g.form, g.command) == (form, command)), None)
+        if grant is None:
+            raise BackendError('unsupported')
+        draft, expected = _immutable(draft), _immutable(expected)
+        schema = next((s for s in self.configuration.documents if s.identity == draft.key.document_id), None)
+        if (schema is None or draft.key.database_id != self._binding[0]
+                or form.split('.')[1:2] != [schema.name] or draft.tabular_sections is None):
+            raise BackendError('conflict')
+        if expected is not None and (expected.database_id, expected.configuration_generation, expected.document_id, expected.record_id) != (*self._binding, schema.identity, draft.key.record_id):
+            raise BackendError('conflict')
+        def references(specs, values):
+            if len(specs) != len(values):
+                raise BackendError('invalid_input')
+            for field, value in zip(specs, values):
+                if field.kind == 'catalog_ref':
+                    if (type(value) is not CatalogKey or value.database_id != self._binding[0]
+                            or value.catalog_id != field.target_catalog_id):
+                        raise BackendError('conflict')
+                elif field.kind == 'enum_ref':
+                    if (type(self.configuration) not in (InventoryEnumApplicationConfiguration, MainDemoConfiguration)
+                            or type(value) is not EnumKey or value.database_id != self._binding[0]
+                            or value.enum_id != field.target_enum_id):
+                        raise BackendError('conflict')
+                    self.backend._enum_domain.encode(value, field.target_enum_id)
+                elif type(value) in (CatalogKey, EnumKey):
+                    raise BackendError('invalid_input')
+        references(schema.fields, draft.values)
+        if tuple(s.section_id for s in draft.tabular_sections) != tuple(s.identity for s in schema.tabular_sections):
+            raise BackendError('invalid_input')
+        if sum(len(section.rows) for section in draft.tabular_sections) > 1000:
+            raise BackendError('invalid_input')
+        for definition, section in zip(schema.tabular_sections, draft.tabular_sections):
+            for row in section.rows:
+                references(definition.fields, row.values)
+        return PostingOperationIntent(operation_id, grant.mode, draft, expected)

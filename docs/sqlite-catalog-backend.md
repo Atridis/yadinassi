@@ -23,24 +23,78 @@ Use names/required field values from your admitted configuration. Unsupported co
 
 ## Persisted application
 
-The database stores its format marker, logical database UUID, configuration generation/activation state, exact accepted XML/BSL bytes with hashes, normalized catalog schemas, typed catalog records, opaque revisions and commit receipts. Version 1 stores row attributes in tagged JSON. Version 2 stores attributes in individual typed columns; the same closed tagged codec remains in use for canonical write intents and receipt compatibility. Neither representation is a native serialized value format. Exact Decimal text never passes through binary float; dates are timezone-free whole-second calendar values, including year 0001. References retain database/catalog/record identity, including typed empty UUID. Undefined/Null are not implicitly mapped from SQL NULL or admitted into fixed fields.
+The database stores its format marker, logical database UUID, configuration generation/activation state, exact accepted XML/BSL bytes with hashes, normalized catalog schemas, typed catalog records and opaque revisions. The historical version 1 format stores attributes in tagged JSON. Physical catalog tables (version 2 and later) store Number fields as scaled SQLite INTEGER up to 18 digits or ordered 16-byte BLOB through 38 digits; tagged values remain an internal validation convention, not numeric column storage. Both signs of zero use one coefficient; the Number retains its declared scale on read. Pre-cutover physical tables with TEXT numeric declarations do not match the current schema and are not implicitly rewritten. Neither representation is a native 1C serialized value format. Numbers never pass through binary float; dates are timezone-free whole-second calendar values, including year 0001. References retain database/catalog/record identity, including typed empty UUID. Undefined/Null are not implicitly mapped from SQL NULL or admitted into fixed fields.
 
 The SQLite connection and catalog operations remain in `sqlite_catalog.py`; the physical-name registry and offline v1 migration are in SQLite-specific modules. `catalog_backend.py` exposes immutable logical schema/card/key/revision types and bounded operations. Runtime owns BSL CatalogObject semantics, UI owns edit/navigation state, and backend owns consistency and persistence. PostgreSQL and MongoDB are future adapter targets only: no dependencies or claimed engine support. Unsupported ordering/filter/transaction capabilities must refuse, not silently change behavior. Default catalog selection has an explicit limit and code/identity order; overflow refuses rather than displaying a truncated total. Typed scans support explicit ordering. These orders are not a claim of native collation parity.
 
-String and Decimal metadata [qualifiers are applied on assignment](catalog-qualifier-assignment.md), and direct backend create/update calls use the same conversion before SQL and receipt construction. Storage decoding remains strict and never converts persisted corruption into an accepted value. Code uniqueness applies to the converted code. This does not add fixed strings, new scalar types, UI behavior or general native catalog parity.
+Ordinary SQLite BSL manager `Select()/Next()` on flat catalogs and document
+headers starts with a detached page of 16 rows. `Select()` captures that page
+so existing small selections retain their captured values. On demand, flat
+catalog pages can grow (32, 64, 128, up to 256 rows, subject to the declared
+row width). Document pages stay at 16 so their per-page physical byte budget
+and the point where a later invalid card is reported do not change. The
+order is still catalog code/identity or document date/number/identity. Pages
+never retain a SQLite connection, cursor or lock. A refill can see changes
+committed since the previous page; rows already buffered by a larger catalog
+page do not refresh individually. This is not a single snapshot of an entire
+traversal. A row moved across the
+order boundary can be skipped or revisited. Catalog selections expose only
+scalar fields; `GetObject()` still reads the live object, including tabular
+parts. Document pages detach full cards with parts and `GetObject()` uses the
+current captured card. A page refill is a new manager read and therefore is
+denied inside an explicit BSL transaction; already captured rows are usable
+without a read. The raw host eager APIs keep their existing full validation
+and result limits; BSL paging has no eager total-size cap and reports errors
+in visited data when it reaches that page. Hierarchical catalogs still use
+the original eager route because validation requires the complete parent graph.
+
+SQLite BSL exact manager lookups use a separate point-read route:
+`FindByCode`, `FindByDescription(..., True)`, `FindByNumber` and the
+complete-key information-register `Get` / record-manager `Read` bind the key
+to SQL and validate only the matching record (plus the established parent
+graph check for hierarchical catalogs). Exact text equality remains binary.
+Code, document number and register full keys use their existing key indexes;
+description can use a binary description index when already installed, or
+let SQLite scan to locate up to two matches. A lookup never installs an index.
+Ordinary owned format-16 flat catalog exact description lookup also uses
+one detached statement, as code lookup already does outside transactions.
+Only the existing catalog code observer can borrow an owned explicit
+transaction. Other manager admission and raw/query scan integrity checks
+are unchanged.
+
+Ordinary standalone BSL independent-register operations on native source-free
+SQLite layouts (8–10) use one same-transaction admission statement. The check
+compares the opened database identity and modes, exact selected register
+definition, live allocator, its physical tables and indexes, and catalog
+targets declared by its reference fields. It neither reparses unrelated
+catalog/document/register schemas nor reuses another connection's data facts.
+Register point operations, selections, periodic reads, and record sets use the
+same admission. Writes keep real SQLite transactions, row budgets, conflict and
+revision checks, matching foreign keys and rollback. Raw host ports, configured
+and extension paths, and explicit transaction units retain full admission.
+
+On ordinary owned BSL format-16 document references, `Number`, `Date`,
+`DeletionMark`, `Posted` and declared typed header attributes read one live
+statement without a new transaction. The statement checks the selected
+document declaration, database identity/generation, the header and posting
+revision, and presence of its required attribute row. It reads only the
+requested attribute value, and verifies a nonempty catalog reference
+against its declared target in the same statement. Empty and missing
+document references retain their typed defaults. This uses the opened
+layout: external physical schema/source changes still require reopening;
+raw/managed reads and explicit transaction-transfer restrictions are unchanged.
+
+String and Decimal metadata [qualifiers are applied on assignment](catalog-qualifier-assignment.md), and direct backend create/update calls use the same conversion before SQL. Storage decoding remains strict and never converts persisted corruption into an accepted value. Code uniqueness applies to the converted code. This does not add fixed strings, new scalar types, UI behavior or general native catalog parity.
 
 ## Transactions and failures
 
 Connections explicitly disable implicit Python transaction creation (`isolation_level=None`); writes use `BEGIN IMMEDIATE`, `COMMIT` and `ROLLBACK`, compatible with Python 3.10. Foreign keys are enabled per connection. Initial policy is rollback journal `DELETE`, synchronous `FULL`, one active view/writer per backend instance, and bounded busy waits. Read-only host openings use an internally constructed `mode=ro` URI and `query_only`; callers cannot inject URI options.
 
-An update checks its opaque expected revision inside the write transaction; duplicate code, stale edits and cross-database references refuse. This revision is not native DataVersion. Cancel/discard does not call Write. Successful Write clears new/dirty state only after a confirmed receipt. An uncertain COMMIT response preserves the exact pending intent, blocks further mutation, and resolves the persisted operation receipt before any retry. A mismatch refuses rather than replaying a different create.
+An update checks its opaque expected revision inside the write transaction; duplicate code, stale edits and cross-database references refuse. This revision is not native DataVersion. Cancel/discard does not call Write. Successful Write clears new/dirty state only after confirmed COMMIT. An uncertain response blocks further mutation of that buffer. Discard/reopen or read the current row with a fresh object. The backend does not attempt to prove or repeat the old operation.
 
-Host transactions containing several successful writes can resolve the complete
-ordered batch through the [batch receipt recovery contract](catalog-batch-receipts.md).
-It preserves original revisions and, where supported, generated codes without
-replaying writes or reading a later card as the original outcome.
+Host transactions return ordered results, including revisions and generated codes where applicable, after confirmed COMMIT. See [unknown commit outcomes](sqlite-commit-uncertainty.md) for the current failure contract.
 
-Process termination before commit and after commit is tested with real temporary SQLite files; reopening observes the old or committed state and a matching receipt. This does not prove universal power-loss durability on every filesystem or hardware device. SQLite owns recovery/journaling; do not remove its journal or copy only a live main file. No network filesystem or native concurrent-writer compatibility is claimed.
+Process termination before and after commit is tested with temporary SQLite files; reopening observes the old or committed rows. This does not prove universal power-loss durability on every filesystem or device. SQLite owns recovery/journaling; do not remove its journal or copy only a live main file. No network filesystem or native concurrent-writer compatibility is claimed.
 
 Initial host authority is a local, host-selected regular file under an owned directory (POSIX rejects group/world-writable parents and foreign ownership). Symlink/reparse ancestors and hardlinked database files refuse. macOS’s verified OS-owned `/var` and `/tmp` aliases are normalized before those checks; Windows case/8.3 spelling is canonicalized only after every directory component passes no-link admission. This is **not** protection against a malicious process running as the same OS user or a portable Windows ACL proof. Keep application files in a private local directory. The renderer cannot select database paths or submit SQL.
 
@@ -136,9 +190,8 @@ For admitted flat, ownerless catalogs, `DeletionMark` / `ПометкаУдал�
 is a Boolean in a detached object. Assignment is buffered; `Write` persists it
 along with other edits. Ordinary reads, selections and Query expose the stored
 mark. A mark does not delete a record or invalidate references. Optimistic
-revision conflicts and commit-receipt recovery use the same rules as other
-writes. After an uncertain response, call `Write` to resolve the exact pending
-intent before changing the object. A failed write leaves its edit buffer intact.
+revision conflicts follow the same rules as other writes. An uncertain COMMIT
+requires a fresh read; a known pre-commit rejection leaves the edit buffer intact.
 
 `SetDeletionMark` / `УстановитьПометкуУдаления` remains unsupported. Two
 source-bound native acquisitions on platform 8.3.27.1508 observed successful
@@ -171,3 +224,43 @@ Database creation preserves a reserved destination after failure, including an
 uncertain COMMIT. See [creation failure boundary](sqlite-catalog-create-failure.md)
 before retrying or removing a failed destination.
 
+
+
+### Format16 transaction-local layout reuse
+
+Full format16 transaction admission rehashes current stored source,
+validates its profile/domain, complete physical DDL and both persisted catalog
+layout registries. `_begin` uses those just-validated maps to compare against its
+open-time snapshots, rather than loading the identical maps a second time in the
+same SQLite transaction. The source catalogs must also equal the exact backend
+schema tuple before reuse; stored catalog-schema and document/register admission
+checks remain in place. The ordinary `read_source` triple is unchanged; its private
+output-only option exposes the freshly validated maps only to this call chain.
+
+No map is retained on the backend, prepared-source cache or read handle. No map is
+accepted as a caller input, and no result crosses a commit, rollback or connection
+boundary. Other storage formats keep their original layout loads.
+
+Format16 header-only accumulation admission also avoids constructing an unused
+reference layout after that fresh source validation. A private helper runs the
+same current metadata initialization and ordinary `_require` checks on an
+internal ephemeral object, then returns no port or grant. It performs no row or
+reference operations. Explicit row validation and all normal movement-port
+constructors still load their full reference layout; actual reads and writes
+retain their reference checks. This is a reduction in duplicate admission SQL,
+not relaxed source/DDL validation or a new row-cache authority.
+
+### Ordinary direct catalog data operations
+
+Ordinary direct catalog reads and handler-free creation/updates use the
+format-16 identity, schema and physical layout admitted when the backend was
+opened. They do not reread the configuration header, SQLite schema, logical
+catalog definitions or physical maps for each record operation. The file
+identity, transaction and row checks remain in force; writes retain the
+expected-revision predicate. The ordinary writer rejects any trigger or view
+program reached while SQLite prepares its SQL.
+
+Changing configuration metadata or physical DDL through a separate SQLite
+connection while the backend is open is not supported. Close and reopen the
+backend to admit a new layout. Raw storage, explicit unit-of-work, migration
+and stored executable-source paths keep their own admission checks.

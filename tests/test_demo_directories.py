@@ -12,11 +12,11 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
-from yadinassi.configuration_xml import (import_demo_directories_configuration,
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_xml import (import_demo_directories_configuration,
     DEMO_KINDS_SOURCE_ISSUE, DEMO_DIRECTORIES_SOURCE_ISSUE)
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
 from yadinassi.ui.catalog_editor import CatalogEditorApplication
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
@@ -198,7 +198,7 @@ class DemoDirectoriesTests(unittest.TestCase):
         self.assertEqual(app.editor.save_state, 'saved')
         self.assertEqual(app.editor.snapshot()['fields'][1]['inputText'], 'Товары')
 
-    def test_archived_product_drift_blocks_warehouse_write_but_not_receipt(self):
+    def test_archived_product_drift_blocks_warehouse_write(self):
         draft = self.draft()
         operation = uuid4()
         self.save(draft, operation)
@@ -207,8 +207,6 @@ class DemoDirectoriesTests(unittest.TestCase):
             self.save(self.draft())
         with self.assertRaises(BackendError):
             self.backend.active_form_catalogs()
-        with patch.object(_View, 'create', side_effect=AssertionError('replay')):
-            self.assertEqual(self.backend.resolve_write_outcome(operation, draft).code, '000000001')
 
     def test_ui_source_drift_retains_unsaved_warehouse_buffer(self):
         app = self.app()
@@ -219,9 +217,9 @@ class DemoDirectoriesTests(unittest.TestCase):
         self.assertTrue(app.editor.snapshot()['dirty'])
         self.assertEqual(app.editor.snapshot()['fields'][1]['inputText'], 'Не потерять')
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM commit_receipt').fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='commit_receipt'").fetchone()[0], 0)
 
-    def test_uncertain_warehouse_commit_resolves_once(self):
+    def test_uncertain_warehouse_commit_is_visible_on_fresh_read(self):
         draft = self.draft()
         operation = uuid4()
         tx = self.backend.begin_write(operation)
@@ -232,7 +230,8 @@ class DemoDirectoriesTests(unittest.TestCase):
         self.backend.close()
         self.backend = SQLiteCatalogBackend(self.path)
         with patch.object(_View, 'create', side_effect=AssertionError('replay')):
-            self.assertEqual(self.backend.resolve_write_outcome(operation, draft).code, '000000001')
+            with closing(self.backend.begin_read()) as view:
+                self.assertEqual(view.read_catalog(draft.key).code, '000000001')
         self.assertEqual(self.save(self.draft()).code, '000000002')
 
     def test_ui_pending_refresh_never_writes_twice(self):
@@ -253,7 +252,7 @@ class DemoDirectoriesTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError, 'unsupported'):
             backend.begin_write(uuid4())
 
-    def test_generation_change_blocks_new_write_and_historical_receipt(self):
+    def test_generation_change_blocks_new_read_and_write(self):
         draft = self.draft()
         operation = uuid4()
         self.save(draft, operation)
@@ -262,7 +261,7 @@ class DemoDirectoriesTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError, 'schema_changed'):
             self.backend.begin_write(uuid4())
         with self.assertRaisesRegex(BackendError, 'schema_changed'):
-            self.backend.resolve_write_outcome(operation, draft)
+            self.backend.begin_read()
 
     def test_warehouse_mark_unmark_preserves_code_and_reopens(self):
         app = self.app()

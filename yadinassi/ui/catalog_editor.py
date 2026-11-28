@@ -13,21 +13,21 @@ import re
 from types import MappingProxyType
 from uuid import UUID, uuid4
 
-from ..catalog_backend import (BackendError, CatalogScanRequest, CatalogOrder,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogScanRequest, CatalogOrder,
     CatalogValuePage, CatalogValueRow, CatalogKey, CatalogSchema)
-from ..catalogs import BSLCatalogs
-from ..metadata import BSLCatalogMetadataCollection
-from ..unique_identifiers import BSLUUID
-from ..dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
-from ..form_model import BSLFormAttribute
-from ..form_runtime import FormApplicationAction, FormActionResult, FormSession
-from ..form_event_simulation import VerifiedFormDraftSession, simulate_product_form_event
-from ..catalog_object_preparation import CatalogWriteRefused
-from ..type_descriptions import BSLTypeDescription
-from ..type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
+from yadinassi.db.catalog.catalogs import BSLCatalogs
+from yadinassi.configuration.metadata import BSLCatalogMetadataCollection
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.temporal.dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_runtime import FormApplicationAction, FormActionResult, FormSession
+from yadinassi.forms.form_event_simulation import _draft_from_checked_record, simulate_product_form_event
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
 from .catalog_view import CatalogRepository
 from .legacy_reference_choice import LegacyReferenceChooser
-from ..catalog_sections import BSLCatalogSection
+from yadinassi.db.catalog.catalog_sections import BSLCatalogSection
 from .protocol import CatalogRef, UIError, bounded_text, encode_line, encode_value, uuid_text, MAX_LINE_BYTES
 
 # Fixed reviewed application code. Metadata names and user values are host values,
@@ -168,9 +168,8 @@ class CatalogEditController:
         self._source_stale = False
         self._source_messages = ()
         if imported_form:
-            self._source_record = manager._backend.read_form_source(schema.identity)
-            self._product_source = manager._backend.catalog_write_preparation(
-                schema.identity, expected=self._source_record.identity)
+            self._source_record, self._product_source = manager._backend.read_catalog_editor_source(
+                schema.identity)
             if self._product_source is None:
                 if schema.fields or schema.tabular_sections:
                     raise BackendError('unsupported')
@@ -233,12 +232,11 @@ class CatalogEditController:
         if self._source_stale:
             raise BackendError('schema_changed')
         try:
-            current = self.manager._backend.read_form_source(
+            current, policy = self.manager._backend.read_catalog_editor_source(
                 self.schema.identity, expected=self._source_record.identity)
             if current != self._source_record:
                 raise BackendError('schema_changed')
-            if self._product_source is not None and self.manager._backend.catalog_write_preparation(
-                    self.schema.identity, expected=current.identity) != self._product_source:
+            if policy != self._product_source:
                 raise BackendError('schema_changed')
         except BackendError as error:
             if error.code in ('schema_changed', 'integrity'):
@@ -250,11 +248,10 @@ class CatalogEditController:
         # mutable draft. The pinned source is checked around detached execution.
         self._verify_source()
         try:
-            draft = VerifiedFormDraftSession(self._source_backend, self.schema.identity,
+            draft = _draft_from_checked_record(self._source_record, self._source_backend, self.schema.identity,
                 code=code, description=description,
                 deletion_mark=(self.object.get_member('DeletionMark')
                                if deletion_mark is None else deletion_mark))
-            self._verify_source()
             return draft
         except BackendError as error:
             if error.code in ('schema_changed', 'integrity'):
@@ -339,10 +336,11 @@ class CatalogEditController:
 
     def _save(self, attributes):
         self._refreshed = None
+        if self.pending_commit:
+            return FormActionResult((('Status', 'Write outcome unknown. Discard this draft and reopen the current record.'),))
         values = self._values(attributes)
         self.error = None
-        # Recovery may not run BSL or source reads, but it must still use the
-        # exact backend which owns the retained intent and refresh obligation.
+        # A confirmed save may refresh only on the owning backend.
         if self._source_record is not None and self.manager._backend is not self._source_backend:
             self._source_stale = True
             self.error = 'schema_changed'
@@ -355,70 +353,70 @@ class CatalogEditController:
                     self._source_stale = True
                 self.error = 'refresh_required'
                 return FormActionResult((('Status', 'Saved; refresh required'),))
-        if self._source_record is None and not self.pending_commit and not self.object.is_new() and values == self.baseline and self._section_values(self.object) == self.section_baseline:
+        if self._source_record is None and not self.object.is_new() and values == self.baseline and self._section_values(self.object) == self.section_baseline:
             self.save_state = 'unchanged'
             return FormActionResult((('IsDirty', False), ('Status', 'No changes')))
+        writer = None
         try:
-            if not self.pending_commit:
-                if self._product_source is not None:
-                    candidate = self._product_candidate(values)
-                    prepared = self._product_event(candidate, 'BeforeWriteAtServer')
-                    self._source_messages = prepared.messages
-                    if prepared.cancel:
-                        self.save_state = 'rejected'
-                        self.error = 'form_validation'
-                        return FormActionResult((('IsDirty', True), ('Status', 'Save refused by original form handler')))
-                    # Only a successfully prepared candidate replaces the writer
-                    # receiver. Its own mandatory BeforeWrite runs in transaction.
-                    self.object = candidate
-                    values = tuple(self._field_value(candidate, f[0]) for f in self.fields)
-                elif self._source_record is not None:
-                    data = dict((f[0], v) for f, v in zip(self.fields, values))
-                    draft = self._source_draft(data['Code'], data['Description'], data['DeletionMark'])
-                    prepared = draft.prepare_save(revision=0)
-                    self._verify_source()
-                    self._source_messages = prepared.messages
-                    if prepared.cancel:
-                        self.save_state = 'rejected'
-                        self.error = 'form_validation'
-                        return FormActionResult((('IsDirty', True), ('Status', 'Save refused by original form handler')))
-                    candidate = dict(prepared.candidate)
-                    values = tuple(candidate[field[0]] for field in self.fields)
-                    if not self.object.is_new() and values == self.baseline:
-                        self.save_state = 'unchanged'
-                        return FormActionResult(tuple((field[2], value) for field, value in zip(self.fields, values)) +
-                                                (('IsDirty', False), ('Status', 'No changes')))
-                for field, value in zip(self.fields, values):
-                    if field[1] == 'catalog_ref':
-                        target, manager, choices = self.reference_fields[field[0]]
-                        if value not in choices:
-                            raise UIError('invalid_value')
-                        value = manager.get_ref(BSLUUID(value))
-                    self.object.set_member(field[0], value)
-            # A retained uncertain object resolves its exact submitted intent before
-            # any retry. Never reload latest before Write or allocate another object.
-            self.object.write()
+            if self._product_source is not None:
+                candidate = self._product_candidate(values)
+                prepared = self._product_event(candidate, 'BeforeWriteAtServer')
+                self._source_messages = prepared.messages
+                if prepared.cancel:
+                    self.save_state = 'rejected'
+                    self.error = 'form_validation'
+                    return FormActionResult((('IsDirty', True), ('Status', 'Save refused by original form handler')))
+                # Only a successfully prepared candidate replaces the writer
+                # receiver. Its own mandatory BeforeWrite runs in transaction.
+                self.object = candidate
+                values = tuple(self._field_value(candidate, f[0]) for f in self.fields)
+            elif self._source_record is not None:
+                data = dict((f[0], v) for f, v in zip(self.fields, values))
+                draft = self._source_draft(data['Code'], data['Description'], data['DeletionMark'])
+                prepared = draft.prepare_save(revision=0)
+                self._verify_source()
+                self._source_messages = prepared.messages
+                if prepared.cancel:
+                    self.save_state = 'rejected'
+                    self.error = 'form_validation'
+                    return FormActionResult((('IsDirty', True), ('Status', 'Save refused by original form handler')))
+                candidate = dict(prepared.candidate)
+                values = tuple(candidate[field[0]] for field in self.fields)
+                if not self.object.is_new() and values == self.baseline:
+                    self.save_state = 'unchanged'
+                    return FormActionResult(tuple((field[2], value) for field, value in zip(self.fields, values)) +
+                                            (('IsDirty', False), ('Status', 'No changes')))
+            for field, value in zip(self.fields, values):
+                if field[1] == 'catalog_ref':
+                    target, manager, choices = self.reference_fields[field[0]]
+                    if value not in choices:
+                        raise UIError('invalid_value')
+                    value = manager.get_ref(BSLUUID(value))
+                self.object.set_member(field[0], value)
+            writer = self.object
+            revision = writer._revision
+            writer.write()
         except CatalogWriteRefused as error:
-            # This rejection happens before commit, including after a proven
-            # absent receipt. The writer has released its retained intent.
-            self.pending_commit = self.object._pending_write is not None
             self._source_messages = error.messages
             self.save_state = 'rejected'
             self.error = 'object_validation'
             return FormActionResult((('IsDirty', True), ('Status', 'Save refused by original object handler')))
         except BackendError as error:
+            if writer is not None and writer._revision is not revision:
+                self.pending_refresh = True
+                self.save_state, self.error = 'committed', 'refresh_required'
+                return FormActionResult((('Status', 'Saved; refresh required'),))
             if self._source_record is not None and error.code in ('schema_changed', 'integrity'):
                 self._source_stale = True
-            # Resolution failure does not prove the retained intent absent.
-            # Keep the existing lock even for transient busy/storage errors.
-            self.pending_commit = self.pending_commit or error.code == 'uncertain_commit'
+            self.pending_commit = self.object._uncertain_write or error.code == 'uncertain_commit'
             self.save_state = 'uncertain' if self.pending_commit else 'rejected'
             self.error = error.code
-            return FormActionResult((('IsDirty', True), ('Status', 'Save outcome uncertain' if self.pending_commit else 'Save rejected: ' + error.code)))
+            return FormActionResult((('IsDirty', True), ('Status', 'Write outcome unknown. Discard this draft and reopen the current record.' if self.pending_commit else 'Save rejected: ' + error.code)))
         except BaseException:
-            # An interrupted Write can still have a durable receipt. Keep the
-            # editor locked while the exact submitted intent is unresolved.
-            if self.object._pending_write is not None:
+            if writer is not None and writer._revision is not revision:
+                self.pending_refresh = True
+                self.save_state, self.error = 'committed', 'refresh_required'
+            elif self.object._uncertain_write:
                 self.pending_commit = True
                 self.save_state = 'uncertain'
                 self.error = 'uncertain_commit'
@@ -436,7 +434,7 @@ class CatalogEditController:
 
     def _cancel(self, unused):
         if self.pending_commit or self.pending_refresh:
-            raise UIError('busy')  # Outcome must be resolved, not silently discarded.
+            raise UIError('busy')  # Discard of an unknown draft uses the host-only path.
         return FormActionResult((('DiscardChanges', True),))
 
     def _parse_input(self, field, value):
@@ -740,7 +738,7 @@ class CatalogEditorApplication:
             if type(reference) is not CatalogRef or reference.catalog != self.selected:
                 raise UIError('catalog_identity')
             selected = manager.get_ref(BSLUUID(reference.record))
-        from ..product_list_check import check_product_list
+        from yadinassi.configuration.demos.product_list_check import check_product_list
         view = self.backend.begin_read()
         try:
             sources = view.product_list_sources(schema.identity)
@@ -900,6 +898,15 @@ class CatalogEditorApplication:
             self.page = (values['offset'], values['limit'])
         elif event in ('change', 'command', 'closeCard', 'addRow', 'deleteRow', 'changeRow'):
             if self.editor is None: raise UIError('closed')
+            if (event == 'command' and values['control'] == 'CancelButton'
+                    and self.editor.pending_commit):
+                # Explicit discard, not a form command/close handler and not a
+                # verdict on the earlier write. The list reads current data.
+                self.editor.form.interpreter.close()
+                self.editor = None
+                self.refresh_records()
+                self.list_notice = 'Draft discarded. Previous write outcome remains unknown.'
+                return
             if event == 'change': self.editor.change(values['control'], values['value'])
             elif event == 'command':
                 self.editor.command(values['control'])

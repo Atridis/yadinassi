@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
 import {childEnvironment,ownBrowserPid,commandLineArgs,sandboxCommand,sandboxStatus,sha256}
   from './support.mjs';
+import {encodeMainDemoReport} from './main_demo_report.mjs';
 import {MainDemoFilterCapture} from './main_demo_filter_capture.mjs';
 import {mainDemoLaunchOutputReader as launchOutputReader,mainDemoAllowedRequest as allowedRequest,verifyMainDemoAudit} from './main_demo_browser_support.mjs';
 const args=process.argv.slice(2);
@@ -130,7 +131,7 @@ async function main(){
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','tracked_checkout_dirty');
   const names=git('ls-files','-z','yadinassi','pyproject.toml','tests/browser_ui','frontend/catalog','frontend/configuration','frontend/main-demo','frontend/form','examples/demo','.github/workflows/main-demo-browser-qa.yml').split('\0').filter(Boolean);
   for(const required of ['.github/workflows/main-demo-browser-qa.yml','tests/browser_ui/main_demo_browser_qa.mjs','tests/browser_ui/main_demo_fixture.py',
-    'tests/browser_ui/support.mjs','tests/browser_ui/main_demo_filter_capture.mjs','tests/browser_ui/main_demo_browser_support.mjs','tests/browser_ui/package-lock.json',
+    'tests/browser_ui/support.mjs','tests/browser_ui/main_demo_report.mjs','tests/browser_ui/main_demo_filter_capture.mjs','tests/browser_ui/main_demo_browser_support.mjs','tests/browser_ui/package-lock.json',
     'frontend/catalog/src/app.jsx','frontend/main-demo/src/app.mjs','frontend/configuration/src/app.mjs'])assert.ok(names.includes(required),'fixture_or_harness_not_tracked');
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   report.binding={commit:report.sourceCommit,tree:git('rev-parse','HEAD^{tree}'),source};
@@ -747,12 +748,14 @@ finally{
     try{const file=path.join(output,name),stat=await lstat(file);assert.ok(stat.isFile()&&!stat.isSymbolicLink()&&stat.size<=4*1024*1024);const bytes=await readFile(file);assert.equal(bytes.length,stat.size);images[name]={bytes:bytes.length,sha256:sha256(bytes)};}
     catch{await rm(path.join(output,name),{force:true});report.status='FAIL';report.artifacts='missing_or_invalid_screenshot';}
   }
-  const raw=JSON.stringify(report,null,2)+'\n';
+  // Preserve every source hash in a separately bounded, digest-linked artifact.
+  const {raw,sourceRaw,sourceArtifact}=encodeMainDemoReport(report,tokens);
+  if(sourceRaw!==null)await writeFile(path.join(output,'source-binding.json'),sourceRaw,{flag:'wx'});
   assert.ok(Buffer.byteLength(raw)<=65536,'report_budget');
   assert.ok(!tokens.some(token=>raw.includes(token)),'capability_leak');
   await writeFile(path.join(output,'result.json'),raw);
-  await writeFile(path.join(output,'manifest.json'),JSON.stringify({schema:1,source:report.sourceCommit,tree:report.binding?.tree,resultSha256:sha256(raw),images},null,2)+'\n');
-  assert.ok((await readdir(output)).every(name=>['result.json','manifest.json','list.png','editor.png','narrow.png','choice.png'].includes(name)));
+  await writeFile(path.join(output,'manifest.json'),JSON.stringify({schema:2,source:report.sourceCommit,tree:report.binding?.tree,resultSha256:sha256(raw),sourceArtifact,images},null,2)+'\n');
+  assert.ok((await readdir(output)).every(name=>['result.json','manifest.json','source-binding.json','list.png','editor.png','narrow.png','choice.png'].includes(name)));
 }
 clearTimeout(totalTimer);
 console.log(JSON.stringify({status:report.status,completed:results.length,total:5,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;

@@ -11,11 +11,11 @@ import sys
 from threading import Lock
 import webbrowser
 
-from ..database_context import SQLiteDBContext
-from ..form_replication import ReplicatedFormServer, ReplicatedFormSession
-from ..invocation import InvocationError
-from ..form_replication import _decode_form_scalar
-from .form_package import load_client, load_server
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.forms.form_replication import ReplicatedFormServer, ReplicatedFormSession
+from yadinassi.execution.invocation import InvocationError
+from yadinassi.forms.form_replication import _decode_form_scalar
+from .form_package import ServerPackage, load_client, load_server
 from .local_app import RuntimeBridge, LocalTransportError, LocalUIServer, _Handler, EXCHANGE_TIMEOUT
 from .protocol import encode_line, encode_value, decode_value, decode_line, MAX_LINE_BYTES, MAX_COUNTER
 
@@ -34,9 +34,6 @@ class FormProcess(RuntimeBridge):
             command = [sys.executable, '-m', 'yadinassi.ui.form_app', '--runtime', str(Path(directory).resolve())]
         if database is not None:
             command += ['--f', str(Path(database).resolve())]
-        from ..execution_policy import ui_backend
-        self.execution_backend = ui_backend()
-        command += ['--execution-backend', self.execution_backend]
         self._start(command, environment)
 
     def exchange(self, raw):
@@ -75,7 +72,9 @@ def create_server(package, context=None):
         handlers=package.handlers, attributes=package.attributes, tables=package.tables,
         initial_values=package.initial_values, bindings=package.lifecycle,
         database_context=context,
-        server_bindings=() if application is None else application.bindings())
+        server_bindings=() if application is None else application.bindings(),
+        _catalog_server=type(package) is ServerPackage and package.application is None
+                        and type(context) is SQLiteDBContext)
     return server
 
 
@@ -108,10 +107,10 @@ def serve_runtime(directory, database=None, *, input_stream=None, output_stream=
 class FormController:
     """One logical client session shared by renderer reattachments, not reloads."""
     def __init__(self, package, exchange, *, parameters=None, bind_interpreter=None,
-                 interpreter_factory=None, reference_scope=None):
+                 interpreter_factory=None, reference_scope=None, reuse_tables=False):
         self.session = ReplicatedFormSession(package.source, exchange,
             handlers=package.handlers, bindings=package.bindings, parameters=parameters,
-            interpreter_factory=interpreter_factory, reference_scope=reference_scope)
+            interpreter_factory=interpreter_factory, reference_scope=reference_scope, reuse_tables=reuse_tables)
         if bind_interpreter is not None:
             bind_interpreter(self.session.interpreter)
         self._gate = Lock()
@@ -121,7 +120,7 @@ class FormController:
 
     @staticmethod
     def _encode_view_value(descriptor, value):
-        from ..form_references import encode
+        from yadinassi.forms.form_references import encode
         return encode(descriptor, value, encode_value)
 
     @staticmethod
@@ -132,9 +131,9 @@ class FormController:
         preflight. BSL assignment and normalization remain authoritative. No
         generic Invocation, XML/storage schema or reference authority is added.
         """
-        from ..type_descriptions import BSLTypeDescription
-        from ..type_qualifiers import BSLAllowedSign, BSLAllowedLength, BSLDateFractions
-        from ..values import BSLType
+        from yadinassi.types.type_descriptions import BSLTypeDescription
+        from yadinassi.types.type_qualifiers import BSLAllowedSign, BSLAllowedLength, BSLDateFractions
+        from yadinassi.types.values import BSLType
         if type(descriptor) is not BSLTypeDescription or len(descriptor.types) != 1:
             return None
         kind = descriptor.types[0]
@@ -307,7 +306,7 @@ class FormHandler(_Handler):
     methods = ('form.hello', 'form.snapshot', 'form.event')
 
 
-from ..execution_policy import backend_entrypoint, UI_BACKENDS
+from yadinassi.execution.execution_policy import backend_entrypoint, UI_BACKENDS
 
 
 @backend_entrypoint
@@ -326,7 +325,7 @@ def main(argv=None):
     try:
         package = load_client(args.package)
         process = FormProcess(args.package, args.f)
-        controller = FormController(package, process.exchange)
+        controller = FormController(package, process.exchange, reuse_tables=True)
         server = LocalUIServer(controller, handler=FormHandler, browser_session=args.browser_session)
         print('Yadinassi replicated form — local client and separate server process.')
         print('Open this per-launch URL (do not share it):')

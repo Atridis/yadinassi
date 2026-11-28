@@ -6,12 +6,12 @@ import test_source_document_records as document
 import test_source_document_sections as section
 import test_source_catalog_definitions as catalog
 from test_source_enums import xml, value
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_catalog_definitions import source_catalog_definitions
-from yadinassi.source_document_definitions import source_document_definitions
-from yadinassi.source_constant_store import _encode
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.catalog.source_catalog_definitions import source_catalog_definitions
+from yadinassi.db.document.source_document_definitions import source_document_definitions
+from yadinassi.db.metadata.source_constant_store import _encode
+from yadinassi.types.errors import BSLError
 
 
 def package(body='',where='catalog'):

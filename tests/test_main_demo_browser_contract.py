@@ -135,3 +135,14 @@ class MainDemoBrowserContractTests(unittest.TestCase):
                        'await stopHost();await startHost();await page.goto(url)',
                        'assert.equal(actionLog.length-start,26'):
             self.assertIn(marker, text)
+
+    def test_source_inventory_is_separate_digest_linked_and_uploaded(self):
+        text = HARNESS.read_text(encoding='utf-8')
+        self.assertIn('encodeMainDemoReport(report,tokens)', text)
+        self.assertIn("Buffer.byteLength(raw)<=65536", text)
+        self.assertIn("'tests/browser_ui/main_demo_report.mjs'", text)
+        self.assertIn("writeFile(path.join(output,'source-binding.json'),sourceRaw,{flag:'wx'})", text)
+        self.assertIn('resultSha256:sha256(raw),sourceArtifact,images', text)
+        for name in ('build.yml', 'main-demo-browser-qa.yml'):
+            workflow = (ROOT/'.github/workflows'/name).read_text(encoding='utf-8')
+            self.assertIn('/yadinassi-browser-artifacts/source-binding.json', workflow)

@@ -205,7 +205,7 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
 
     def test_manifest_covers_service_controls_source_harness_workflow(self):
         self.contains("'yadinassi/ui/inventory_report_controls.py'", "'yadinassi/ui/report_pages.py'",
-            "'yadinassi/accumulation_periods.py'", "'tests/test_inventory_statement_browser_qa_contract.py'",
+            "'yadinassi/db/registers/accumulation_periods.py'", "'tests/test_inventory_statement_browser_qa_contract.py'",
             "'docs/inventory-statement-browser-qa.md'", "'tests/browser_ui/inventory_statement_browser_qa.mjs'",
             "'source_manifest_missing'", "'tracked_checkout_dirty'", "'source_binding_changed'", "git('rev-parse','HEAD^{tree}')")
 

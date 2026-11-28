@@ -11,15 +11,15 @@ import tempfile
 import unittest
 from uuid import UUID, uuid4
 
-from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogKey,
+from yadinassi.db.catalog.catalog_backend import (BackendError, CatalogDraft, CatalogKey,
     TabularRow, TabularSectionRows, CatalogScanRequest, CatalogOrder)
-from yadinassi.document_backend import DocumentDraft, DocumentKey
-from yadinassi.transaction_backend import TransactionRequest
-from yadinassi.accumulation_movements import (AccumulationMovementRow,
+from yadinassi.db.document.document_backend import DocumentDraft, DocumentKey
+from yadinassi.db.transaction_backend import TransactionRequest
+from yadinassi.db.registers.accumulation_movements import (AccumulationMovementRow,
     AccumulationDirection, AccumulationReplacement)
-from yadinassi.configuration_inventory_enums import import_inventory_enum_configuration, PROFILE
-from yadinassi.enum_storage_values import EnumKey
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_inventory_enums import import_inventory_enum_configuration, PROFILE
+from yadinassi.db.metadata.enum_storage_values import EnumKey
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from test_configuration_inventory_enums import source
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -87,16 +87,11 @@ class InventoryEnumStorageTests(unittest.TestCase):
                 self.assertEqual(tx.read_document(d.key).tabular_sections,d.tabular_sections)
                 self.assertEqual(tx.read_accumulation(self.register.identity,d.key).rows,(row,))
 
-    def test_shared_receipt_recovery(self):
-        *_,operation,requests,outcomes=self.seed()
-        self.assertEqual(self.backend.resolve_unit_of_work(operation,requests),outcomes)
-
     def test_staged_rollback_all_ports(self):
-        c,d,_,operation,requests,_=self.seed(commit=False)
+        c,d,*_=self.seed(commit=False)
         with self.backend.begin_unit_of_work(uuid4()) as tx:
             self.assertIsNone(tx.read_catalog(c.key));self.assertIsNone(tx.read_document(d.key))
             self.assertEqual(tx.read_accumulation(self.register.identity,d.key).rows,())
-        self.assertIsNone(self.backend.resolve_unit_of_work(operation,requests))
 
     def test_catalog_projected_enum(self):
         c,*_=self.seed()
@@ -128,7 +123,7 @@ class InventoryEnumStorageTests(unittest.TestCase):
         self.sql("UPDATE configuration_file SET sha256=? WHERE path='Configuration.xml'",('0'*64,))
         with self.assertRaises(BackendError):self.backend.begin_read()
 
-    def test_actual_bytes_rehashed_not_trusted_receipt(self):
+    def test_actual_bytes_rehashed_not_trusted_digest(self):
         self.sql("UPDATE configuration_file SET content=CAST(content||' ' AS BLOB) WHERE path='Configuration.xml'")
         with self.assertRaises(BackendError):self.backend.begin_read()
 

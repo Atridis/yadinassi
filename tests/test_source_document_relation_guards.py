@@ -5,10 +5,10 @@ from uuid import uuid4
 from dataclasses import replace
 import test_source_document_relations as fixture
 import test_source_document_records as records
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_document_store import SourceDocumentStore
-from yadinassi.source_document_section_store import SourceDocumentSectionStore
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.document.source_document_store import SourceDocumentStore
+from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
 
 class SourceDocumentRelationGuardTests(unittest.TestCase):
     setUp=records.SourceDocumentRecordTests.setUp
@@ -31,7 +31,7 @@ class SourceDocumentRelationGuardTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(),before)
 
     def test_old_unsupported_schema_refuses_without_mutation(self):
-        from yadinassi import source_document_definitions as definitions
+        from yadinassi.db.document import source_document_definitions as definitions
         source=fixture.package();original=definitions.source_document_definitions
         def old_parser(*args,**kwargs):
             supported,errors=original(*args,**kwargs)

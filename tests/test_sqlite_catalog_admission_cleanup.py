@@ -8,8 +8,8 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from test_sqlite_catalog_backend import configuration
-from yadinassi.catalog_backend import BackendError
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
 
 
 class AdmissionFaultConnection:
@@ -74,7 +74,7 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
             connection = AdmissionFaultConnection(self.real_connect(*args, **kwargs), **faults)
             self.connections.append(connection)
             return connection
-        with patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=connect):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=connect):
             yield
 
     def assert_owned_and_blocked(self, connection):
@@ -84,7 +84,7 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
         self.assertIs(owner._connection, connection)
         self.assertTrue(owner._closed)
         self.assertFalse(hasattr(owner, 'commit'))
-        with patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not open')):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not open')):
             with self.assertRaisesRegex(BackendError, 'busy'): self.backend.begin_read()
             with self.assertRaisesRegex(BackendError, 'busy'): self.backend.begin_write(uuid4())
         return owner
@@ -132,7 +132,7 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
         other = self.real_connect(self.path, isolation_level=None, timeout=0)
         try:
             with self.assertRaises(sqlite3.OperationalError): other.execute('BEGIN IMMEDIATE')
-            self.assertEqual(other.execute('SELECT COUNT(*) FROM commit_receipt').fetchone(), (0,))
+            self.assertEqual(other.execute("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='commit_receipt'").fetchone(), (0,))
         finally: other.close()
         connection.disable_faults()
         owner.close()
@@ -155,7 +155,7 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
     def test_view_allocation_failure_retains_owner_and_original_interruption(self):
         primary = MemoryError('view allocation')
         with self.connection_fault(close_error=KeyboardInterrupt('cleanup')):
-            with patch('yadinassi.sqlite_catalog._View', side_effect=primary):
+            with patch('yadinassi.db.sqlite.sqlite_catalog._View', side_effect=primary):
                 with self.assertRaises(MemoryError) as caught: self.backend.begin_write(uuid4())
         self.assertIs(caught.exception, primary)
         connection = self.connections[-1]
@@ -237,7 +237,7 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
         self.assertIsNotNone(owner)
         self.assertIs(owner._connection, connection)
         self.assertFalse(connection.wrapped.in_transaction)
-        with patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not open')):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not open')):
             with self.assertRaisesRegex(BackendError, 'busy'): self.backend.begin_read()
             with self.assertRaisesRegex(BackendError, 'unsupported'): self.backend.begin_write(uuid4())
         connection.disable_faults()
@@ -247,7 +247,7 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
     def test_connect_factory_failure_clears_empty_owner(self):
         for primary in (sqlite3.OperationalError('open failed'), KeyboardInterrupt('open interrupted')):
             with self.subTest(error=type(primary).__name__):
-                with patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=primary):
+                with patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=primary):
                     if isinstance(primary, sqlite3.Error):
                         with self.assertRaisesRegex(BackendError, 'storage_error'): self.backend.begin_read()
                     else:
@@ -259,7 +259,7 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
     def test_file_admission_failure_clears_empty_owner(self):
         primary = BackendError('invalid_input')
         with patch.object(self.backend, '_check_file', side_effect=primary), \
-                patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not open')):
+                patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not open')):
             with self.assertRaises(BackendError) as caught: self.backend.begin_read()
         self.assertIs(caught.exception, primary)
         self.assertIsNone(self.backend._active)
@@ -314,7 +314,7 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
         self.assertIs(view._connection, self.connections[-1])
         self.assertEqual(self.connections[-1].close_calls, 0)
         self.assertEqual(len(view.catalogs()), 2)
-        with patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not open')):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not open')):
             with self.assertRaisesRegex(BackendError, 'busy'): self.backend.begin_read()
         self.assertIs(self.backend._active, view)
         view.close()
@@ -328,7 +328,7 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
             if instance is self.backend and name == '_active' and value is not None:
                 raise primary
         with patch.object(SQLiteCatalogBackend, '__setattr__', assign), \
-                patch('yadinassi.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not open')):
+                patch('yadinassi.db.sqlite.sqlite_catalog.sqlite3.connect', side_effect=AssertionError('must not open')):
             with self.assertRaises(KeyboardInterrupt) as caught: self.backend.begin_read()
         self.assertIs(caught.exception, primary)
         self.assertIsNone(self.backend._active)

@@ -5,10 +5,11 @@ import tempfile
 import unittest
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.errors import BSLRuntimeError, IncompleteInput
+from yadinassi.types.errors import BSLRuntimeError, IncompleteInput
+from yadinassi.types.values import BSLType
 from yadinassi.syntax.parser import parse_expression
 from yadinassi.runtime import EVAL_MAX_DEPTH, EVAL_MAX_SOURCE
-from yadinassi.serialization import value_to_string_internal, value_from_string_internal
+from yadinassi.formats.storage.serialization import value_to_string_internal, value_from_string_internal
 
 
 def quote(text):
@@ -156,11 +157,31 @@ class EvalTests(unittest.TestCase):
                 self.vm.execute('Eval(payload)')
 
     def test_eval_result_uses_existing_serialization_both_directions(self):
-        for text in ('12', 'True', '"Я😀"', 'Undefined', 'New Array'):
-            value = self.evaluate(text)
-            encoded = value_to_string_internal(value)
-            restored = value_from_string_internal(encoded)
-            self.assertEqual(value_to_string_internal(restored), encoded)
+        self.vm.execute('Items=New Array; Items.Add("Я😀"); Items.Add(12);')
+        cases = (
+            ('12', BSLType.NUMBER, 'Restored=12'),
+            ('True', BSLType.BOOLEAN, 'Restored=True'),
+            ('"Я😀"', BSLType.STRING, 'Restored="Я😀"'),
+            ('Undefined', BSLType.UNDEFINED, 'Restored=Undefined'),
+            ('New Array', BSLType.ARRAY, 'Restored.Count()=0'),
+            ('Items', BSLType.ARRAY, 'Restored.Count()=2 And Restored[0]="Я😀" And Restored[1]=12'),
+        )
+        for text, kind, expected in cases:
+            with self.subTest(text=text):
+                self.vm.execute(f'Result=Eval({quote(text)}); Wire=ValueToStringInternal(Result); '
+                                'Restored=ValueFromStringInternal(Wire);')
+                encoded = self.vm.execute('Wire')
+                self.assertIs(self.vm.execute('TypeOf(Result)'), kind)
+                self.assertIs(self.vm.execute('TypeOf(Restored)'), kind)
+                if text == 'Items':
+                    self.vm.execute('Items[0]="changed after round-trip";')
+                self.assertIs(self.vm.execute('(' + expected + ')'), True)
+                self.assertEqual(self.vm.execute('ValueToStringInternal(Restored)'), encoded)
+                # The wire is the same one accepted by the host reader.
+                # Test host encoding on the reader's canonical result, not
+                # directly on the compiler's in-memory Array representation.
+                restored = value_from_string_internal(encoded)
+                self.assertEqual(value_to_string_internal(restored), encoded)
 
     def test_standalone_module_scope_and_custom_function_shadowing(self):
         self.vm.execute('x = 9;')

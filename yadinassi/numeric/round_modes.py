@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterator
 
-from ..values import BSLObject
+from yadinassi.types.values import BSLObject
 
 
 class BSLRoundMode(Enum):
@@ -39,6 +39,8 @@ class BSLRoundModes(BSLObject):
     def get_member(self, name: str) -> object:
         member = _MEMBERS.get(name.casefold())
         return super().get_member(name) if member is None else member
+
+    __getitem__ = get_member
 
 
 ROUND_MODES = BSLRoundModes()

@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.values import BSLArray
-from yadinassi.serialization import value_to_string_internal, value_from_string_internal
+from yadinassi.types.values import BSLArray
+from yadinassi.formats.storage.serialization import value_to_string_internal, value_from_string_internal
 
 
 class MultidimensionalArrayTests(unittest.TestCase):
@@ -27,13 +27,21 @@ class MultidimensionalArrayTests(unittest.TestCase):
             self.assertIsNone(vm.execute(expression))
         self.assertEqual(vm.execute('a[0][0].Count()'), Decimal(2))
         self.assertEqual(vm.execute('a[1][1].Count()'), Decimal(3))
-        branches = [row for plane in vm.execute('a').items for row in plane.items]
+        value = vm.execute('a')
+        self.assertIs(type(value), list)
+        for plane in value:
+            self.assertIs(type(plane), list)
+        branches = [row for plane in value for row in plane]
+        for branch in branches:
+            self.assertIs(type(branch), list)
         self.assertEqual(len({id(branch) for branch in branches}), 4)
 
     def test_zero_dimensions_and_existing_default(self):
         vm = Interpreter()
         for expression in ('New Array', 'New Array()', 'New Array(0)'):
-            self.assertEqual(vm.execute(expression).items, [])
+            result = vm.execute(expression)
+            self.assertIs(type(result), list)
+            self.assertEqual(result, [])
         for arguments in ('0, 3', '2, 0, 4', '2, 0', '0, 0', '1, 2, 0'):
             with self.subTest(arguments=arguments), self.assertRaises(BSLError):
                 vm.execute(f'New Array({arguments})')
@@ -52,10 +60,9 @@ class MultidimensionalArrayTests(unittest.TestCase):
         with self.assertRaises(BSLError):
             vm.execute('New Array(f, 2)')
 
-    def test_both_serialization_directions(self):
-        vm = Interpreter()
-        vm.execute('a = New Array(2, 2); a[0][1] = "Я";')
-        original = vm.execute('a')
+    def test_python_serialization_roundtrip_for_bsl_array(self):
+        original = BSLArray(Decimal(2), Decimal(2))
+        original.items[0].items[1] = 'Я'
         text = value_to_string_internal(original)
         copy = value_from_string_internal(text)
         self.assertEqual(value_to_string_internal(copy), text)
@@ -63,9 +70,26 @@ class MultidimensionalArrayTests(unittest.TestCase):
         copy.items[0].items[0] = Decimal(3)
         self.assertIsNone(copy.items[1].items[0])
         self.assertIsNone(original.items[0].items[0])
-        vm.execute('b = ValueFromStringInternal(ValueToStringInternal(a)); b[0][0] = 3;')
+
+    def test_python_serializer_does_not_admit_direct_list(self):
+        vm = Interpreter()
+        original = vm.execute('New Array(2, 2)')
+        self.assertIs(type(original), list)
+        with self.assertRaisesRegex(TypeError, 'поддерживаемым типам BSL'):
+            value_to_string_internal(original)
+
+    def test_bsl_serialization_roundtrip_for_direct_nested_array(self):
+        vm = Interpreter()
+        vm.execute('a = New Array(2, 2); a[0][1] = "Я";')
+        self.assertIs(type(vm.execute('a')), list)
+        vm.execute('text = ValueToStringInternal(a); b = ValueFromStringInternal(text);')
+        self.assertTrue(vm.execute('(ValueToStringInternal(b) = text)'))
+        self.assertIsNone(vm.execute('b[0][0]'))
+        vm.execute('b[0][0] = 3;')
+        self.assertEqual(vm.execute('b[0][0]'), Decimal(3))
         self.assertTrue(vm.execute('(b[0][1] = "Я")'))
         self.assertIsNone(vm.execute('b[1][0]'))
+        self.assertIsNone(vm.execute('a[0][0]'))
 
     def test_validation_and_catchable_recovery(self):
         vm = Interpreter()
@@ -78,14 +102,14 @@ class MultidimensionalArrayTests(unittest.TestCase):
                 self.assertEqual(vm.execute('saved'), Decimal(7))
                 vm.execute(f'Try New Array({arguments}); Except saved = 9; EndTry;')
                 self.assertEqual(vm.execute('saved'), Decimal(9))
-                self.assertEqual(vm.execute('New Array(1, 1)').items[0].items, [None])
+                self.assertEqual(vm.execute('New Array(1, 1)'), [[None]])
         for value in ('NaN', 'Infinity', '-Infinity', 'sNaN'):
             with self.assertRaises(ValueError):
                 BSLArray(Decimal(0), Decimal(value))
 
     def test_cumulative_budget_counts_nested_arrays(self):
         # Small patched limit tests exact accounting without large allocations.
-        with patch('yadinassi.values._MAX_ARRAY_CONSTRUCTION', 10):
+        with patch('yadinassi.types.values._MAX_ARRAY_CONSTRUCTION', 10):
             self.assertEqual(len(BSLArray(Decimal(10)).items), 10)
             self.assertEqual(len(BSLArray(Decimal(2), Decimal(3)).items), 2)  # 2+2+6
             self.assertEqual(len(BSLArray(Decimal(3), Decimal(1)).items), 3)  # 3+3+3
@@ -131,4 +155,4 @@ class MultidimensionalArrayTests(unittest.TestCase):
 a = New Array(Размер(2), Размер(3));
 ''')
         self.assertEqual(vm.execute('Порядок'), '23')
-        self.assertEqual(len(vm.execute('a').items[1].items), 3)
+        self.assertEqual(len(vm.execute('a')[1]), 3)

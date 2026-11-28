@@ -1,10 +1,11 @@
 """Native PR30 character regressions plus explicitly broader robustness tests."""
 
+import ast
 from decimal import Decimal, Inexact, Rounded, ROUND_UP, localcontext
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.strings import character, character_code
+from yadinassi.text.strings import character, character_code
 
 
 class CharacterTests(unittest.TestCase):
@@ -62,6 +63,106 @@ class CharacterTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('CharCode("😀", 1)'), Decimal(55357))
         self.assertEqual(self.vm.execute('КодСимвола("😀", 2)'), Decimal(56832))
         self.assertEqual(self.vm.execute('СтрДлина(Char(55357) + Char(56832))'), Decimal(2))
+
+    def test_message_outputs_adjacent_utf16_units_as_one_character(self):
+        output = []
+        vm = Interpreter(output.append)
+        self.addCleanup(vm.close)
+        vm.execute('Halves=New Array; Halves.Add(Left("🙂",1)); '
+                   'Halves.Add(Right("🙂",1)); Message(Halves[0]+Halves[1]);')
+        self.assertEqual(output, ['🙂'])
+        vm.execute('Message(Halves[0]);')
+        self.assertEqual(output[-1], chr(55357))
+
+    def test_concat_joins_utf16_across_runtime_and_static_values(self):
+        for prepared in (False, True):
+            for expression in (
+                'Char(55357) + Char(56832)',
+                'Left("😀", 1) + Right("😀", 1)',
+                'Mid("A😀B", 2, 1) + Сред("A😀B", 3, 1)',
+                'A + B',
+            ):
+                with self.subTest(prepared=prepared, expression=expression):
+                    vm = Interpreter()
+                    self.addCleanup(vm.close)
+                    vm.execute('A = Char(55357); B = Char(56832);')
+                    source = 'Result = ' + expression + ';'
+                    if prepared:
+                        vm.execute_prepared(vm.prepare(source))
+                    else:
+                        vm.execute(source)
+                    self.assertEqual(vm.variables['result'], '😀')
+                    self.assertEqual(vm.execute('Char(56832) + Char(55357)'), '\ude00\ud83d')
+
+    def test_builtin_utf16_join_does_not_wrap_numeric_addition_or_shadowed_names(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        plan = vm.prepare(
+            'Text = ЛеВ("😀", 1) + ПраВ("😀", 1); '
+            'N = 19 + 23; '
+            'Function Char(Val Code) Return Code; EndFunction '
+            'Shadowed = Char(2) + 3;'
+        )
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['text'], '😀')
+        self.assertEqual(vm.variables['n'], Decimal(42))
+        self.assertEqual(vm.variables['shadowed'], Decimal(5))
+        tree = ast.parse(plan._plan.generated_source)
+        sums = [node for node in ast.walk(tree)
+                if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)]
+        self.assertEqual(len(sums), 2)
+        self.assertTrue(any(isinstance(node.left, ast.Call) for node in sums))
+        self.assertEqual(sum(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                             and node.func.id == '_String' for node in ast.walk(tree)), 1)
+
+    def test_dynamic_add_evaluates_operands_once_in_order(self):
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                output = []
+                vm = Interpreter(output.append)
+                self.addCleanup(vm.close)
+                source = (
+                    'Function First(Val Input) Message("left"); Return Input; EndFunction '
+                    'Function Second(Val Input) Message("right"); Return Input; EndFunction '
+                    'Joined = First(Char(55357)) + Second(Char(56832)); '
+                    'Mixed = First("x") + 2; Numeric = First(19) + Second(23);'
+                )
+                if prepared:
+                    vm.execute_prepared(vm.prepare(source))
+                else:
+                    vm.execute(source)
+                self.assertEqual(output, ['left', 'right', 'left', 'left', 'right'])
+                self.assertEqual(vm.variables['joined'], '😀')
+                self.assertEqual(vm.variables['mixed'], 'x2')
+                self.assertEqual(vm.variables['numeric'], Decimal(42))
+
+    def test_known_numeric_loop_uses_direct_add(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        source = (
+            'Function Inc(Val X) Return X + 1; EndFunction '
+            'R = 0; For I = 1 To 4 Do R = R + Inc(I); EndDo;'
+        )
+        plan = vm.prepare(source)
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['r'], Decimal(14))
+        tree = ast.parse(plan._plan.generated_source)
+        routine_adds = [node.value for node in ast.walk(tree) if isinstance(node, ast.Return)
+                        and isinstance(node.value, ast.BinOp) and isinstance(node.value.op, ast.Add)]
+        self.assertTrue(any(isinstance(add.left, ast.Name) and isinstance(add.right, ast.Constant)
+                            and add.right.value == 1 for add in routine_adds))
+        loop = next(node for node in ast.walk(tree) if isinstance(node, ast.While))
+        self.assertTrue(any(isinstance(node, ast.Assign) and isinstance(node.value, ast.BinOp)
+                            and isinstance(node.value.op, ast.Add)
+                            and isinstance(node.value.right, ast.Call) for node in loop.body))
+        self.assertFalse(any(isinstance(node, ast.Name) and node.id in ('_String', '_concatenate')
+                             for node in ast.walk(loop)))
+
+    def test_concat_keeps_existing_reassembly_inside_an_operand(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables["value"] = "a\ud83d\ude00b"
+        self.assertEqual(vm.execute('Value + "!"'), "a😀b!")
 
     def test_character_composes_with_utf16_string_operations(self):
         self.assertEqual(self.vm.execute('CharCode("A😀B", 4)'), Decimal(66))

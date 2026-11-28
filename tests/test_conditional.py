@@ -4,13 +4,14 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import IncompleteInput
+from yadinassi.types.errors import IncompleteInput
 from yadinassi.syntax.parser import parse
 
 
 class ConditionalTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(output=lambda value: None)
+        self.calls = []
+        self.vm = Interpreter(output=self.calls.append)
 
     def test_boolean_selection_and_result_types(self):
         for expression, expected in (
@@ -35,17 +36,12 @@ class ConditionalTests(unittest.TestCase):
                 self.assertEqual(self.vm.execute(expression), Decimal(42))
 
     def test_condition_and_selected_branch_run_once_in_order(self):
+        self.vm.execute('Function Record(Val Label, Val Result) Message(Label); Return Result; EndFunction')
         for condition in (True, False):
-            calls = []
-
-            def record(label, value):
-                calls.append(label)
-                return value
-
-            self.vm.register_function("Record", record)
+            self.calls.clear()
             expression = f'?(Record("condition", {condition}), Record("true", 1), Record("false", 2))'
             self.assertEqual(self.vm.execute(expression), Decimal(1 if condition else 2))
-            self.assertEqual(calls, ["condition", "true" if condition else "false"])
+            self.assertEqual(self.calls, ["condition", "true" if condition else "false"])
 
     def test_nested_expressions_and_operator_precedence(self):
         self.assertEqual(self.vm.execute('''
@@ -66,11 +62,10 @@ class ConditionalTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('Представление = ?(-2, 42, 1); Представление'), Decimal(42))
 
     def test_invalid_condition_does_not_run_either_branch(self):
-        calls = []
-        self.vm.register_function('Effect', lambda: calls.append('called'))
+        self.vm.execute('Function Effect() Message("called"); Return 1; EndFunction')
         with self.assertRaises(BSLError) as caught:
             self.vm.execute('\n?("invalid", Effect(), Effect())', 'condition.bsl')
-        self.assertEqual(calls, [])
+        self.assertEqual(self.calls, [])
         self.assertIn('булево', caught.exception.message)
         self.assertEqual((caught.exception.source, caught.exception.line, caught.exception.column),
                          ('condition.bsl', 2, 1))
@@ -99,11 +94,9 @@ class ConditionalTests(unittest.TestCase):
                 parse(expression)
 
     def test_syntax_is_checked_before_any_side_effects(self):
-        calls = []
-        self.vm.register_function('Effect', lambda: calls.append('called'))
         with self.assertRaises(BSLError):
-            self.vm.execute('Effect(); ?(Истина, 1, 2 + )')
-        self.assertEqual(calls, [])
+            self.vm.execute('Message("called"); ?(Истина, 1, 2 + )')
+        self.assertEqual(self.calls, [])
 
 
 if __name__ == '__main__':

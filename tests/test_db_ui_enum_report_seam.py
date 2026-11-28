@@ -2,9 +2,9 @@
 import unittest
 from unittest.mock import patch
 import test_configuration_inventory_enum_app as enum_fixture
-from yadinassi.catalog_backend import BackendError
-from yadinassi.query_packages import BSLTempTablesManager
-from yadinassi.inventory_enum_runtime import query_owner
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.query.query_packages import BSLTempTablesManager
+from yadinassi.configuration.demos.inventory_enum_runtime import query_owner
 
 
 class EnumFormsReportSeamTests(unittest.TestCase):
@@ -72,7 +72,7 @@ class EnumFormsReportSeamTests(unittest.TestCase):
         table = self.query(vm, 'SELECT Unit FROM Catalog.Products').execute().unload()
         descriptor = table.columns.items[0].value_type
         self.broker.exchange({'operation': 'retire', 'session': sid, 'payload': {}})
-        from yadinassi.query_reference_tables import description_binding
+        from yadinassi.db.query.query_reference_tables import description_binding
         with self.assertRaises(BackendError):
             description_binding(descriptor)
 

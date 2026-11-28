@@ -8,15 +8,16 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 from test_sqlite_catalog_backend import configuration
-from yadinassi.catalog_backend import (
+from yadinassi.db.catalog.catalog_backend import (
     BackendError, CatalogDraft, CatalogKey, CatalogSchema, FieldSchema,
     TabularRow, TabularSectionRows, TabularSectionSchema,
 )
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _json, _schema_data
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _json, _schema_data
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class ConnectionFault:
@@ -89,8 +90,9 @@ class CatalogSectionTests(unittest.TestCase):
         self.backend.close()
         self.backend = SQLiteCatalogBackend(self.path)
 
-    def sql(self, sql, args=()):
+    def sql(self, sql, args=(), *, corrupt=False):
         with closing(sqlite3.connect(self.path)) as connection, connection:
+            if corrupt: connection.execute('PRAGMA ignore_check_constraints=ON')
             return connection.execute(sql, args).fetchall()
 
     def table(self, section=None):
@@ -135,6 +137,87 @@ class CatalogSectionTests(unittest.TestCase):
         card = self.read(draft.key)
         self.assertEqual(card.tabular_sections, self.expected(second, first))
         self.assertEqual(card.revision, revision)
+
+    def test_single_cell_edit_of_200_rows_binds_only_that_uuid(self):
+        rows = tuple(self.row(str(i)) for i in range(200))
+        draft = self.draft((self.section(*rows),))
+        revision = self.create(draft)
+        edited = replace(rows[31], values=self.values('updated'))
+        desired = (*rows[:31],edited,*rows[32:])
+        tx = self.backend.begin_write(uuid4())
+        actual = []
+        def trace(conn,sql,args):
+            if sql.startswith(('INSERT','UPDATE','DELETE')) and self.table() in sql:
+                actual.append((sql,args))
+            return conn.execute(sql,args)
+        tx._connection = ConnectionFault(tx._connection,trace)
+        try:
+            tx.update(replace(draft,tabular_sections=(self.section(*desired),)),revision)
+            self.assertEqual(len(actual),1)
+            self.assertIn('DO UPDATE SET',actual[0][0])
+            self.assertEqual(len(actual[0][1]),3+len(self.lines.fields))
+            self.assertEqual(actual[0][1][:3],(str(draft.key.record_id),str(edited.identity),32))
+            tx.commit()
+        finally:
+            tx.close()
+        self.reopen()
+        self.assertEqual(self.read(draft.key).tabular_sections,self.expected(*desired))
+
+    def test_delta_reorder_insert_delete_is_owner_local(self):
+        first, second, removed, tail, added = (self.row(str(i)) for i in range(5))
+        note = TabularRow(uuid4(),('same note',))
+        draft = self.draft(self.expected(first,second,removed,tail,notes=(note,)))
+        revision = self.create(draft)
+        # Stable row IDs are owner's keys, not globally unique.
+        other = self.draft(draft.tabular_sections,code='20')
+        self.create(other)
+        result = self.expected(second,added,first,tail,notes=(note,))
+        tx = self.backend.begin_write(uuid4())
+        trace = []
+        tx._connection.set_trace_callback(trace.append)
+        try:
+            tx.update(replace(draft,tabular_sections=result),revision)
+            revision2, = tx.commit()
+        finally:
+            tx.close()
+        mutations = [sql for sql in trace if sql.startswith(('INSERT','UPDATE','DELETE'))]
+        self.assertEqual([sql.split()[0] for sql in mutations if self.table() in sql],
+                         ['DELETE','UPDATE','INSERT'])
+        self.assertFalse(any(self.table(self.notes) in sql for sql in mutations))
+        self.reopen()
+        self.assertEqual(self.read(draft.key).tabular_sections,result)
+        self.assertEqual(self.read(other.key).tabular_sections,other.tabular_sections)
+        with self.assertRaisesRegex(BackendError,'conflict'):
+            self.update(draft,revision)
+        self.assertEqual(self.read(draft.key).revision,revision2)
+
+    def test_bsl_clear_replaces_dirty_section_only(self):
+        from yadinassi import Interpreter
+        from yadinassi.db.database_context import SQLiteDBContext
+
+        first = self.row()
+        note = TabularRow(uuid4(), ('keep unchanged',))
+        draft = self.draft(self.expected(first, notes=(note,)))
+        revision = self.create(draft)
+        db = SQLiteDBContext(self.path)
+        self.addCleanup(db.close)
+        vm = Interpreter(database_context=db)
+        self.addCleanup(vm.close)
+
+        trace = []
+        connect = db.backend._connect
+        def traced_connect(**kwargs):
+            connection = connect(**kwargs)
+            connection.set_trace_callback(trace.append)
+            return connection
+        with patch.object(db.backend, '_connect', side_effect=traced_connect):
+            vm.execute('A=Catalogs.Products.FindByCode("10").GetObject(); A.Lines.Clear(); A.Write();')
+        changes = [sql for sql in trace if sql.startswith(('DELETE', 'INSERT'))]
+        self.assertTrue(any(self.table(self.lines) in sql for sql in changes))
+        self.assertFalse(any(self.table(self.notes) in sql for sql in changes))
+        saved = self.read(draft.key)
+        self.assertNotEqual(saved.revision, revision)
+        self.assertEqual(saved.tabular_sections, self.expected(notes=(note,)))
 
     def test_explicit_empty_clears_all_rows_but_keeps_owner(self):
         draft = self.draft((self.section(self.row()),))
@@ -195,15 +278,17 @@ class CatalogSectionTests(unittest.TestCase):
         return seen
 
     def test_midway_update_failure_is_atomic_and_transaction_can_continue(self):
-        draft = self.draft((self.section(self.row()),))
+        first = self.row()
+        draft = self.draft((self.section(first),))
         revision = self.create(draft)
         before = self.read(draft.key)
         tx = self.backend.begin_write(uuid4())
         seen = self.install_second_insert_fault(tx)
         try:
-            with self.assertRaisesRegex(BackendError, 'storage_error'):
+            with patch('yadinassi.db.sqlite.sqlite_section_delta._limit',return_value=3+len(self.lines.fields)), \
+                    self.assertRaisesRegex(BackendError, 'storage_error'):
                 tx.update(replace(draft, description='Must roll back',
-                    tabular_sections=(self.section(self.row(), self.row()),)), revision)
+                    tabular_sections=(self.section(self.row(), first),)), revision)
             self.assertEqual(len(seen), 2)
             self.assertEqual(tx.read_catalog(draft.key), before)
             survivor = self.draft(code='20')
@@ -220,7 +305,8 @@ class CatalogSectionTests(unittest.TestCase):
         tx = self.backend.begin_write(uuid4())
         seen = self.install_second_insert_fault(tx)
         try:
-            with self.assertRaisesRegex(BackendError, 'storage_error'):
+            with patch('yadinassi.db.sqlite.sqlite_section_delta._limit',return_value=3+len(self.lines.fields)), \
+                    self.assertRaisesRegex(BackendError, 'storage_error'):
                 tx.create(draft)
             self.assertEqual(len(seen), 2)
             self.assertIsNone(tx.read_catalog(draft.key))
@@ -246,36 +332,7 @@ class CatalogSectionTests(unittest.TestCase):
                              for sql in statements))
         self.assertIsNotNone(self.read(draft.key))
 
-    def test_receipt_binds_row_identity_values_order_and_section_identity(self):
-        first, second = self.row(), self.row('second')
-        draft = self.draft((self.section(first, second),))
-        operation = uuid4()
-        revision = self.create(draft, operation)
-        self.assertEqual(self.backend.resolve_write(operation, draft), revision)
-        alternatives = (
-            (self.section(second, first),),
-            (self.section(replace(first, identity=uuid4()), second),),
-            (self.section(replace(first, values=self.values('changed')), second),),
-            (TabularSectionRows(self.notes.identity, ()),),
-            (), None,
-        )
-        for sections in alternatives:
-            with self.subTest(sections=sections):
-                with self.assertRaises(BackendError):
-                    self.backend.resolve_write(operation, replace(draft, tabular_sections=sections))
-
-    def test_receipt_distinguishes_none_from_explicit_empty(self):
-        for sections in (None, ()):
-            with self.subTest(sections=sections):
-                draft = self.draft(sections, code='none' if sections is None else 'empty')
-                operation = uuid4()
-                revision = self.create(draft, operation)
-                self.assertEqual(self.backend.resolve_write(operation, draft), revision)
-                with self.assertRaisesRegex(BackendError, 'conflict'):
-                    self.backend.resolve_write(operation,
-                        replace(draft, tabular_sections=() if sections is None else None))
-
-    def test_uncertain_commit_after_actual_commit_resolves_on_reopen(self):
+    def test_uncertain_commit_after_actual_commit_reads_rows_on_reopen(self):
         draft = self.draft((self.section(self.row()),))
         operation = uuid4()
         tx = self.backend.begin_write(operation)
@@ -289,10 +346,9 @@ class CatalogSectionTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             tx.commit()
         self.reopen()
-        revision = self.backend.resolve_write(operation, draft)
-        self.assertIsNotNone(revision)
         card = self.read(draft.key)
-        self.assertEqual(card.revision, revision)
+        self.assertEqual(card.revision.token, '1')
+        self.assertEqual(card.revision.record_id, draft.key.record_id)
         self.assertEqual(card.tabular_sections, self.expected(*draft.tabular_sections[0].rows))
         self.assertEqual(self.sql('SELECT COUNT(*) FROM ' + self.table()), [(1,)])
 
@@ -422,7 +478,7 @@ class CatalogSectionTests(unittest.TestCase):
         field = self.lines.fields[1]
         column = quote_identifier(self.backend._section_layout.field_name(
             self.product.identity, self.lines.identity, field.identity))
-        self.sql('UPDATE ' + self.table() + ' SET ' + column + '=?', ('NaN',))
+        self.sql('UPDATE ' + self.table() + ' SET ' + column + '=?', (10**12,), corrupt=True)
         with self.assertRaises(BackendError):
             self.read(draft.key)
 
@@ -462,6 +518,36 @@ class CatalogSectionTests(unittest.TestCase):
                  ('catalog_section_missing', str(self.lines.identity)))
         with self.assertRaises(BackendError):
             SQLiteCatalogBackend(self.path)
+
+    def test_section_checks_group_reference_presence_and_keep_error_order(self):
+        keys = tuple(CatalogKey(self.backend.database_id,self.category.identity,uuid4()) for _ in range(3))
+        for code, key in enumerate(keys):
+            self.create(CatalogDraft(key,str(code),'Category',False,()))
+        rows = tuple(TabularRow(uuid4(),(*self.values()[:-1],key)) for key in (*keys,*keys))
+        draft = self.draft((self.section(*rows),))
+        tx = self.backend.begin_write(uuid4())
+        requests = []
+        table = quote_identifier(self.backend._layout.table_name(self.category.identity))
+        def trace(conn,sql,args):
+            if sql.startswith('SELECT') and table in sql and 'record_id IN' in sql:
+                requests.append(args)
+            return conn.execute(sql,args)
+        tx._connection = ConnectionFault(tx._connection,trace)
+        try:
+            tx.create(draft)
+            self.assertEqual(requests,[tuple(sorted(str(key.record_id) for key in keys))])
+            revision, = tx.commit()
+        finally:
+            tx.close()
+
+        missing = replace(keys[0],record_id=uuid4())
+        invalid = TabularRow(uuid4(),())
+        missing_row = replace(rows[0],values=(*rows[0].values[:-1],missing))
+        before = self.read(draft.key)
+        for bad, code in (((missing_row,invalid),'not_found'),((invalid,missing_row),'invalid_input')):
+            with self.subTest(code=code),self.assertRaisesRegex(BackendError,code):
+                self.update(replace(draft,tabular_sections=(self.section(*bad),)),revision)
+            self.assertEqual(self.read(draft.key),before)
 
     def test_nonempty_reference_in_section_roundtrips(self):
         key = CatalogKey(self.backend.database_id, self.category.identity, uuid4())
@@ -527,7 +613,7 @@ class CatalogSectionTests(unittest.TestCase):
         self.assertEqual(self.read(draft.key), before_card)
 
     def test_v3_capability_and_runtime_activation_are_explicit(self):
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         self.assertTrue(self.backend.capabilities().catalog_tabular_sections)
         self.backend.close()
         before = self.path.read_bytes()
@@ -542,10 +628,10 @@ class CatalogSectionTests(unittest.TestCase):
 
     def test_selection_and_scan_share_nested_row_budget(self):
         from unittest.mock import patch
-        from yadinassi.catalog_backend import CatalogSelection, CatalogScanRequest
+        from yadinassi.db.catalog.catalog_backend import CatalogSelection, CatalogScanRequest
         for code in ('10', '20'):
             self.create(self.draft((self.section(self.row(), self.row()),), code=code))
-        with patch('yadinassi.sqlite_catalog._MAX_ROWS', 3):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_ROWS', 3):
             view = self.backend.begin_read()
             try:
                 with self.assertRaisesRegex(BackendError, 'unsupported'):
@@ -556,25 +642,31 @@ class CatalogSectionTests(unittest.TestCase):
                 view.close()
 
     def test_schema_reuse_preserves_full_section_cards(self):
-        from yadinassi.catalog_backend import CatalogScanRequest, CatalogOrder
+        from yadinassi.db.catalog.catalog_backend import CatalogScanRequest, CatalogOrder
         expected = []
         for code in ('10', '20'):
             draft = self.draft((self.section(self.row(text=code)),), code=code)
             self.create(draft)
             expected.append(self.read(draft.key))
-        view = self.backend.begin_read()
-        self.addCleanup(view.close)
-        queries = []
-        view._connection.set_trace_callback(queries.append)
-        for read in (lambda: view.select_catalog(self.product.identity),
-                     lambda: view.scan_catalog(self.product.identity, CatalogScanRequest(
-                         order=(CatalogOrder('code'),))).cards):
-            queries.clear()
-            self.assertEqual(read(), tuple(expected))
-            self.assertEqual(sum(query.startswith('SELECT definition FROM catalog_schema')
-                                 for query in queries), 1)
+        with closing(self.backend.begin_read()) as view:
+            queries = []
+            view._connection.set_trace_callback(queries.append)
+            for read in (lambda: view.select_catalog(self.product.identity),
+                         lambda: view.scan_catalog(self.product.identity, CatalogScanRequest(
+                             order=(CatalogOrder('code'),))).cards):
+                queries.clear()
+                self.assertEqual(read(), tuple(expected))
+                self.assertFalse(any('FROM catalog_schema' in query for query in queries))
 
-    def test_commit_failure_before_actual_commit_has_no_receipt_or_rows(self):
+        # A changed SQLite epoch must not reuse the prior view's admitted schema.
+        renamed = replace(self.product, name='RenamedProducts')
+        self.sql('UPDATE catalog_schema SET name=?, definition=? WHERE identity=?',
+                 (renamed.name, _json(_schema_data(renamed)), str(renamed.identity)))
+        with self.assertRaisesRegex(BackendError, '^schema_changed$'):
+            self.backend.begin_read()
+        self.assertIsNone(self.backend._active)
+
+    def test_commit_failure_before_actual_commit_leaves_no_rows(self):
         operation = uuid4()
         draft = self.draft((self.section(self.row()),))
         tx = self.backend.begin_write(operation)
@@ -587,25 +679,8 @@ class CatalogSectionTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             tx.commit()
         self.reopen()
-        self.assertIsNone(self.backend.resolve_write(operation, draft))
         self.assertIsNone(self.read(draft.key))
         self.assertEqual(self.sql('SELECT COUNT(*) FROM ' + self.table()), [(0,)])
-
-    def test_legacy_none_hash_is_unchanged_in_v3(self):
-        draft = self.draft()
-        operation = uuid4()
-        revision = self.create(draft, operation)
-        view = self.backend.begin_read()
-        try:
-            normalized, encoded_values = view._draft(draft)
-            self.assertEqual(normalized, draft)
-        finally:
-            view.close()
-        old_intent = [[str(draft.key.catalog_id), str(draft.key.record_id),
-                       draft.code, draft.description, draft.deletion_mark, encoded_values, 1]]
-        old_hash = hashlib.sha256(_json(old_intent).encode('utf-8')).hexdigest()
-        self.assertEqual(self.backend.committed_operation(operation)[0], old_hash)
-        self.assertEqual(self.backend.resolve_write(operation, draft), revision)
 
     def test_owner_registry_names_are_reserved_for_v3_creation(self):
         path = Path(self.directory.name) / 'reserved.sqlite'
@@ -618,15 +693,14 @@ class CatalogSectionTests(unittest.TestCase):
             backend.close()
 
     def test_section_order_is_canonical_but_row_order_is_not(self):
-        row = self.row()
+        first, second = self.row(), self.row('second')
         note = TabularRow(uuid4(), ('note',))
-        draft = self.draft(self.expected(row, notes=(note,)))
-        operation = uuid4()
-        revision = self.create(draft, operation)
-        self.assertEqual(self.backend.resolve_write(operation,
-            replace(draft, tabular_sections=tuple(reversed(draft.tabular_sections)))), revision)
-
-
+        expected = self.expected(second, first, notes=(note,))
+        draft = self.draft(tuple(reversed(expected)))
+        revision = self.create(draft)
+        card = self.read(draft.key)
+        self.assertEqual(card.revision, revision)
+        self.assertEqual(card.tabular_sections, expected)
 
     def test_rollback_to_failure_closes_and_rolls_back_entire_transaction(self):
         draft = self.draft((self.section(self.row()),))
@@ -649,7 +723,8 @@ class CatalogSectionTests(unittest.TestCase):
                     raise sqlite3.OperationalError('section insertion refused')
             return connection.execute(sql, args)
         tx._connection = ConnectionFault(tx._connection, fail)
-        with self.assertRaisesRegex(BackendError, 'storage_error'):
+        with patch('yadinassi.db.sqlite.sqlite_section_delta._limit',return_value=3+len(self.lines.fields)), \
+                self.assertRaisesRegex(BackendError, 'storage_error'):
             tx.update(replace(draft, description='Uncommitted',
                 tabular_sections=(self.section(self.row(), self.row()),)), revision)
         self.assertEqual(len(inserts), 2)
@@ -660,7 +735,6 @@ class CatalogSectionTests(unittest.TestCase):
             tx.commit()
         self.assertEqual(self.read(draft.key), before)
         self.assertIsNone(self.read(staged.key))
-        self.assertIsNone(self.backend.committed_operation(operation))
 
     def test_repeated_release_failure_closes_and_rolls_back_transaction(self):
         draft = self.draft((self.section(self.row()),))
@@ -686,7 +760,6 @@ class CatalogSectionTests(unittest.TestCase):
         self.assertIsNone(self.backend._active)
         self.assertEqual(self.read(draft.key), before)
         self.assertIsNone(self.read(staged.key))
-        self.assertIsNone(self.backend.committed_operation(operation))
 
     def test_one_release_failure_preserves_prior_writes_after_savepoint_rollback(self):
         draft = self.draft((self.section(self.row()),))
@@ -740,14 +813,13 @@ class CatalogSectionTests(unittest.TestCase):
         self.assertIsNone(self.backend._active)
         self.assertEqual(self.read(draft.key), before)
         self.assertIsNone(self.read(staged.key))
-        self.assertIsNone(self.backend.committed_operation(operation))
 
     def test_transaction_row_budget_is_shared_between_owners(self):
         from unittest.mock import patch
         first = self.draft((self.section(self.row(), self.row()),), code='10')
         excess = self.draft((self.section(self.row(), self.row()),), code='20')
         last = self.draft((self.section(self.row()),), code='30')
-        with patch('yadinassi.sqlite_catalog._MAX_ROWS', 3):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_ROWS', 3):
             tx = self.backend.begin_write(uuid4())
             try:
                 tx.create(first)
@@ -773,11 +845,12 @@ class CatalogSectionTests(unittest.TestCase):
         legacy = self.draft(code='30')
         view = self.backend.begin_read()
         try:
-            first_size = len(_json(view._draft_sections(first)))
-            second_size = len(_json(view._draft_sections(excess)))
+            schema = view.catalog_schema(first.key.catalog_id)
+            first_size = len(_json(view._draft_sections(first, schema)))
+            second_size = len(_json(view._draft_sections(excess, schema)))
         finally:
             view.close()
-        with patch('yadinassi.sqlite_catalog._MAX_CONFIG_BYTES', first_size + second_size - 1):
+        with patch('yadinassi.db.sqlite.sqlite_catalog._MAX_CONFIG_BYTES', first_size + second_size - 1):
             tx = self.backend.begin_write(uuid4())
             try:
                 tx.create(first)
@@ -847,7 +920,7 @@ class CatalogSectionTests(unittest.TestCase):
 
     def test_interpreter_opts_into_v3_while_default_context_stays_closed(self):
         from yadinassi import Interpreter
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         before = self.path.read_bytes()
         output = []
         with SQLiteDBContext(self.path) as context:
@@ -860,7 +933,7 @@ class CatalogSectionTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_ui_opts_into_v3_but_unsupported_section_shapes_remain_readonly(self):
-        from yadinassi.database_context import SQLiteDBContext
+        from yadinassi.db.database_context import SQLiteDBContext
         from yadinassi.ui.catalog_editor import CatalogEditorApplication
         before = self.path.read_bytes()
         with SQLiteDBContext(self.path) as context:
@@ -879,7 +952,7 @@ class CatalogSectionTests(unittest.TestCase):
 
 
 class LegacySectionCompatibilityTests(unittest.TestCase):
-    def test_v2_without_sections_keeps_format_and_legacy_receipt_hash(self):
+    def test_v2_without_sections_keeps_format_and_reads_committed_revision(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'legacy.sqlite'
             config = configuration()
@@ -891,13 +964,10 @@ class LegacySectionCompatibilityTests(unittest.TestCase):
                 tx = backend.begin_write(operation)
                 tx.create(draft)
                 revision = tx.commit()[0]
-                expected = hashlib.sha256(_json([[str(schema.identity), str(draft.key.record_id),
-                    draft.code, draft.description, False, _json([]), 1]]).encode('utf-8')).hexdigest()
                 with closing(sqlite3.connect(path)) as connection:
                     self.assertEqual(connection.execute('PRAGMA user_version').fetchone()[0], 2)
-                    self.assertEqual(connection.execute('SELECT request_hash FROM commit_receipt WHERE operation_id=?',
-                                                       (str(operation),)).fetchone()[0], expected)
-                self.assertEqual(backend.resolve_write(operation, draft), revision)
+                with closing(backend.begin_read()) as view:
+                    self.assertEqual(view.read_catalog(draft.key).revision, revision)
                 self.assertFalse(backend.capabilities().catalog_tabular_sections)
                 self.assertEqual(backend.inspect_section_storage_mapping(), ())
                 tx = backend.begin_write(uuid4())
@@ -910,8 +980,8 @@ class LegacySectionCompatibilityTests(unittest.TestCase):
                 backend.close()
 
     def test_v1_rejects_nonempty_section_intent_without_upgrade(self):
-        from yadinassi.sqlite_catalog import _APPLICATION_ID
-        from yadinassi.sqlite_catalog_migration import _V1_DDL
+        from yadinassi.db.sqlite.sqlite_catalog import _APPLICATION_ID
+        from yadinassi.db.sqlite.sqlite_catalog_migration import _V1_DDL
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'legacy-v1.sqlite'
             database_id, config_id = uuid4(), uuid4()
@@ -945,8 +1015,8 @@ class LegacySectionCompatibilityTests(unittest.TestCase):
 
     def test_non_ascii_legacy_schema_read_limit_remains_compatible(self):
         import json
-        from yadinassi.sqlite_catalog import _APPLICATION_ID
-        from yadinassi.sqlite_catalog_migration import _V1_DDL
+        from yadinassi.db.sqlite.sqlite_catalog import _APPLICATION_ID
+        from yadinassi.db.sqlite.sqlite_catalog_migration import _V1_DDL
         names = tuple(FieldSchema(uuid4(), 'f%d' % n + '😀'*120, 'string', (8,)) for n in range(64))
         legacy = CatalogSchema(uuid4(), 'Legacy', 8, 64, names)
         data = _schema_data(legacy, enforce_serialized_limit=False)

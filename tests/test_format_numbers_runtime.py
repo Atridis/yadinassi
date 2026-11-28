@@ -10,9 +10,9 @@ import sys
 import unittest
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.formatting import format_value
-from yadinassi.values import NULL, to_string
-from yadinassi.dates import BSLDate
+from yadinassi.text.formatting import format_value
+from yadinassi.types.values import NULL, to_string
+from yadinassi.temporal.dates import BSLDate
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))

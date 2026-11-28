@@ -245,10 +245,10 @@ function App(){
         <footer class="pagination"><button disabled={navigationLocked||list.offset===0} onClick={()=>run('page',{offset:Math.max(0,list.offset-list.limit),limit:list.limit})}>← Previous</button>
           <span>{Math.min(list.offset+1,list.total)}–{Math.min(list.offset+list.limit,list.total)} of {list.total}</span>
           <button disabled={navigationLocked||list.offset+list.limit>=list.total} onClick={()=>run('page',{offset:list.offset+list.limit,limit:list.limit})}>Next →</button></footer>
-      </>:<div class="empty"><h2>{editor?editor.catalogName:'Choose a catalog'}</h2><p>{editor?'List unavailable. Resolve the save outcome or return to records.':'Open a record or create a new one. Changes are only persisted after Save.'}</p></div>}</section>
+      </>:<div class="empty"><h2>{editor?editor.catalogName:'Choose a catalog'}</h2><p>{editor?'List unavailable. Refresh the saved record or return to records.':'Open a record or create a new one. Changes are only persisted after Save.'}</p></div>}</section>
     {editor&&<section class="panel editor" aria-label="Record editor"><div class="section-head"><div><button data-editor-action="back" class="quiet back" disabled={inputBlocked||client.uncertain||editor.editingLocked} onClick={()=>run('closeCard',{},true)}>← Back to records</button>
       <h2>{editor.isNew?'New record':'Edit record'} <span class="muted">/ {editor.catalogName}</span></h2></div>
-      <span class={'badge '+((localDirty||editor.dirty)?'dirty':'saved')}>{editor.editingLocked?'Outcome pending':localDirty||editor.dirty?'Unsaved changes':editor.saveState==='saved'?'Saved':'No unsaved changes'}</span></div>
+      <span class={'badge '+((localDirty||editor.dirty)?'dirty':'saved')}>{editor.saveState==='uncertain'?'Write outcome unknown':editor.editingLocked?'Refresh required':localDirty||editor.dirty?'Unsaved changes':editor.saveState==='saved'?'Saved':'No unsaved changes'}</span></div>
       {editor.status&&(!localDirty||editor.error)&&<div role="status" class={'notice '+(editor.error?'error':'success')}>{editor.status}</div>}
       {editor.sourceStale&&<div role="alert" class="notice error">Configuration source changed. Edits are preserved; discard closes this database. Reopen the database to use the current source.</div>}
       {(editor.fieldMessages||[]).length>0&&<div role="alert" class="notice error">{editor.fieldMessages.map((message,index)=><div key={index}><strong>{message.field}</strong><span>{message.text}</span></div>)}</div>}
@@ -302,8 +302,8 @@ function App(){
           </section>)}
           <p class="section-note">Row editing is limited to records with at most 32 total rows. Changes are saved with the record.</p>
         </section>}
-        <div class="editor-actions"><button data-editor-action="discard" type="button" disabled={inputBlocked||client.uncertain||editor.editingLocked} onClick={()=>run('command',{control:'CancelButton'})}>Discard &amp; return</button>
-          <button data-editor-action="save" type="submit" class="primary" disabled={inputBlocked||client.uncertain||(editor.sourceStale&&!editor.editingLocked)}>{busy?'Working…':editor.editingLocked?'Resolve save outcome':'Save changes'}</button></div>
+        <div class="editor-actions"><button data-editor-action="discard" type="button" disabled={inputBlocked||client.uncertain||editor.editingLocked&&editor.saveState!=='uncertain'} onClick={()=>run('command',{control:'CancelButton'})}>Discard &amp; return</button>
+          <button data-editor-action="save" type="submit" class="primary" disabled={inputBlocked||client.uncertain||editor.saveState==='uncertain'||(editor.sourceStale&&!editor.editingLocked)}>{busy?'Working…':editor.editingLocked?'Refresh saved record':'Save changes'}</button></div>
       </form>
     </section>}
     </div>}

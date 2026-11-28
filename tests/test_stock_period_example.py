@@ -8,10 +8,10 @@ import tempfile
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.configuration_accumulation_references import PROFILE
-from yadinassi.configuration_profile_import import prepare_directory, create_prepared
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_accumulation_references import PROFILE
+from yadinassi.configuration.configuration_profile_import import prepare_directory, create_prepared
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 ROOT=Path(__file__).resolve().parents[1]
 EXAMPLE=ROOT/'examples/inventory_reference'
@@ -36,7 +36,7 @@ class StockPeriodExampleTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory(dir=ROOT.parent);self.addCleanup(self.temp.cleanup)
         self.path=Path(self.temp.name)/'period.sqlite'
     def create(self):
-        from yadinassi.configuration_main_demo import import_main_demo_configuration
+        from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration
         from test_main_demo_configuration import source
         with closing(SQLiteDBContext.create_main_demo(self.path,import_main_demo_configuration(source(),profile='main-demo-v1'))):pass
     def run_script(self,name,*,read_only=False):

@@ -3,11 +3,14 @@ from decimal import Decimal
 from uuid import uuid4
 import unittest
 from configuration_runtime_fixture import module_files
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.enum_types import BSLEnumReference
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.db.metadata.enum_types import BSLEnumReference
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLRuntimeError
 
 
 def enum_files():
@@ -22,6 +25,15 @@ class ConfigurationEnumerationTests(unittest.TestCase):
     def application(self,files=None):
         app=ConfigurationApplication.from_files(enum_files() if files is None else files)
         self.addCleanup(lambda:app.close(force=True));app.start();return app
+
+
+    def source_application(self,files=None):
+        # Runtime observations use the managed application, not the narrow
+        # scalar command envelope of ConfigurationApplication.
+        files=dict(enum_files() if files is None else files)
+        files.setdefault('Ext/ManagedApplicationModule.bsl',b'')
+        app=SourceApplication(import_source(files),output=lambda _:None)
+        self.addCleanup(app.close);app.start();return app
 
     def test_source_is_explicit_and_preserved(self):
         files=enum_files();result=import_configuration(files,module_runtime=MODULE_RUNTIME)
@@ -67,10 +79,10 @@ class ConfigurationEnumerationTests(unittest.TestCase):
         self.assertFalse(app.execute('(Enums.Status.Active=Enums.Status.Closed)'))
 
     def test_type_description_retains_exact_reference(self):
-        app=self.application()
-        app.execute('A=New Array; A.Add(Type("EnumRef.Status")); D=New TypeDescription(A);')
-        self.assertTrue(app.execute('D.ContainsType(TypeOf(Enums.Status.Active))'))
-        self.assertTrue(app.execute('(D.AdjustValue(Enums.Status.Active)=Enums.Status.Active)'))
+        app=self.source_application()
+        app.interpreter.execute('A=New Array; A.Add(Type("EnumRef.Status")); D=New TypeDescription(A);')
+        self.assertTrue(app.interpreter.execute('D.ContainsType(TypeOf(Enums.Status.Active))'))
+        self.assertTrue(app.interpreter.execute('(D.AdjustValue(Enums.Status.Active)=Enums.Status.Active)'))
 
     def test_metadata_find_by_type_and_full_name(self):
         app=self.application()
@@ -78,11 +90,11 @@ class ConfigurationEnumerationTests(unittest.TestCase):
         self.assertTrue(app.execute('(Metadata.FindByFullName("Enum.Status")=Metadata.Enums.Status)'))
 
     def test_ordered_manager_and_dynamic_lookup(self):
-        app=self.application()
-        self.assertTrue(app.execute('(Enums["status"][0]=Enums.Status.Active)'))
-        self.assertEqual(app.execute('Enums.Status.IndexOf(Enums.Status.Closed)'),Decimal(1))
-        app.execute('A=New Array; For Each V In Enums.Status Do A.Add(V); EndDo;')
-        self.assertEqual(app.execute('A.Count()'),Decimal(2))
+        app=self.source_application()
+        self.assertTrue(app.interpreter.execute('(Enums["status"][0]=Enums.Status.Active)'))
+        self.assertEqual(app.interpreter.execute('Enums.Status.IndexOf(Enums.Status.Closed)'),Decimal(1))
+        app.interpreter.execute('A=New Array; For Each V In Enums.Status Do A.Add(V); EndDo;')
+        self.assertEqual(app.interpreter.execute('A.Count()'),Decimal(2))
 
     def test_incomplete_names_and_indices_rejected(self):
         app=self.application()
@@ -105,10 +117,10 @@ class ConfigurationEnumerationTests(unittest.TestCase):
         with self.assertRaises(Exception):app.execute('Type("EnumRef.Unknown")')
 
     def test_descriptors_reject_independent_scope(self):
-        files=enum_files();app=self.application(files);other=self.application(files)
-        app.interpreter.variables['foreign']=other.execute('Enums.Status.Active')
-        app.execute('A=New Array; A.Add(Type("EnumRef.Status")); D=New TypeDescription(A);')
-        with self.assertRaises(Exception):app.execute('D.AdjustValue(Foreign)')
+        files=enum_files();app=self.source_application(files);other=self.source_application(files)
+        app.interpreter.variables['foreign']=other.interpreter.execute('Enums.Status.Active')
+        app.interpreter.execute('A=New Array; A.Add(Type("EnumRef.Status")); D=New TypeDescription(A);')
+        with self.assertRaises(Exception):app.interpreter.execute('D.AdjustValue(Foreign)')
 
     def test_scalar_description_cannot_convert_enum_reference(self):
         app=self.application()
@@ -117,31 +129,48 @@ class ConfigurationEnumerationTests(unittest.TestCase):
             with self.subTest(source=source),self.assertRaises(Exception):app.execute(source)
 
     def test_named_description_resolves_active_application_type(self):
-        app=self.application()
+        app=self.source_application()
         for name in ('EnumRef.Status','ПеречислениеСсылка.Status',' enumref.status '):
             with self.subTest(name=name):
-                app.execute('D=New TypeDescription("'+name+'");')
-                self.assertTrue(app.execute('D.ContainsType(TypeOf(Enums.Status.Active))'))
-                self.assertTrue(app.execute('(D.AdjustValue(Enums.Status.Active)=Enums.Status.Active)'))
+                app.interpreter.execute('D=New TypeDescription("'+name+'");')
+                self.assertTrue(app.interpreter.execute('D.ContainsType(TypeOf(Enums.Status.Active))'))
+                self.assertTrue(app.interpreter.execute('(D.AdjustValue(Enums.Status.Active)=Enums.Status.Active)'))
 
     def test_named_description_dynamic_constructor(self):
-        app=self.application()
-        app.execute('Args=New Array; Args.Add("EnumRef.Status"); D=New (Type("TypeDescription"), Args);')
-        self.assertTrue(app.execute('D.ContainsType(TypeOf(Enums.Status.Active))'))
+        app=self.source_application()
+        app.interpreter.execute('Args=New Array; Args.Add("EnumRef.Status"); D=New (Type("TypeDescription"), Args);')
+        self.assertTrue(app.interpreter.execute('D.ContainsType(TypeOf(Enums.Status.Active))'))
+
+    def test_source_dynamic_constructor_remains_closed(self):
+        app=self.source_application();run=app.interpreter.execute
+        with self.assertRaisesRegex(BoundaryViolation,'requires a standalone direct boundary'):
+            run('New ("Structure")')
+        class ForeignArray(list):
+            def __iter__(self):
+                raise AssertionError('foreign argument protocol used')
+        app.interpreter.variables['arguments']=ForeignArray(['EnumRef.Status'])
+        with self.assertRaisesRegex(BSLRuntimeError,'ожидается массив аргументов'):
+            run('New ("TypeDescription", Arguments)')
+        from yadinassi.types.values import HostFunction
+        effects=[]
+        app.interpreter.types['typedescription']=HostFunction('TypeDescription',lambda *values:effects.append(values))
+        with self.assertRaises(BoundaryViolation):
+            run('New ("TypeDescription")')
+        self.assertEqual(effects,[])
 
     def test_named_description_common_module_context(self):
         files=enum_files()
         key='CommonModules/Tools/Ext/Module.bsl'
         files[key]=b'Function Pick() Export Return New TypeDescription("EnumRef.Status"); EndFunction'
-        app=self.application(files)
-        self.assertTrue(app.execute('Tools.Pick().ContainsType(TypeOf(Enums.Status.Active))'))
+        app=self.source_application(files)
+        self.assertTrue(app.interpreter.execute('Tools.Pick().ContainsType(TypeOf(Enums.Status.Active))'))
 
     def test_named_description_preserves_independent_family(self):
-        files=enum_files();a=self.application(files);b=self.application(files)
-        description=a.execute('New TypeDescription("EnumRef.Status")')
+        files=enum_files();a=self.source_application(files);b=self.source_application(files)
+        description=a.interpreter.execute('New TypeDescription("EnumRef.Status")')
         b.interpreter.variables['foreign']=description
-        self.assertFalse(b.execute('Foreign.ContainsType(TypeOf(Enums.Status.Active))'))
-        with self.assertRaises(Exception):b.execute('Foreign.AdjustValue(Enums.Status.Active)')
+        self.assertFalse(b.interpreter.execute('Foreign.ContainsType(TypeOf(Enums.Status.Active))'))
+        with self.assertRaises(Exception):b.interpreter.execute('Foreign.AdjustValue(Enums.Status.Active)')
 
     def test_named_description_does_not_expand_unions_or_managers(self):
         app=self.application()
@@ -206,12 +235,26 @@ class ConfigurationEnumerationTests(unittest.TestCase):
         files=module_files((('Tools',declarations,{}),))
         files['Configuration.xml']=files['Configuration.xml'].replace(b'</ChildObjects>',b'<Enum>OwnedStatus</Enum></ChildObjects>')
         files['Enums/OwnedStatus.xml']=(root/'scripts/enumeration_behavior/Enum.xml').read_bytes()
-        app=self.application(files)
+        app=self.source_application(files)
         actual=[]
         for case in range(1,17):
             with self.subTest(case=case):
-                actual.append(app.execute('Tools.ObserveCase('+str(case)+',"read")'))
+                actual.append(app.interpreter.execute('Tools.ObserveCase('+str(case)+',"read")'))
         self.assertEqual(actual,json.loads(raw))
+
+    def test_source_metadata_type_lookup_uses_exact_active_declaration(self):
+        files=enum_files();app=self.source_application(files);other=self.source_application(files)
+        run=app.interpreter.execute
+        local=run('Type("EnumRef.Status")')
+        foreign=other.interpreter.execute('Type("EnumRef.Status")')
+        app.interpreter.variables.update({'localtype':local,'foreigntype':foreign})
+        selected=run('Метаданные.НайтиПоТипу(LocalType)')
+        self.assertNotIn('Enum',app.metadata._collections)
+        self.assertIs(selected,run('Metadata.Enums.Status'))
+        with self.assertRaisesRegex(BoundaryViolation,'foreign or retired source enumeration type'):
+            run('Metadata.FindByType(ForeignType)')
+        with self.assertRaisesRegex(BSLRuntimeError,'requires one argument'):
+            run('Metadata.FindByType(LocalType, 1)')
 
     def test_unmeasured_synonym_presentation_not_guessed(self):
         files=self.rich_files()

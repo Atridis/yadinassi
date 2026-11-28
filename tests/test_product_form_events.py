@@ -5,13 +5,14 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi.catalog_backend import BackendError, FieldSchema
-from yadinassi.form_event_simulation import simulate_product_form_event
+from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema
+from yadinassi.forms.form_event_simulation import simulate_product_form_event
 import test_catalog_object_preparation as fixture
+from legacy_demo_fixture import HISTORICAL_HANDLER, ROOT
 
 BASE = Path(__file__).resolve().parents[1] / 'examples/demo/Catalogs/Номенклатура'
 FORM = (BASE / 'Forms/ФормаЭлемента/Ext/Form/Module.bsl').read_bytes()
-OBJECT = (BASE / 'Ext/ObjectModule.bsl').read_bytes()
+OBJECT = (ROOT / HISTORICAL_HANDLER).read_bytes()
 
 
 class ProductFormEventTests(unittest.TestCase):
@@ -106,7 +107,7 @@ class ProductFormEventTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.run_event('WarehouseOnChange')
 
     def test_server_duplicate_separately_materialized_references(self):
-        from yadinassi.unique_identifiers import BSLUUID
+        from yadinassi.types.unique_identifiers import BSLUUID
         original = self.card.get_member('Склады')._rows[0].get_member('Склад')
         manager = self.vm.variables['склад']._manager
         separate = manager.get_ref(BSLUUID(str(original.reference_uuid)))
@@ -117,8 +118,8 @@ class ProductFormEventTests(unittest.TestCase):
         self.assertIn('уже указан', result.messages[0].text)
 
     def test_reference_map_scope_and_replacement(self):
-        from yadinassi.maps import BSLMap, BSLFixedMap
-        from yadinassi.catalog_types import BSLCatalogReference, BSLCatalogType
+        from yadinassi.collections.maps import BSLMap, BSLFixedMap
+        from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
         from uuid import uuid4
         reference = self.card.get_member('Склады')._rows[0].get_member('Склад')
         same = BSLCatalogReference(reference.value_type, reference.reference_uuid)

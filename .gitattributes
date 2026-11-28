@@ -7,6 +7,7 @@ examples/**/*.bsl text eol=lf
 yadinassi/data/*.txt -text
 
 # Keep pinned preprocessor evidence byte-exact on every checkout.
+scripts/native_1c_bootstrap/client_probe.bsl -text
 integrational_tests/directive_probes/preprocessor_profiles_native.json -text
 integrational_tests/directive_probes/preprocessor_profiles_measurement.json -text
 
@@ -246,8 +247,8 @@ scripts/enumeration_behavior/** text eol=lf
 scripts/native_1c_bootstrap/enumeration_suite.py text eol=lf
 scripts/native_1c_enumeration_probe.sh text eol=lf
 # Explicit import host modules are source-bound runtime inputs.
-yadinassi/configuration_diagnostics.py text eol=lf
-yadinassi/configuration_profile_import.py text eol=lf
+yadinassi/configuration/configuration_diagnostics.py text eol=lf
+yadinassi/configuration/configuration_profile_import.py text eol=lf
 
 # Inventory reference acquisition and authored runtime source remain byte-bound.
 scripts/inventory_reference_behavior/** text eol=lf
@@ -278,8 +279,8 @@ scripts/native_1c_bootstrap/session_parameter_suite.py text eol=lf
 scripts/native_1c_session_parameter_probe.sh text eol=lf
 
 # Explicit session declarations and application runtime source.
-yadinassi/configuration_session_parameters.py text eol=lf
-yadinassi/session_parameters.py text eol=lf
+yadinassi/configuration/configuration_session_parameters.py text eol=lf
+yadinassi/application/session_parameters.py text eol=lf
 
 # Immutable native session observations.
 tests/fixtures/native_session_parameters_43052415203.json -text
@@ -288,7 +289,7 @@ tests/fixtures/native_session_parameters_43052415203.json -text
 scripts/temporary_storage_behavior/** text eol=lf
 scripts/native_1c_bootstrap/temporary_storage_suite.py text eol=lf
 scripts/native_1c_temporary_storage_probe.sh text eol=lf
-yadinassi/temporary_storage.py text eol=lf
+yadinassi/application/temporary_storage.py text eol=lf
 tests/fixtures/native_temporary_storage_43056863128.json -text
 
 # Exact owned common-template observation inputs.
@@ -327,21 +328,21 @@ scripts/native_1c_regex_extensions_probe.sh text eol=lf
 scripts/native_1c_bootstrap/regex_extensions_suite.py text eol=lf
 tests/test_regex_extensions_native_acquisition.py text eol=lf
 
-yadinassi/configuration_templates.py text eol=lf
-yadinassi/common_templates.py text eol=lf
+yadinassi/configuration/configuration_templates.py text eol=lf
+yadinassi/configuration/common_templates.py text eol=lf
 tests/test_common_templates_recovery.py text eol=lf
 tests/fixtures/native_common_templates_43083042989.json -text
 # Owned configuration XDTO runtime and immutable native observations.
-yadinassi/configuration_xdto.py text eol=lf
-yadinassi/xdto_packages.py text eol=lf
+yadinassi/configuration/configuration_xdto.py text eol=lf
+yadinassi/formats/xml/xdto_packages.py text eol=lf
 tests/configuration_xdto_fixture.py text eol=lf
 tests/test_configuration_xdto_packages.py text eol=lf
 tests/test_configuration_xdto_native_replay.py text eol=lf
 tests/fixtures/native_configuration_xdto_43086017286.json -text
 tests/fixtures/native_configuration_xdto_linked_43089477510.json -text
 # Recovered source-bound DOM XPath runtime and immutable native evidence.
-yadinassi/dom_xpath.py text eol=lf
-yadinassi/dom_xpath_engine.py text eol=lf
+yadinassi/formats/xml/dom_xpath.py text eol=lf
+yadinassi/formats/xml/dom_xpath_engine.py text eol=lf
 tests/test_dom_xpath_binding.py text eol=lf
 tests/test_dom_xpath_native_replay.py text eol=lf
 tests/fixtures/native_dom_xpath_43093418847.json -text
@@ -414,7 +415,7 @@ scripts/native_1c_common_module_reuse_probe.sh text eol=lf
 scripts/native_1c_bootstrap/common_module_reuse_suite.py text eol=lf
 scripts/native_1c_bootstrap/run_common_module_reuse_stage.py text eol=lf
 tests/test_common_module_reuse_native_acquisition.py text eol=lf
-yadinassi/reusable_values.py text eol=lf
+yadinassi/application/reusable_values.py text eol=lf
 tests/test_reusable_values.py text eol=lf
 tests/test_configuration_reusable_values.py text eol=lf
 tests/test_common_module_reuse_native_replay.py text eol=lf
@@ -441,8 +442,9 @@ scripts/uuid_typed_pipeline_behavior/__init__.py text eol=lf
 scripts/uuid_typed_pipeline_behavior/observe.bsl text eol=lf
 
 tests/fixtures/native_uuid_typed_pipeline_43270339666.json -text
-# Immutable historical demo root; remaining original bytes live in examples/demo.
+# Preserve the historical demo root and object module byte-for-byte.
 tests/fixtures/legacy_demo_root.xml -text
+tests/fixtures/legacy_demo_object_module.bsl -text
 
 # Source diagnostic UI bytes are part of the exact interpreter inventory.
 yadinassi/ui/assets/source/* text eol=lf
@@ -452,3 +454,6 @@ yadinassi/ui/assets/source-workspace/* text eol=lf
 
 # Exact compiled-harness source inverse is byte-pinned on every platform.
 scripts/native_async_comparison.py text eol=lf
+
+# Preserve historical compiled-harness inverse inputs byte-for-byte.
+tests/fixtures/native_compiled_inverse/*.txt -text

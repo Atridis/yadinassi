@@ -21,7 +21,7 @@ The source inventory includes the application module and both declared CommonFor
 The same bounded interaction works with a catalog or non-posting document owner in
 `--business-application`, and with the existing reference application family. No
 source importer, storage marker, transaction authority, or database format changes.
-The dedicated posting application is **not enrolled**. Its retained receipts and
+The dedicated posting application is **not enrolled**. Its terminal write outcomes and
 uncertain-outcome guards are unchanged. Standalone/form-only launchers are not
 implicitly upgraded.
 

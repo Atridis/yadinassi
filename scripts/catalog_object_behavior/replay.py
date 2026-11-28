@@ -74,8 +74,8 @@ def logical_model_files(setup):
 
 def replay():
     from yadinassi import Interpreter
-    from yadinassi.configuration_xml import import_configuration
-    from yadinassi.database_context import SQLiteDBContext
+    from yadinassi.configuration.configuration_xml import import_configuration
+    from yadinassi.db.database_context import SQLiteDBContext
     setup,assets=load_saved();rows=[]
     require_behavior_profile(setup,assets['generated/Catalog.xml'])
     def emit(number,value):
@@ -85,7 +85,7 @@ def replay():
     with TemporaryDirectory(prefix='catalog-logical-reference-') as directory:
         context=SQLiteDBContext.create(Path(directory)/'application.sqlite',import_configuration(logical_model_files(setup)))
         try:
-            runtime=Interpreter(database_context=context)
+            runtime=Interpreter(database_context=context, allow_extensions=True)
             runtime.register_function('CBOEmit',emit)
             runtime.execute(assets['generated/observe.bsl'].decode('utf-8'))
             packet.validate_observations(rows)

@@ -2,7 +2,7 @@
 from pathlib import Path
 import unittest
 from yadinassi import Interpreter
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.database_context import SQLiteDBContext
 import test_main_demo_runtime as runtime
 
 ROOT = Path(__file__).resolve().parents[1]

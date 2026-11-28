@@ -56,7 +56,7 @@ class HashingNativeAcquisitionTests(unittest.TestCase):
             (lambda text:text[:64]+'  '+text[64:],False),
             (lambda text:text[:64]+'\r\n'+text[64:]+'\r\n',False))
         for transform,accepted in transforms:
-            out=[];vm=Interpreter(out.append)
+            out=[];vm=Interpreter(out.append, allow_extensions=True)
             vm.register_function('Base64String',lambda value:transform(base64.b64encode(value._data).decode('ascii')))
             vm.execute(helper+'\nСообщить(HFVector(HashFunction.SHA512,"abc","'+expected+'"));')
             self.assertEqual(out,['Да:64' if accepted else 'Нет:64'])

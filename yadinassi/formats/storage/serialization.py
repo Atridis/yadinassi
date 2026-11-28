@@ -1,0 +1,1154 @@
+"""Bounded implementation of the owner's observed 1C internal stream format.
+
+Not JSON or a promised stable interchange format. GUIDs and layouts come from
+the owner's committed native output; cycles and undocumented tags are not guessed.
+New runtime types must be added explicitly to the codec policy and its completeness test.
+"""
+
+from dataclasses import dataclass
+from types import MemberDescriptorType
+from weakref import ReferenceType
+
+from yadinassi.types.unique_identifiers import BSLUUID, canonical_codec_uuid
+from yadinassi.temporal.dates import BSLDate, codec_text, read_codec
+from decimal import Decimal
+import re
+
+from yadinassi.application.direct_callbacks import CallbackDescription as _DirectCallbackDescription
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
+from yadinassi.numeric.round_modes import BSLRoundMode
+from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.collections.sort_directions import BSLSortDirection
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import (
+    BSLAllowedLength, BSLAllowedSign, BSLDateFractions, BSLDateQualifiers,
+    BSLNumberQualifiers, BSLStringQualifiers,
+)
+from yadinassi.collections.plain_table_storage import Schema, TableStorage, validate_row
+from yadinassi.collections.plain_table_search import SearchIndexes
+from yadinassi.collections.value_tables import (BSLValueTable, BSLValueTableRow, BSLValueTableColumn,
+                           BSLValueTableColumnCollection, BSLCollectionIndexes)
+from .value_storage_table import _wire_index_definitions
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.collections.plain_value_list import PlainValueList, PlainValueListItem, _ItemMembership
+from yadinassi.types.type_values import type_of
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
+from yadinassi.db.metadata.enum_types import BSLEnumReference, BSLEnumType
+from yadinassi.db.catalog.catalogs import BSLCatalogObject
+from yadinassi.db.document.document_types import BSLDocumentReference, BSLDocumentType
+from yadinassi.db.registers.information_registers import BSLInformationRegisterType
+from yadinassi.db.document.document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine, BSLDocumentSectionType
+from yadinassi.execution.codegen.direct_collections import (
+    _TypedMap, _DIRECT_MAP_ENTRY_TYPE, _DIRECT_MAP_ENTRY_STORAGE,
+)
+from yadinassi.execution.codegen.direct_structure import _DirectStructure, structure_key
+from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+from yadinassi.execution.direct.python_direct_plain_map import PlainFixedMap, PlainMap, native_map_items, _scalar_map_key
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLNull, BSLType, NULL, equal
+
+
+_MAX_NUMBER_DIGITS = 4096
+_MAX_TEXT = 1024 * 1024
+_MAX_DEPTH = 64
+_MAX_NODES = 10000
+# Lexical tokens include metadata that is not a semantic value node. The
+# supported layouts need at most 23 metadata tokens per charged node (a
+# fully qualified table column plus its two column-map references); an empty
+# table needs 18, a list header 14, and a list item 19 before its child value.
+# Keep a separate bounded allowance, with headroom, so valid writer output
+# does not exhaust the parser solely on default picture/pattern metadata.
+_MAX_TOKENS_PER_NODE = 32
+FORMAT_ERROR = "Ошибка преобразования: Ошибка формата потока"
+# These are implementation resource budgets, not inferred native limits.
+_PLAIN_LIST_NEXT_ID = vars(PlainValueList)['_next_id']
+_PLAIN_LIST_ITEM_ID = vars(PlainValueListItem)['_id']
+_PLAIN_LIST_ITEM_MEMBERSHIP = vars(PlainValueListItem)['_membership']
+_PLAIN_LIST_OWNER = vars(_ItemMembership)['owner']
+_PLAIN_LIST_CLEAR_ID = vars(_ItemMembership)['cleared_before']
+_PLAIN_FIXED_MAP_STORAGE = vars(PlainFixedMap)['_snapshot']
+_PLAIN_FIXED_MAP_WRAPPED_KEYS = vars(PlainFixedMap)['_identity_keys']
+
+_TYPE_IDS = {
+    # Authenticated Linux PR112 run40240060498, records433..435.
+    BSLType.UUID: "fc01b5df-97fe-449b-83d4-218a090e681e",
+    BSLType.XML_STRING_PROCESSING_MANAGER: "8f646b4e-fc39-44c7-85a2-c2eb39cdf361",
+    BSLType.NULL: "af40a278-63bc-478e-91a8-19e0d16b10b5",
+    BSLType.UNDEFINED: "ee8d3e7c-f930-4a76-8aad-4ff9083a6ea6",
+    BSLType.BOOLEAN: "5d4125ad-f6e7-4313-be32-f71d0ab60915",
+    BSLType.NUMBER: "b0be78f2-0ee6-4d31-a3bb-77dd32ba5bec",
+    BSLType.STRING: "9b6abf8b-0173-48e5-b0a0-83b21fcf63c5",
+    BSLType.DATE: "aae38c48-a877-411c-a6d3-fbaa1f83c4bd",
+    BSLType.ARRAY: "51e7a0d2-530b-11d4-b98a-008048da3034",
+    BSLType.STRUCTURE: "4238019d-7e49-4fc9-91db-b6b951d5cf8e",
+    BSLType.MAP: "3d48feae-a9c6-4c5a-a099-9eb6477630c6",
+    BSLType.FIXED_ARRAY: "4500381b-db30-4a10-9db4-990038032acf",
+    BSLType.FIXED_STRUCTURE: "3ee983d7-ace7-40f9-bb7e-2e916fcddd56",
+    BSLType.FIXED_MAP: "220455ea-6c85-4513-996f-bbe79ed07774",
+    BSLType.KEY_AND_VALUE: "850afa6f-5244-482f-9729-d78ec65ff607",
+    BSLType.TYPE: "d47d59f8-73f0-481c-8b5e-f6384c0a4804",
+    BSLType.ROUND_MODE: "32c82ccd-fef3-4070-beb5-b9c52afc781d",
+    BSLType.ROUND_MODES: "a47c4665-311c-405a-828e-0c5a3ca3bdda",
+    BSLType.SEARCH_DIRECTION: "bee8fa9f-59d0-4e71-9f6e-599d83cb1960",
+    BSLType.SEARCH_DIRECTIONS: "ca8683c7-a41c-4c82-b912-6afb606e8b01",
+    BSLType.SORT_DIRECTION: "8acd280e-c29c-4543-8be7-7f78cad52c06",
+    BSLType.NUMBER_QUALIFIERS: "f6f6ce00-392c-49ed-8c6e-4e0295fd4051",
+    BSLType.STRING_QUALIFIERS: "a5e1773c-a947-455a-a2f7-c51736d3f2de",
+    BSLType.DATE_QUALIFIERS: "e73e1337-53df-4b30-a78c-ee1e8cf30fc0",
+    BSLType.BINARY_DATA_QUALIFIERS: "73315712-166d-400d-adaf-287bd8f41b8d",
+    BSLType.ALLOWED_SIGN: "9c4a8801-ff83-40d7-96d7-cc2b85430fbe",
+    BSLType.ALLOWED_SIGNS: "eb851bfe-cc2a-4d16-84a4-e480da76672d",
+    BSLType.ALLOWED_LENGTH: "3e4a7ff2-82a0-40ee-9000-3e83a3191b71",
+    BSLType.ALLOWED_LENGTHS: "2f7878c0-bc8a-4820-a3b9-6bf1111ae5b0",
+    BSLType.DATE_FRACTIONS: "8089abb5-ff39-4414-8252-c0dcef1c3d6b",
+    BSLType.DATE_FRACTIONS_NAMESPACE: "83f71799-efb3-4984-a19b-6ed4f3cbc691",
+    BSLType.TYPE_DESCRIPTION: "f5c65050-3bbb-11d5-b988-0050bae0a95d",
+    BSLType.VALUE_LIST: "4772b3b4-f4a3-49c0-a1a5-8cb5961511a3",
+    BSLType.VALUE_LIST_ITEM: "c27d99e0-2f53-11d5-a3be-0050bae0a776",
+    BSLType.VALUE_TABLE: "acf6192e-81ca-46ef-93a6-5a6968b78663",
+    BSLType.VALUE_TABLE_COLUMN_COLLECTION: "0e2c7b45-ad6d-4ebe-8c9b-358d42ab5002",
+    BSLType.VALUE_TABLE_COLUMN: "e162969e-36e8-44f4-a5fd-fa2bf170a4f5",
+    BSLType.VALUE_TABLE_ROW: "ac6bbae9-9a0f-4ec9-be2a-d9b1caa4eb36",
+    BSLType.COLLECTION_INDEXES: "3a461c5c-0a17-430a-ae05-90890129a7da",
+    BSLType.COLLECTION_INDEX: "4523f487-9cd3-4779-89f5-92023e88037b",
+}
+# This syntax milestone does not claim native serialization for error objects or
+# their types. Keep an explicit refusal policy instead of inventing native GUIDs.
+_TREE_CODEC_TYPES = frozenset({BSLType.VALUE_TREE, BSLType.VALUE_TREE_COLUMN,
+    BSLType.VALUE_TREE_COLUMN_COLLECTION, BSLType.VALUE_TREE_ROW, BSLType.VALUE_TREE_ROW_COLLECTION})
+_UNSUPPORTED_CODEC_TYPES = frozenset({
+    BSLType.COMMON_MODULE,
+    BSLType.QUESTION_DIALOG_MODE, BSLType.DIALOG_RETURN_CODE,
+    # Type/TypeOf identity is measured; no internal stream/identifier is admitted.
+    BSLType.ACCUMULATION_RECORD_TYPE,
+    BSLType.USER_MESSAGE, BSLType.CALLBACK_DESCRIPTION,
+    BSLType.TEMP_TABLES_MANAGER, BSLType.QUERY, BSLType.QUERY_RESULT, BSLType.QUERY_RESULT_SELECTION,
+    BSLType.HTTP_CONNECTION, BSLType.HTTP_REQUEST, BSLType.HTTP_RESPONSE, BSLType.BYTE_ORDER_MARK_USE,
+    BSLType.OPENSSL_SECURE_CONNECTION, BSLType.FILE_CA_CERTIFICATES,
+    BSLType.OS_CA_CERTIFICATES, BSLType.INTERNET_PROXY,
+    BSLType.FORM_TABLE, BSLType.FORM_DATA_COLLECTION, BSLType.FORM_DATA_COLLECTION_ITEM,
+    BSLType.FORM, BSLType.FORM_ATTRIBUTE, BSLType.FORM_FIELD, BSLType.FORM_GROUP, BSLType.FORM_BUTTON, BSLType.FORM_COMMAND, BSLType.FORM_ITEMS, BSLType.FORM_COMMANDS, BSLType.FORM_FIELD_VIEW,
+    BSLType.XDTO_FACTORY, BSLType.XDTO_OBJECT, BSLType.XDTO_VALUE, BSLType.XDTO_LIST, BSLType.XDTO_VALUE_TYPE, BSLType.XDTO_OBJECT_TYPE, BSLType.XDTO_PROPERTY, BSLType.XDTO_PROPERTIES, BSLType.XDTO_PACKAGE, BSLType.XDTO_PACKAGES, BSLType.XML_FORM,
+    BSLType.DOM_DOCUMENT, BSLType.DOM_ELEMENT, BSLType.DOM_ATTRIBUTE, BSLType.DOM_TEXT, BSLType.DOM_CDATA, BSLType.DOM_COMMENT, BSLType.DOM_PI, BSLType.DOM_FRAGMENT, BSLType.DOM_NODE_LIST, BSLType.DOM_ELEMENT_LIST, BSLType.DOM_ATTRIBUTE_MAP, BSLType.DOM_NODE_TYPE, BSLType.DOM_BUILDER, BSLType.DOM_WRITER,
+    BSLType.DOM_XPATH_RESULT, BSLType.DOM_NAMESPACE_RESOLVER,
+    BSLType.DATA_HASHING, BSLType.HASH_FUNCTION,
+    BSLType.DATA_READER, BSLType.DATA_WRITER, BSLType.READ_DATA_RESULT,
+    BSLType.REGEX_RESULT, BSLType.REGEX_GROUP,
+    BSLType.ZIP_READER, BSLType.ZIP_WRITER, BSLType.ZIP_ENTRY, BSLType.ZIP_ENTRIES, BSLType.ZIP_COMPRESSION_METHOD, BSLType.ZIP_COMPRESSION_LEVEL, BSLType.ZIP_STORE_PATH_MODE, BSLType.ZIP_SUBDIR_MODE, BSLType.ZIP_RESTORE_MODE, BSLType.ZIP_ENCRYPTION_METHOD, BSLType.ZIP_NAMES_ENCODING,
+    BSLType.BINARY_DATA_BUFFER, BSLType.MEMORY_STREAM, BSLType.FILE_STREAM, BSLType.STREAM, BSLType.BYTE_ORDER, BSLType.FILE_OPEN_MODE, BSLType.FILE_ACCESS, BSLType.POSITION_IN_STREAM,
+BSLType.DOCUMENTS_MANAGER,
+    BSLType.INFORMATION_REGISTERS_MANAGER, BSLType.CATALOGS_MANAGER, BSLType.XML_READER,BSLType.XML_WRITER,BSLType.XML_READER_SETTINGS,BSLType.XML_WRITER_SETTINGS,BSLType.XML_NODE_TYPE,BSLType.XML_SPACE,BSLType.XML_VALIDATION_TYPE,BSLType.XML_NAMESPACE_CONTEXT,
+    BSLType.FILE, BSLType.TEXT_READER, BSLType.TEXT_WRITER,
+                                         BSLType.BINARY_DATA, BSLType.TEXT_ENCODING,
+                                         BSLType.JSON_READER, BSLType.JSON_WRITER,
+    BSLType.JSON_SERIALIZER_SETTINGS, BSLType.JSON_DATE_FORMAT, BSLType.JSON_DATE_WRITING_VARIANT,
+    BSLType.JSON_WRITER_SETTINGS, BSLType.JSON_VALUE_TYPE, BSLType.JSON_LINE_BREAK,
+    BSLType.TEXT_DOCUMENT, BSLType.VALUE_STORAGE, BSLType.DEFLATION, BSLType.ERROR_INFO, BSLType.ERROR_CATEGORY, BSLType.PROMISE}) | _TREE_CODEC_TYPES
+_TYPES_BY_ID = {identifier: kind for kind, identifier in _TYPE_IDS.items()}
+_ARRAYS = frozenset({BSLType.ARRAY, BSLType.FIXED_ARRAY})
+_STRUCTURES = frozenset({BSLType.STRUCTURE, BSLType.FIXED_STRUCTURE})
+_MAPS = frozenset({BSLType.MAP, BSLType.FIXED_MAP})
+_ENUM_TYPES = {
+    BSLType.ROUND_MODE: BSLRoundMode,
+    BSLType.SEARCH_DIRECTION: BSLSearchDirection,
+    BSLType.SORT_DIRECTION: BSLSortDirection,
+    BSLType.ALLOWED_SIGN: BSLAllowedSign,
+    BSLType.ALLOWED_LENGTH: BSLAllowedLength,
+    BSLType.DATE_FRACTIONS: BSLDateFractions,
+}
+_ENUM_MEMBERS = {kind: {str(member.value): member for member in enum_type}
+                 for kind, enum_type in _ENUM_TYPES.items()}
+# Native snapshots write these objects without a body and read them as
+# Undefined, including configured qualifiers. Their Type records do roundtrip.
+_OPAQUE_TYPES = frozenset({
+    BSLType.ROUND_MODES, BSLType.SEARCH_DIRECTIONS,
+    BSLType.XML_STRING_PROCESSING_MANAGER,
+    BSLType.NUMBER_QUALIFIERS, BSLType.STRING_QUALIFIERS,
+    BSLType.DATE_QUALIFIERS, BSLType.BINARY_DATA_QUALIFIERS,
+    BSLType.ALLOWED_SIGNS, BSLType.ALLOWED_LENGTHS,
+    BSLType.DATE_FRACTIONS_NAMESPACE,
+    BSLType.VALUE_TABLE_COLUMN_COLLECTION, BSLType.VALUE_TABLE_COLUMN,
+    BSLType.VALUE_TABLE_ROW,
+    BSLType.COLLECTION_INDEXES, BSLType.COLLECTION_INDEX,
+})
+_OPAQUE_IDS = frozenset(_TYPE_IDS[kind] for kind in _OPAQUE_TYPES)
+_CODECS = (frozenset({BSLType.UUID, BSLType.NULL, BSLType.UNDEFINED, BSLType.BOOLEAN, BSLType.NUMBER,
+                     BSLType.STRING, BSLType.DATE, BSLType.TYPE, BSLType.KEY_AND_VALUE,
+                     BSLType.TYPE_DESCRIPTION, BSLType.VALUE_TABLE,
+                     BSLType.VALUE_LIST, BSLType.VALUE_LIST_ITEM})
+           | frozenset(_ENUM_TYPES) | _OPAQUE_TYPES | _ARRAYS | _STRUCTURES | _MAPS)
+_PATTERN_TYPES = {'B': BSLType.BOOLEAN, 'S': BSLType.STRING, 'D': BSLType.DATE,
+                 'N': BSLType.NUMBER, 'L': BSLType.NULL}
+_PATTERN_TAGS = {kind: tag for tag, kind in _PATTERN_TYPES.items()}
+_NUMBER = re.compile(r'[+-]?[0-9]+(?:\.[0-9]+)?')
+_COUNT = re.compile(r'0|[1-9][0-9]*')
+_LIST_ENTRY_ID = "1e512aab-1b41-4ef6-9375-f0137be9dd91"
+_LIST_PICTURE = '{4,0,\n{0},"",-1,-1,0,0,""}'
+_HEX = frozenset('0123456789abcdef')
+
+
+def _resource(operation: str) -> ValueError:
+    return ValueError(f"{operation}: превышен предел ресурсов Yadinassi")
+
+
+def _number(value: Decimal) -> str:
+    if not value.is_finite():
+        raise ValueError("ЗначениеВСтрокуВнутр: ожидается конечное число")
+    if value.is_zero():
+        return '{"N",0}'
+    sign, digits, exponent = value.as_tuple()
+    end = len(digits)
+    while end > 1 and digits[end - 1] == 0:
+        end -= 1
+        exponent += 1
+    digits = digits[:end]
+    if max(len(digits) + max(exponent, 0), -exponent) > _MAX_NUMBER_DIGITS:
+        raise _resource("ЗначениеВСтрокуВнутр")
+    return '{"N",' + format(Decimal((sign, digits, exponent)), "f") + '}'
+
+
+def _require_representable_description(value: BSLTypeDescription) -> None:
+    """Never silently erase settings for types absent from the Pattern."""
+    if type(value.types) is not tuple or any(type(kind) is not BSLType for kind in value.types):
+        raise ValueError("Сериализация metadata-bound ОписаниеТипов пока не поддерживается")
+    if value._query_scalar is not None:
+        raise ValueError("Сериализация nullable описания колонки запроса пока не поддерживается")
+    if BSLType.UUID in value.types:
+        raise ValueError("Сериализация ОписаниеТипов UUID пока не поддерживается")
+    n, s, d, b = (value.number_qualifiers, value.string_qualifiers,
+                  value.date_qualifiers, value.binary_data_qualifiers)
+    if ((BSLType.NUMBER not in value.types and
+         (n.digits != 0 or n.fraction_digits != 0 or n.allowed_sign is not BSLAllowedSign.ANY))
+            or (BSLType.STRING not in value.types and
+                (s.length != 0 or s.allowed_length is not BSLAllowedLength.VARIABLE))
+            or (BSLType.DATE not in value.types and d.date_fractions is not BSLDateFractions.DATE_TIME)
+            or b.length != 0 or b.allowed_length is not BSLAllowedLength.VARIABLE):
+        raise ValueError("ЗначениеВСтрокуВнутр: квалификаторы отсутствующего типа "
+                         "пока не поддерживаются в Yadinassi до проверки на реальной 1С")
+
+
+def _table_cell_matches(description, value):
+    """Validate a snapshot without coercing its payload or erasing qualifiers."""
+    if not description.types:
+        return True
+    if value is None:
+        # Composite descriptions have Undefined as their observed default.
+        return len(description.types) > 1
+    if type_of(value) not in description.types:
+        return False
+    adjusted = description.adjust_value(value)
+    return type_of(adjusted) is type_of(value) and equal(adjusted, value)
+
+
+def _pattern_entry(kind: BSLType, value: BSLTypeDescription) -> str:
+    entry = '{"' + _PATTERN_TAGS[kind] + '"'
+    if kind is BSLType.NUMBER:
+        n = value.number_qualifiers
+        if n.digits != 0 or n.allowed_sign is not BSLAllowedSign.ANY:
+            entry += (',' + str(int(n.digits)) + ',' + str(int(n.fraction_digits))
+                      + ',' + str(n.allowed_sign.value))
+    elif kind is BSLType.STRING:
+        s = value.string_qualifiers
+        if s.length != 0:
+            entry += ',' + str(int(s.length)) + ',' + str(s.allowed_length.value)
+    elif kind is BSLType.DATE:
+        fraction = value.date_qualifiers.date_fractions
+        if fraction is not BSLDateFractions.DATE_TIME:
+            entry += ',"' + ('D' if fraction is BSLDateFractions.DATE else 'T') + '"'
+    return entry + '}'
+
+
+_UUID_WIRE_SLOT = vars(BSLUUID).get('text')
+_UUID_WIRE_TEXT = re.compile(r'[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}')
+
+
+def _uuid_wire_text(value):
+    slot = _UUID_WIRE_SLOT
+    if (type(value) is BSLUUID and type(slot) is MemberDescriptorType
+            and slot.__objclass__ is BSLUUID and slot.__name__ == 'text'):
+        try:
+            text = slot.__get__(value, BSLUUID)
+        except AttributeError:
+            pass
+        else:
+            if type(text) is str and len(text) == 36 and _UUID_WIRE_TEXT.fullmatch(text) is not None:
+                return text
+    raise TypeError("ЗначениеВСтрокуВнутр: недопустимое значение UUID")
+
+
+_NATIVE_MAP_SERIALIZABLE_KEYS = (type(None), bool, str, int, Decimal, BSLNull, BSLType, BSLDate,
+                                 BSLSearchDirection, BSLRoundMode, BSLUUID)
+
+
+def _native_map_entries(value, wrapped_keys=False):
+    for key, item in native_map_items(value, wrapped_keys):
+        if type(key) is BSLTypeDescription:
+            _scalar_map_key(key)
+        elif not any(type(key) is kind for kind in _NATIVE_MAP_SERIALIZABLE_KEYS):
+            raise TypeError("ЗначениеВСтрокуВнутр: недопустимый ключ соответствия")
+        yield key, item
+
+
+def _native_structure_entries(value):
+    for key, entry in dict.items(value):
+        if (type(key) is not str or type(entry) is not tuple or len(entry) != 2
+                or type(entry[0]) is not str or structure_key(entry[0]) != key):
+            raise TypeError("ЗначениеВСтрокуВнутр: недопустимое свойство структуры")
+        yield entry
+
+
+class _Writer:
+    def __init__(self, *, direct=False):
+        self.direct = direct
+        self.parts = []
+        self.size = 0
+        self.nodes = 0
+        self.active = set()
+
+    def emit(self, text):
+        self.size += len(text)
+        if self.size > _MAX_TEXT:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        self.parts.append(text)
+
+    def string(self, value):
+        if len(value) > _MAX_TEXT:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        self.emit('"')
+        for char in value:
+            code = ord(char)
+            if char == '"':
+                self.emit('""')
+            elif 0xD800 <= code <= 0xDFFF:
+                self.emit('"\\' + format(code, '04x'))
+            elif code > 0xFFFF:
+                code -= 0x10000
+                self.emit('"\\' + format(0xD800 + (code >> 10), '04x'))
+                self.emit('"\\' + format(0xDC00 + (code & 0x3FF), '04x'))
+            else:
+                self.emit(char)
+        self.emit('"')
+
+    def value(self, value, depth=0, *, native_numbers=False):
+        if type(value) is BSLEnumReference or type(value) is BSLEnumType:
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов и ссылок перечислений пока не поддерживается")
+        # !todo: measure native catalog reference/type codecs; metadata UUID is not a type GUID.
+        if ((type(value) is BSLCatalogObject or type(value) is BSLCatalogReference or type(value) is BSLCatalogType or type(value) is BSLDocumentReference or type(value) is BSLDocumentType or type(value) is BSLInformationRegisterType or (type(value) is BSLDocumentLinesType or type(value) is BSLDocumentSectionType) or type(value) is BSLDocumentLines or type(value) is BSLDocumentLine)
+                or value is BSLType.CATALOGS_MANAGER or value is BSLType.DOCUMENTS_MANAGER or value is BSLType.INFORMATION_REGISTERS_MANAGER):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов и ссылок справочников пока не поддерживается")
+        self.nodes += 1
+        if self.nodes > _MAX_NODES or depth > _MAX_DEPTH:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        value_type = type(value)
+        direct_items = direct_pair = None
+        entry_count = None
+        if value_type is int and (self.direct or native_numbers):
+            # Compiler-owned integers have the existing wire number type. A
+            # coarse bit bound rejects huge integers before Decimal allocation.
+            if value.bit_length() > 4 * _MAX_NUMBER_DIGITS:
+                raise _resource("ЗначениеВСтрокуВнутр")
+            kind, value = BSLType.NUMBER, Decimal(value)
+        elif value_type is PlainArray or (self.direct and value_type is list):
+            kind, direct_items, entry_count = BSLType.ARRAY, list.__iter__(value), list.__len__(value)
+        elif value_type is PlainMap:
+            kind, direct_items, entry_count = BSLType.MAP, _native_map_entries(value), dict.__len__(value)
+        elif self.direct and value_type is PlainFixedMap:
+            storage = _PLAIN_FIXED_MAP_STORAGE.__get__(value, PlainFixedMap)
+            flags = _PLAIN_FIXED_MAP_WRAPPED_KEYS.__get__(value, PlainFixedMap)
+            if type(storage) is not dict or type(flags) is not bool:
+                raise TypeError("ЗначениеВСтрокуВнутр: недопустимое состояние фиксированного соответствия")
+            kind, direct_items, entry_count = BSLType.FIXED_MAP, _native_map_entries(storage, flags), dict.__len__(storage)
+        elif value_type is _DirectStructure:
+            kind, direct_items = BSLType.STRUCTURE, _native_structure_entries(value)
+            entry_count = dict.__len__(value)
+        elif self.direct and value_type is PlainValueList:
+            kind = BSLType.VALUE_LIST
+        elif self.direct and value_type is PlainValueListItem:
+            kind = BSLType.VALUE_LIST_ITEM
+        elif self.direct and value_type is _TypedMap:
+            kind, direct_items = BSLType.MAP, dict.values(value)
+        elif self.direct and value_type is _DIRECT_MAP_ENTRY_TYPE:
+            # Read the definition-time storage descriptor, never user hooks.
+            state = _DIRECT_MAP_ENTRY_STORAGE.__get__(value, _DIRECT_MAP_ENTRY_TYPE)
+            if (type(state) is not dict or len(state) != 2
+                    or any(type(key) is not str for key in state)
+                    or set(state) != {'key', 'value'}):
+                raise TypeError("ЗначениеВСтрокуВнутр: недопустимое состояние пары")
+            direct_pair = (state['key'], state['value'])
+            kind = BSLType.KEY_AND_VALUE
+        elif value_type is _DirectCallbackDescription:
+            kind = BSLType.CALLBACK_DESCRIPTION
+        else:
+            try:
+                kind = type_of(value)
+            except TypeError:
+                raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
+        if kind in (BSLType.CATALOGS_MANAGER, BSLType.DOCUMENTS_MANAGER, BSLType.INFORMATION_REGISTERS_MANAGER):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация менеджера справочников пока не поддерживается")
+        if kind in _TREE_CODEC_TYPES or (kind is BSLType.TYPE and value in _TREE_CODEC_TYPES):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация ДеревоЗначений пока не поддерживается")
+        if kind is BSLType.TEXT_DOCUMENT or (kind is BSLType.TYPE and value is BSLType.TEXT_DOCUMENT):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация ТекстовыйДокумент пока не поддерживается")
+        if kind is BSLType.VALUE_STORAGE or (kind is BSLType.TYPE and value is BSLType.VALUE_STORAGE):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация ХранилищеЗначения пока не поддерживается")
+        if kind is BSLType.CALLBACK_DESCRIPTION or (kind is BSLType.TYPE and value is BSLType.CALLBACK_DESCRIPTION):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация ОписаниеОповещения пока не поддерживается")
+        if kind in _UNSUPPORTED_CODEC_TYPES or (
+                kind is BSLType.TYPE and value in _UNSUPPORTED_CODEC_TYPES):
+            if kind is BSLType.PROMISE or (kind is BSLType.TYPE and value is BSLType.PROMISE):
+                raise ValueError("ЗначениеВСтрокуВнутр: сериализация Обещание пока не поддерживается")
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов ошибок пока не поддерживается")
+        if kind not in _CODECS:
+            raise ValueError("ЗначениеВСтрокуВнутр: для типа не задана политика сериализации Yadinassi")
+        if depth and kind is BSLType.TYPE and value is BSLType.UUID:
+            raise ValueError("Вложенная сериализация UUID пока не поддерживается")
+        if kind is BSLType.UNDEFINED:
+            self.emit('{"U"}')
+        elif kind is BSLType.NULL:
+            self.emit('{"L"}')
+        elif kind is BSLType.BOOLEAN:
+            self.emit('{"B",1}' if value else '{"B",0}')
+        elif kind is BSLType.NUMBER:
+            self.emit(_number(value))
+        elif kind is BSLType.STRING:
+            self.emit('{"S",')
+            self.string(value)
+            self.emit('}')
+        elif kind is BSLType.DATE:
+            self.emit('{"D",' + codec_text(value, nested=depth > 0) + '}')
+        elif kind is BSLType.UUID:
+            self.emit('{"#",' + _TYPE_IDS[kind] + ',' + _uuid_wire_text(value) + '}')
+        elif kind is BSLType.TYPE:
+            self.emit('{"T",' + _TYPE_IDS[value] + '}')
+        elif kind in _ENUM_TYPES:
+            self.emit('{"#",' + _TYPE_IDS[kind] + ',' + str(value.value) + '}')
+        elif kind in _OPAQUE_TYPES:
+            self.emit('{"#",' + _TYPE_IDS[kind] + '}')
+        elif kind is BSLType.TYPE_DESCRIPTION:
+            _require_representable_description(value)
+            self.emit('{"#",' + _TYPE_IDS[kind] + ',\n{"Pattern"')
+            for entry in value.types:
+                self.emit(',\n' + _pattern_entry(entry, value))
+            self.emit('\n}' if value.types else '}')
+            self.emit('\n}')
+        else:
+            identity = id(value)
+            if identity in self.active:
+                raise ValueError("ЗначениеВСтрокуВнутр: циклические значения пока не поддерживаются в Yadinassi")
+            self.active.add(identity)
+            try:
+                self.emit('{"#",' + _TYPE_IDS[kind] + ',\n')
+                if kind is BSLType.VALUE_LIST:
+                    if self.direct and value_type is PlainValueList:
+                        self.plain_value_list(value, depth)
+                    else:
+                        self.value_list(value, depth)
+                elif kind is BSLType.VALUE_LIST_ITEM:
+                    if value_type is PlainValueListItem:
+                        self.plain_value_list_item(value, depth)
+                    else:
+                        self.value_list_item(value, depth)
+                elif kind is BSLType.VALUE_TABLE:
+                    self.table(value, depth)
+                elif kind is BSLType.KEY_AND_VALUE:
+                    if direct_pair is not None:
+                        self.pair(direct_pair[0], direct_pair[1], depth)
+                    else:
+                        self.pair(value.key, value.value, depth)
+                else:
+                    items = direct_items if direct_items is not None else value.items if kind in _ARRAYS else value._items.values()
+                    count = len(items) if entry_count is None else entry_count
+                    if count > _MAX_NODES:
+                        raise _resource("ЗначениеВСтрокуВнутр")
+                    self.emit('{' + str(count))
+                    if kind in _ARRAYS:
+                        for item in items:
+                            self.emit(',\n')
+                            self.value(item, depth + 1, native_numbers=entry_count is not None)
+                    else:
+                        # Associative payload order is not a compatibility contract.
+                        entries = items
+                        for key, item in entries:
+                            self.emit(',\n')
+                            self.pair(key, item, depth, native_numbers=entry_count is not None)
+                    self.emit('\n}' if count else '}')
+                self.emit('\n}')
+            finally:
+                self.active.remove(identity)
+
+    def value_list(self, value, depth):
+        description = value.value_type
+        if type(description) is not BSLTypeDescription or description.types:
+            raise ValueError("ЗначениеВСтрокуВнутр: поддерживается только пустой тип списка значений")
+        _require_representable_description(description)
+        if (type(value.items) is not list or type(value._by_id) is not dict
+                or type(value._next_id) is not int or not 0 <= value._next_id <= 2 ** 32):
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимое состояние списка значений")
+        count = len(value.items)
+        self.nodes += count
+        if self.nodes > _MAX_NODES:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        seen = set()
+        for item in value.items:
+            if (type(item) is not BSLValueListItem or type(item._id) is not int
+                    or not 0 <= item._id < value._next_id or item._id in seen
+                    or item._detached or item._owner_ref() is not value
+                    or value._by_id.get(item._id) is not item):
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
+            seen.add(item._id)
+        if len(value._by_id) != count:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимые идентификаторы списка значений")
+        self.list_entries(value.items, count, depth, self.value_list_item)
+        self.emit(',\n{"Pattern"},0,' + str(value._next_id - 1) + '}')
+
+    def plain_value_list(self, value, depth):
+        # Native lists have the default ValueType/Picture only and no owner
+        # weakref or ID dictionary. Validate their actual fixed-position items.
+        try:
+            next_id = _PLAIN_LIST_NEXT_ID.__get__(value, PlainValueList)
+        except AttributeError:
+            next_id = None
+        if type(next_id) is not int or not 0 <= next_id <= 2 ** 32:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимое состояние списка значений")
+        count = list.__len__(value)
+        self.nodes += count
+        if self.nodes > _MAX_NODES:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        seen = set()
+
+        def write_item(item, item_depth):
+            identifier, owner, payload, presentation, check = self.plain_list_item_fields(item)
+            if owner is not value or not 0 <= identifier < next_id or identifier in seen:
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
+            seen.add(identifier)
+            self.list_item_fields(presentation, check, payload, identifier, item_depth)
+
+        self.list_entries(list.__iter__(value), count, depth, write_item)
+        self.emit(',\n{"Pattern"},0,' + str(next_id - 1) + '}')
+
+    @staticmethod
+    def plain_list_item_fields(item):
+        if type(item) is not PlainValueListItem or list.__len__(item) != 4:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
+        try:
+            identifier = _PLAIN_LIST_ITEM_ID.__get__(item, PlainValueListItem)
+            membership = _PLAIN_LIST_ITEM_MEMBERSHIP.__get__(item, PlainValueListItem)
+        except AttributeError:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений") from None
+        if type(membership) is not _ItemMembership:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимое состояние элемента списка значений")
+        owner_ref = _PLAIN_LIST_OWNER.__get__(membership, _ItemMembership)
+        cleared_before = _PLAIN_LIST_CLEAR_ID.__get__(membership, _ItemMembership)
+        payload, presentation, check, picture = list.__iter__(item)
+        if (type(identifier) is not int or not -1 <= identifier < 2 ** 32
+                or type(owner_ref) is not ReferenceType or type(cleared_before) is not int
+                or type(presentation) is not str
+                or type(check) is not bool or picture is not None):
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимый элемент списка значений")
+        owner = owner_ref()
+        if owner is not None and type(owner) is not PlainValueList:
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимый список значений элемента")
+        return (identifier if identifier >= cleared_before else -1), owner, payload, presentation, check
+
+    def plain_value_list_item(self, item, depth):
+        identifier, owner, payload, presentation, check = self.plain_list_item_fields(item)
+        self.list_item_fields(presentation, check, payload, identifier if owner is not None else -1, depth)
+
+    def list_entries(self, items, count, depth, write_item):
+        self.emit('{6,' + _LIST_ENTRY_ID + ',0,0,\n{' + str(count))
+        for item in items:
+            # Item identity participates in cycles even though list entries do
+            # not carry the standalone item type wrapper.
+            identity = id(item)
+            if identity in self.active:
+                raise ValueError("ЗначениеВСтрокуВнутр: циклические значения пока не поддерживаются в Yadinassi")
+            self.active.add(identity)
+            try:
+                self.emit(',\n{' + _LIST_ENTRY_ID + ',\n')
+                write_item(item, depth + 1)
+                self.emit('\n}')
+            finally:
+                self.active.remove(identity)
+        self.emit('\n}' if count else '}')
+
+    def value_list_item(self, item, depth):
+        if (type(item.presentation) is not str or type(item.check) is not bool
+                or type(item._id) is not int or not -1 <= item._id < 2 ** 32):
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимое состояние элемента списка значений")
+        if getattr(item, '_decoded_standalone', False):
+            identifier = item._id
+        else:
+            owner = item._owner_ref()
+            identifier = (item._id if not item._detached and owner is not None
+                          and owner._by_id.get(item._id) is item else -1)
+        self.list_item_fields(item.presentation, item.check, item.value, identifier, depth)
+
+    def list_item_fields(self, presentation, check, value, identifier, depth):
+        self.emit('{')
+        self.string(presentation)
+        self.emit(',' + ('1' if check else '0') + ',\n')
+        self.value(value, depth + 1)
+        self.emit(',\n' + _LIST_PICTURE + ',' + str(identifier) + ',0,""}')
+
+    def table(self, table, depth):
+        if table._bounded_slice_read is not False:
+            raise ValueError('native slice column codec profile is not admitted')
+        # Canonical snapshot layout established by table.codec.empty/table.
+        # The owner's table.indexes.codec.table adds ordered index definitions.
+        # Historic column/row IDs and undocumented flags are not synthesized.
+        collection, storage, rows = table.columns, table._storage, table.rows
+        if (type(collection) is not BSLValueTableColumnCollection or collection.table is not table
+                or type(collection._items) is not list or type(storage) is not TableStorage
+                or storage.owner is not table or storage.row_factory is not BSLValueTableRow
+                or type(rows) is not list or storage.rows is not rows or type(storage.schema) is not Schema):
+            raise ValueError('ЗначениеВСтрокуВнутр: недопустимое состояние таблицы')
+        columns, schema = collection._items, storage.schema
+        nc, nr = len(columns), len(rows)
+        self.nodes += nc + nr
+        if self.nodes > _MAX_NODES or nc * nr > _MAX_NODES:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        names, keys, metadata = schema._names, schema._keys, schema._metadata
+        if (type(names) is not list or type(keys) is not list or type(metadata) is not list
+                or not len(names) == len(keys) == len(metadata) == nc):
+            raise ValueError('ЗначениеВСтрокуВнутр: недопустимая схема таблицы')
+        self.emit('{9,\n{' + str(nc))
+        for index, column in enumerate(columns):
+            name = names[index]
+            if (type(column) is not BSLValueTableColumn or column.table is not table
+                    or column._deleted is not False or metadata[index] is not column
+                    or type(name) is not str or type(column.name) is not str or name != column.name
+                    or type(keys[index]) is not str or keys[index] != name.casefold()
+                    or type(column.title) is not str):
+                raise ValueError('ЗначениеВСтрокуВнутр: недопустимая колонка таблицы')
+            description = column.value_type
+            if type(description) is not BSLTypeDescription:
+                raise TypeError("ЗначениеВСтрокуВнутр: ожидается ОписаниеТипов колонки")
+            width = column.width
+            if (type(width) is not Decimal or not width.is_finite()
+                    or not 0 <= width < 2 ** 32 or width != width.to_integral_value()):
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимая ширина колонки")
+            _require_representable_description(description)
+            self.emit(',\n{' + str(index) + ',')
+            self.string(column.name)
+            self.emit(',\n{"Pattern"')
+            for kind in description.types:
+                self.emit(',\n' + _pattern_entry(kind, description))
+            self.emit('\n}' if description.types else '}')
+            self.emit(',')
+            self.string(column.title)
+            self.emit(',' + str(int(width)) + '}')
+        self.emit('\n}' if nc else '}')
+        self.emit(',\n{2,' + str(nc))
+        for index in range(nc):
+            self.emit(',' + str(index) + ',' + str(index))
+        self.emit(',\n{1,' + str(nr))
+        for index, row in enumerate(rows):
+            validate_row(row, schema, table, row_type=BSLValueTableRow)
+            if row.table is not table:
+                raise ValueError('ЗначениеВСтрокуВнутр: посторонняя строка таблицы')
+            self.emit(',\n{2,' + str(index) + ',' + str(nc))
+            for column, cell in zip(columns, list.__iter__(row)):
+                self.emit(',\n')
+                if type(cell) is int:
+                    if cell.bit_length() > 4 * _MAX_NUMBER_DIGITS:
+                        raise _resource("ЗначениеВСтрокуВнутр")
+                    cell = Decimal(cell)
+                if not _table_cell_matches(column.value_type, cell):
+                    raise ValueError("ЗначениеВСтрокуВнутр: значение ячейки не соответствует типу колонки")
+                self.value(cell, depth + 1)
+            self.emit(',0}')
+        self.emit('\n}' if nr else '}')
+        self.emit(',' + str(nc - 1) + ',' + str(nr - 1) + '},\n')
+        self.table_indexes(table, nc)
+        self.emit('\n}')
+
+    def table_indexes(self, table, column_count):
+        collection, search = table.indexes, table._search
+        if (type(collection) is not BSLCollectionIndexes or collection.table is not table
+                or type(collection.items) is not list or type(search) is not SearchIndexes
+                or type(search.declarations) is not set
+                or len(search.declarations) != len(collection.items)):
+            raise ValueError("ЗначениеВСтрокуВнутр: недопустимая коллекция индексов")
+        count = len(collection.items)
+        self.nodes += count
+        if self.nodes > _MAX_NODES:
+            raise _resource("ЗначениеВСтрокуВнутр")
+        # Validate both live declarations before comparing any key. Never read
+        # the lazy bucket cache; it is not part of the native stream.
+        declaration_nodes = self.nodes
+        for signature in search.declarations:
+            if type(signature) is not tuple or not 0 < len(signature) <= column_count:
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый индекс таблицы")
+            declaration_nodes += len(signature)
+            if declaration_nodes > _MAX_NODES:
+                raise _resource("ЗначениеВСтрокуВнутр")
+            if any(type(position) is not int for position in signature):
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый индекс таблицы")
+        definitions = _wire_index_definitions(table, collection, table.columns._items)
+        self.emit('{0,' + str(count))
+        seen = set()
+        for signature in definitions:
+            if type(signature) is not tuple or not 0 < len(signature) <= column_count:
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимый индекс таблицы")
+            self.nodes += len(signature)
+            if self.nodes > _MAX_NODES:
+                raise _resource("ЗначениеВСтрокуВнутр")
+            previous = -1
+            for position in signature:
+                if type(position) is not int or not previous < position < column_count:
+                    raise ValueError("ЗначениеВСтрокуВнутр: недопустимая колонка индекса")
+                previous = position
+            if signature not in search.declarations or signature in seen:
+                raise ValueError("ЗначениеВСтрокуВнутр: недопустимое объявление индекса")
+            seen.add(signature)
+            self.emit(',\n{0,' + str(len(signature)) + ',' + ','.join(map(str, signature)) + '}')
+        self.emit('\n}' if count else '}')
+
+    def pair(self, key, value, depth, *, native_numbers=False):
+        self.emit('{\n')
+        self.value(key, depth + 1, native_numbers=native_numbers)
+        self.emit(',\n')
+        self.value(value, depth + 1, native_numbers=native_numbers)
+        self.emit('\n}')
+
+
+def value_to_string_internal(value: object) -> str:
+    writer = _Writer()
+    writer.value(value)
+    return ''.join(writer.parts)
+
+
+_DIRECT_VALUE_TO_STRING_ABI = value_to_string_internal
+
+def _direct_value_to_string_internal(value):
+    writer = _Writer(direct=True)
+    writer.value(value)
+    return ''.join(writer.parts)
+
+
+@dataclass(frozen=True)
+class _Atom:
+    text: str
+
+
+class _Reader:
+    """Small bounded stream grammar; only explicitly listed BSL types exist."""
+    def __init__(self, text):
+        self.text = text
+        self.position = 0
+        self.tokens = 0
+        self.nodes = 0
+
+    def fail(self):
+        raise ValueError(FORMAT_ERROR)
+
+    def whitespace(self):
+        while self.position < len(self.text) and self.text[self.position] in ' \t\r\n':
+            self.position += 1
+
+    def string(self):
+        self.position += 1
+        parts = []
+        while self.position < len(self.text):
+            char = self.text[self.position]
+            self.position += 1
+            if char != '"':
+                parts.append(char)
+                continue
+            if self.position < len(self.text) and self.text[self.position] == '"':
+                parts.append('"')
+                self.position += 1
+            elif self.position < len(self.text) and self.text[self.position] == '\\':
+                digits = self.text[self.position + 1:self.position + 5]
+                if len(digits) != 4 or any(digit not in _HEX for digit in digits):
+                    self.fail()
+                code = int(digits, 16)
+                # Native evidence establishes UTF-16 surrogate escapes, not
+                # arbitrary quoted escapes for other character ranges.
+                if not 0xD800 <= code <= 0xDFFF:
+                    self.fail()
+                parts.append(chr(code))
+                self.position += 5
+            else:
+                return ''.join(parts).encode('utf-16-le', 'surrogatepass').decode('utf-16-le', 'surrogatepass')
+        self.fail()
+
+    def token(self, depth=0):
+        self.tokens += 1
+        if self.tokens > _MAX_NODES * _MAX_TOKENS_PER_NODE or depth > _MAX_DEPTH * 3 + 3:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        self.whitespace()
+        if self.position >= len(self.text):
+            self.fail()
+        char = self.text[self.position]
+        if char == '"':
+            return self.string()
+        if char != '{':
+            start = self.position
+            while self.position < len(self.text) and self.text[self.position] not in ',} \t\r\n':
+                self.position += 1
+            if self.position == start:
+                self.fail()
+            return _Atom(self.text[start:self.position])
+        self.position += 1
+        result = []
+        self.whitespace()
+        if self.position < len(self.text) and self.text[self.position] == '}':
+            self.position += 1
+            return result
+        while True:
+            result.append(self.token(depth + 1))
+            self.whitespace()
+            if self.position >= len(self.text):
+                self.fail()
+            char = self.text[self.position]
+            self.position += 1
+            if char == '}':
+                return result
+            if char != ',':
+                self.fail()
+
+    def number(self, token):
+        if type(token) is not _Atom or _NUMBER.fullmatch(token.text) is None:
+            self.fail()
+        if len(token.text) > _MAX_NUMBER_DIGITS + 3:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        value = Decimal(token.text)
+        try:
+            _number(value)
+        except ValueError:
+            raise _resource("ЗначениеИзСтрокиВнутр") from None
+        return value
+
+    def qualifier_count(self, token):
+        if type(token) is not _Atom or _COUNT.fullmatch(token.text) is None:
+            self.fail()
+        # Supported qualifier constructors cap counts at one million; reject
+        # oversize spelling before integer/Decimal materialization.
+        if len(token.text) > 7:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        return Decimal(token.text)
+
+    def pattern(self, body):
+        # Qualified N/S/D shapes come from the owner's receiver supplement.
+        # Duplicate types, noncanonical order and binary entries are outside
+        # this defensive inverse subset; these are not native rejection claims.
+        if (not body or len(body) > 5 or type(body[0]) is not str
+                or body[0] != 'Pattern'):
+            self.fail()
+        kinds = []
+        n, s, d = BSLNumberQualifiers(), BSLStringQualifiers(), BSLDateQualifiers()
+        for entry in body[1:]:
+            if (type(entry) is not list or not entry or type(entry[0]) is not str
+                    or entry[0] not in _PATTERN_TYPES):
+                self.fail()
+            kind = _PATTERN_TYPES[entry[0]]
+            kinds.append(kind)
+            if len(entry) == 1:
+                continue
+            if kind is BSLType.NUMBER and len(entry) == 4:
+                digits, fraction = self.qualifier_count(entry[1]), self.qualifier_count(entry[2])
+                if type(entry[3]) is not _Atom or entry[3].text not in ('0', '1'):
+                    self.fail()
+                sign = _ENUM_MEMBERS[BSLType.ALLOWED_SIGN][entry[3].text]
+                try:
+                    n = BSLNumberQualifiers(digits, fraction, sign)
+                except (TypeError, ValueError):
+                    self.fail()
+                if (n.digits != digits or n.fraction_digits != fraction
+                        or (not digits and sign is BSLAllowedSign.ANY)):
+                    self.fail()
+            elif kind is BSLType.STRING and len(entry) == 3:
+                length = self.qualifier_count(entry[1])
+                if type(entry[2]) is not _Atom or entry[2].text not in ('0', '1') or not length:
+                    self.fail()
+                allowed = _ENUM_MEMBERS[BSLType.ALLOWED_LENGTH][entry[2].text]
+                try:
+                    s = BSLStringQualifiers(length, allowed)
+                except (TypeError, ValueError):
+                    self.fail()
+            elif kind is BSLType.DATE and len(entry) == 2:
+                if type(entry[1]) is not str or entry[1] not in ('D', 'T'):
+                    self.fail()
+                d = BSLDateQualifiers(BSLDateFractions.DATE if entry[1] == 'D'
+                                      else BSLDateFractions.TIME)
+            else:
+                self.fail()
+        source = BSLArray()
+        source.items = kinds
+        try:
+            result = BSLTypeDescription(source, n, s, d)
+        except (TypeError, ValueError):
+            self.fail()
+        if result.types != tuple(kinds):
+            self.fail()
+        return result
+
+    def table_count(self, token):
+        if type(token) is not _Atom or _COUNT.fullmatch(token.text) is None:
+            self.fail()
+        if len(token.text) > 5 or int(token.text) > _MAX_NODES:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        return int(token.text)
+
+    def list_identifier(self, token):
+        if token == _Atom('-1'):
+            return -1
+        if type(token) is not _Atom or _COUNT.fullmatch(token.text) is None:
+            self.fail()
+        if len(token.text) > 10 or int(token.text) >= 2 ** 32:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        return int(token.text)
+
+    def value_list_item(self, body, depth, owner=None):
+        # Only the observed default picture block is supported. This is not a
+        # public Picture codec and unknown flags are never silently discarded.
+        picture = [_Atom('4'), _Atom('0'), [_Atom('0')], '',
+                   _Atom('-1'), _Atom('-1'), _Atom('0'), _Atom('0'), '']
+        if (len(body) != 7 or type(body[0]) is not str
+                or body[1] not in (_Atom('0'), _Atom('1'))
+                or body[3] != picture or body[5:] != [_Atom('0'), '']):
+            self.fail()
+        identifier = self.list_identifier(body[4])
+        value = self.value(body[2], depth + 1)
+        if owner is None:
+            return BSLValueListItem._from_stream(identifier, value, body[0], body[1] == _Atom('1'))
+        if identifier < 0 or identifier in owner._by_id or identifier >= owner._next_id:
+            self.fail()
+        item = BSLValueListItem(owner, identifier, value, body[0], body[1] == _Atom('1'))
+        owner.items.append(item)
+        owner._by_id[identifier] = item
+        return item
+
+    def value_list(self, body, depth):
+        if (len(body) != 8 or body[:4] != [_Atom('6'), _Atom(_LIST_ENTRY_ID), _Atom('0'), _Atom('0')]
+                or type(body[4]) is not list or not body[4]
+                or body[5:7] != [['Pattern'], _Atom('0')]):
+            self.fail()
+        entries = body[4]
+        count = self.table_count(entries[0])
+        if len(entries) != count + 1:
+            self.fail()
+        self.nodes += count
+        if self.nodes > _MAX_NODES:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        result = BSLValueList()
+        result._next_id = self.list_identifier(body[7]) + 1
+        for entry in entries[1:]:
+            if (type(entry) is not list or len(entry) != 2
+                    or entry[0] != _Atom(_LIST_ENTRY_ID) or type(entry[1]) is not list):
+                self.fail()
+            self.value_list_item(entry[1], depth + 1, result)
+        return result
+
+    def table(self, body, depth):
+        # Deliberately strict inverse subset of the observed version-9 stream.
+        # Unknown versions, noncanonical reference IDs and flags are not guessed.
+        if (len(body) != 4 or body[0] != _Atom('9')
+                or type(body[1]) is not list or not body[1]
+                or type(body[2]) is not list or type(body[3]) is not list):
+            self.fail()
+        definitions, data = body[1], body[2]
+        nc = self.table_count(definitions[0])
+        if len(definitions) != nc + 1 or len(data) != 2 * nc + 5:
+            self.fail()
+        if data[:2] != [_Atom('2'), _Atom(str(nc))]:
+            self.fail()
+        for index in range(nc):
+            if data[2 + index * 2:4 + index * 2] != [_Atom(str(index))] * 2:
+                self.fail()
+        rows = data[-3]
+        if type(rows) is not list or len(rows) < 2 or rows[0] != _Atom('1'):
+            self.fail()
+        nr = self.table_count(rows[1])
+        if len(rows) != nr + 2 or data[-2:] != [_Atom(str(nc - 1)), _Atom(str(nr - 1))]:
+            self.fail()
+        self.nodes += nc + nr
+        if self.nodes > _MAX_NODES or nc * nr > _MAX_NODES:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        result = BSLValueTable()
+        for index, entry in enumerate(definitions[1:]):
+            if (type(entry) is not list or len(entry) != 5
+                    or entry[0] != _Atom(str(index)) or type(entry[1]) is not str
+                    or type(entry[2]) is not list or type(entry[3]) is not str):
+                self.fail()
+            description = self.pattern(entry[2])
+            width = self.number(entry[4])
+            if not 0 <= width < 2 ** 32 or width != width.to_integral_value():
+                self.fail()
+            try:
+                column = result.columns.add(entry[1], description, entry[3], width)
+            except (TypeError, ValueError):
+                self.fail()
+            if column.name != entry[1] or column.title != entry[3] or column.width != width:
+                self.fail()
+        columns = result.columns.items
+        for index, entry in enumerate(rows[2:]):
+            if (type(entry) is not list or len(entry) != nc + 4
+                    or entry[:3] != [_Atom('2'), _Atom(str(index)), _Atom(str(nc))]
+                    or entry[-1] != _Atom('0')):
+                self.fail()
+            row = result.add()
+            for position, column in enumerate(columns):
+                cell = entry[position + 3]
+                value = self.value(cell, depth + 1)
+                try:
+                    matches = _table_cell_matches(column.value_type, value)
+                except (TypeError, ValueError):
+                    self.fail()
+                if not matches:
+                    self.fail()
+                # A fresh row is not yet exposed; validated snapshots must not
+                # pass through assignment coercion a second time.
+                list.__setitem__(row, position, value)
+        self.table_indexes(result, body[3])
+        return result
+
+    def table_indexes(self, table, body):
+        if len(body) < 2 or body[0] != _Atom('0'):
+            self.fail()
+        count = self.table_count(body[1])
+        if len(body) != count + 2:
+            self.fail()
+        self.nodes += count
+        if self.nodes > _MAX_NODES:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        column_count = len(table.columns.items)
+        declarations = table._search.declarations
+        for entry in body[2:]:
+            if type(entry) is not list or len(entry) < 2 or entry[0] != _Atom('0'):
+                self.fail()
+            size = self.table_count(entry[1])
+            if len(entry) != size + 2 or not 0 < size <= column_count:
+                self.fail()
+            self.nodes += size
+            if self.nodes > _MAX_NODES:
+                raise _resource("ЗначениеИзСтрокиВнутр")
+            selected = []
+            previous = -1
+            for token in entry[2:]:
+                position = self.table_count(token)
+                if not previous < position < column_count:
+                    self.fail()
+                selected.append(position)
+                previous = position
+            signature = tuple(selected)
+            if signature in declarations:
+                self.fail()
+            # The table is fresh and fully owned. Declare only; no eager index
+            # work or dependence on column name parsing.
+            BSLCollectionIndexes._add_positions(table.indexes, signature)
+
+    def value(self, group, depth=0):
+        self.nodes += 1
+        if self.nodes > _MAX_NODES or depth > _MAX_DEPTH:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        if type(group) is not list or not group or type(group[0]) is not str:
+            self.fail()
+        tag = group[0]
+        if tag == 'U' and len(group) == 1:
+            return None
+        if tag == 'L' and len(group) == 1:
+            return NULL
+        if tag == 'B' and len(group) == 2 and type(group[1]) is _Atom and group[1].text in ('0', '1'):
+            return group[1].text == '1'
+        if tag == 'S' and len(group) == 2 and type(group[1]) is str:
+            return group[1]
+        if tag == 'N' and len(group) in (2, 3):
+            value = self.number(group[1])
+            if len(group) == 3:
+                self.number(group[2])  # Observed {"N",1,5} reads the first number.
+            return value
+        if tag == 'D' and len(group) == 2:
+            if type(group[1]) is not _Atom:
+                self.fail()
+            try:
+                return read_codec(group[1].text)
+            except (ValueError, TypeError, OverflowError):
+                self.fail()
+        if tag == 'n' and len(group) == 2:
+            self.number(group[1])
+            return None  # Observed lowercase numeric tag; not arbitrary unknown tags.
+        if (tag == '#' and len(group) == 2 and type(group[1]) is _Atom
+                and group[1].text in _OPAQUE_IDS):
+            return None
+        if tag not in ('T', '#') or len(group) != (2 if tag == 'T' else 3):
+            self.fail()
+        if type(group[1]) is not _Atom or group[1].text not in _TYPES_BY_ID:
+            self.fail()
+        kind = _TYPES_BY_ID[group[1].text]
+        if tag == 'T':
+            if depth and kind is BSLType.UUID:
+                self.fail()  # Nested UUID Type records remain outside the measured scope.
+            return kind
+        body = group[2]
+        if kind is BSLType.UUID:
+            if type(body) is not _Atom:
+                self.fail()
+            try:
+                return canonical_codec_uuid(body.text)
+            except (TypeError, ValueError):
+                self.fail()
+        if kind in _ENUM_MEMBERS:
+            if type(body) is not _Atom or body.text not in _ENUM_MEMBERS[kind]:
+                self.fail()
+            return _ENUM_MEMBERS[kind][body.text]
+        if type(body) is not list:
+            self.fail()
+        if kind is BSLType.TYPE_DESCRIPTION:
+            return self.pattern(body)
+        if kind is BSLType.VALUE_LIST:
+            return self.value_list(body, depth)
+        if kind is BSLType.VALUE_LIST_ITEM:
+            return self.value_list_item(body, depth)
+        if kind is BSLType.VALUE_TABLE:
+            return self.table(body, depth)
+        if kind is BSLType.KEY_AND_VALUE and len(body) == 2:
+            return BSLKeyAndValue(self.value(body[0], depth + 1), self.value(body[1], depth + 1))
+        if kind not in _ARRAYS | _STRUCTURES | _MAPS or not body or type(body[0]) is not _Atom:
+            self.fail()
+        count_text = body[0].text
+        if _COUNT.fullmatch(count_text) is None:
+            self.fail()
+        if len(count_text) > 5 or int(count_text) > _MAX_NODES:
+            raise _resource("ЗначениеИзСтрокиВнутр")
+        count = int(count_text)
+        if len(body) != count + 1:
+            self.fail()
+        if kind in _ARRAYS:
+            items = [self.value(item, depth + 1) for item in body[1:]]
+            if kind is BSLType.ARRAY:
+                result = BSLArray()
+                result.items = items
+            else:
+                # The stream already specifies each nested type. The public
+                # snapshot constructor would recursively freeze direct arrays.
+                result = object.__new__(BSLFixedArray)
+                result.items = tuple(items)
+            return result
+        result = BSLStructure() if kind in _STRUCTURES else BSLMap()
+        for pair in body[1:]:
+            if type(pair) is not list or len(pair) != 2:
+                self.fail()
+            key, value = (self.value(item, depth + 1) for item in pair)
+            if kind in _STRUCTURES and type(key) is not str:
+                self.fail()
+            try:
+                result.insert(key, value)
+            except (ValueError, TypeError):
+                self.fail()
+        if kind is BSLType.FIXED_STRUCTURE:
+            return BSLFixedStructure(result)
+        if kind is BSLType.FIXED_MAP:
+            return BSLFixedMap(result)
+        return result
+
+
+def value_from_string_internal(text: object) -> object:
+    if type(text) is not str:
+        raise TypeError("ЗначениеИзСтрокиВнутр: ожидается строка")
+    if len(text) > _MAX_TEXT:
+        raise _resource("ЗначениеИзСтрокиВнутр")
+    reader = _Reader(text)
+    # Native evidence accepts a complete first record followed by garbage.
+    return reader.value(reader.token())

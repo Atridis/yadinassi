@@ -5,11 +5,11 @@ from enum import Enum
 import unittest
 from uuid import uuid4
 
-from yadinassi.accumulation_movements import (
+from yadinassi.db.registers.accumulation_movements import (
     AccumulationDirection, AccumulationRegisterSchema, MAX_FIELDS,
     MAX_MOVEMENT_ROWS, _sum_resource_vectors,
 )
-from yadinassi.catalog_backend import BackendError, FieldSchema
+from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema
 
 
 def _schema(*qualifiers):

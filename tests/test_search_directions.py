@@ -7,19 +7,20 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.maps import BSLFixedMap, BSLMap
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
-from yadinassi.search_directions import (
+from yadinassi.collections.search_directions import (
     BSLSearchDirection, BSLSearchDirections, SEARCH_DIRECTIONS,
 )
-from yadinassi import serialization
-from yadinassi.serialization import (
+from yadinassi.formats.storage import serialization
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
 
 
 DIRECTION_ID = 'bee8fa9f-59d0-4e71-9f6e-599d83cb1960'
@@ -47,7 +48,12 @@ class SearchDirectionValueTests(unittest.TestCase):
 
         class PretendNamespace(type):
             def __eq__(cls, other):
+                calls.append('class equality')
                 return True
+
+            def __hash__(cls):
+                calls.append('class hash')
+                return 0
 
         class HostObject(BSLObject, metaclass=PretendNamespace):
             def __iter__(self):
@@ -55,7 +61,7 @@ class SearchDirectionValueTests(unittest.TestCase):
                 return iter([BEGIN])
 
         self.vm.variables['host'] = HostObject()
-        with self.assertRaisesRegex(BSLRuntimeError, 'ожидает массив'):
+        with self.assertRaises(BoundaryViolation):
             self.vm.execute('For Each Item In host Do EndDo;')
         self.assertEqual(calls, [])
 
@@ -172,6 +178,45 @@ class SearchDirectionValueTests(unittest.TestCase):
         self.assertEqual(self.output, ['0', '1', 'Да', 'Да', '7', 'updated',
                                       'end', 'zero', 'one', 'false', 'true', 'round', 'Да'])
 
+    def test_direct_map_and_fixed_map_roundtrip_keep_enum_keys_distinct(self):
+        self.vm.execute("""
+            m = New Map;
+            m.Insert(SearchDirection.FromBegin, "begin");
+            m.Insert(SearchDirection.FromEnd, "end");
+            m.Insert(RoundMode.Round15as10, "round");
+            m.Insert(0, "zero");
+            m.Insert(False, "false");
+            f = New FixedMap(m);
+            a = ValueFromStringInternal(ValueToStringInternal(m));
+            b = ValueFromStringInternal(ValueToStringInternal(f));
+            Message(TypeOf(a) = Type("Map") And TypeOf(b) = Type("FixedMap"));
+            Message(a.Count()); Message(b.Count());
+            Message(a[SearchDirection.FromBegin]); Message(b[SearchDirection.FromBegin]);
+            Message(a[SearchDirection.FromEnd]); Message(b[SearchDirection.FromEnd]);
+            Message(a[RoundMode.Round15as10]); Message(b[RoundMode.Round15as10]);
+            Message(a[0]); Message(b[0]); Message(a[False]); Message(b[False]);
+        """)
+        self.assertEqual(self.output, ['Да', '5', '5', 'begin', 'begin', 'end', 'end',
+                                      'round', 'round', 'zero', 'zero', 'false', 'false'])
+
+    def test_direct_arrays_and_maps_keep_native_enum_keys_distinct(self):
+        self.vm.execute('''values = New Array;
+            values.Add(directions.FromBegin); values.Add(RoundMode.Round15as10);
+            Message(values.Find(directions.СНачала));
+            Message(values.Find(RoundMode.Round15as10));
+            Message(values.Find(directions.FromEnd) = Undefined);
+            map = New Map;
+            map[directions.FromBegin] = "direction";
+            map.Insert(RoundMode.Round15as10, "round");
+            map[0] = "zero";
+            fixed = New FixedMap(map);
+            map.Delete(directions.FromBegin);
+            Message(map.Get(directions.FromBegin) = Undefined);
+            Message(fixed[directions.FromBegin]);
+            Message(fixed[RoundMode.Round15as10]);
+            Message(fixed[0]);''')
+        self.assertEqual(self.output, ['0', '1', 'Да', 'Да', 'direction', 'round', 'zero'])
+
     def test_host_namespace_subclasses_are_not_typed_or_serialized(self):
         class HostNamespace(BSLSearchDirections):
             def __str__(self):
@@ -198,6 +243,8 @@ class SearchDirectionIterationTests(unittest.TestCase):
         self.assertEqual(list(SEARCH_DIRECTIONS), [BEGIN, END])
 
     def test_global_aliases_and_loop_expression_evaluated_once(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
 
         def directions():
@@ -212,7 +259,11 @@ class SearchDirectionIterationTests(unittest.TestCase):
                     alias = SearchDirection; found = New Array;
                     Для Каждого item Из {name} Цикл found.Add(item); КонецЦикла;
                 ''')
-                self.assertEqual(self.vm.variables['found'].items, [BEGIN, END])
+                found = self.vm.variables['found']
+                self.assertIs(type(found), list)
+                self.assertEqual(found, [BEGIN, END])
+                self.assertIs(found[0], BEGIN)
+                self.assertIs(found[1], END)
         self.assertEqual(calls, [True])
 
     def test_nested_break_continue_return_and_repeated_iteration(self):
@@ -252,11 +303,26 @@ class SearchDirectionIterationTests(unittest.TestCase):
             def __iter__(self):
                 raise AssertionError('Host namespace iterator must not run')
 
-        for value in [BEGIN, END, HostIterable(), HostNamespace(), [], (), {}, iter([BEGIN])]:
+        # Plain execution admits these exact storage types without extensions.
+        self.vm.variables.update(values=[BEGIN, END], mapping={'start': BEGIN})
+        self.vm.execute('''
+            For Each Item In Values Do Message(Item); EndDo;
+            For Each Item In Mapping Do Message(Item.Key); Message(Item.Value); EndDo;
+        ''')
+        self.assertEqual(self.output, ['С начала', 'С конца', 'start', 'С начала'])
+
+        for value in [HostIterable(), HostNamespace(), (), iter([BEGIN])]:
             self.vm.variables['source'] = value
-            with self.subTest(kind=type(value).__name__), self.assertRaisesRegex(
-                    BSLRuntimeError, 'Для Каждого ожидает'):
-                self.vm.execute('For Each item In source Do EndDo;')
+            with self.subTest(kind=type(value).__name__), self.assertRaises(BoundaryViolation):
+                self.vm.execute('Try For Each item In source Do EndDo; Except EndTry;')
+        for value in (BEGIN, END):
+            with self.subTest(direction=value.name):
+                self.vm.variables['source'] = value
+                before = len(self.output)
+                self.vm.execute('Try For Each item In source Do EndDo; '
+                                'Except Message("caught"); EndTry;')
+                self.assertEqual(len(self.output), before + 1)
+                self.assertEqual(self.output[-1], 'caught')
 
 
 class SearchDirectionCodecTests(unittest.TestCase):

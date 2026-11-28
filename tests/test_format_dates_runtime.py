@@ -6,9 +6,9 @@ from pathlib import Path
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.dates import BSLDate, date, UnsupportedDateRange
-from yadinassi.formatting import format_value
-from yadinassi.values import to_string
+from yadinassi.temporal.dates import BSLDate, date, UnsupportedDateRange
+from yadinassi.text.formatting import format_value
+from yadinassi.types.values import to_string
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'tests/fixtures/format_dates'

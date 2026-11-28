@@ -135,11 +135,129 @@ jobs:
         with:
           name: ordinary-browser-${{ needs.admission.outputs.source_sha }}-${{ github.run_attempt }}
           path: |
+            ${{ runner.temp }}/yadinassi-browser-artifacts/source-binding.json
             ${{ runner.temp }}/yadinassi-browser-artifacts/result.json
             ${{ runner.temp }}/yadinassi-browser-artifacts/manifest.json
             ${{ runner.temp }}/yadinassi-browser-artifacts/*.png
           if-no-files-found: warn
           retention-days: 7
+
+  # Informational timings run independently of admission and all required jobs.
+  performance:
+    name: Performance reference (Python / BSL, no speed gate)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Measure the exact candidate, including stacked and draft PRs.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install pinned runtime dependencies
+        run: python -m pip install -e . wcwidth==0.8.2
+      - name: Check benchmark correctness and report formatting
+        run: python -m unittest tests.test_benchmark_execution_layers tests.test_benchmark_summary tests.test_benchmark_report
+      - name: Measure Python and BSL
+        run: |
+          mkdir -p performance-results
+          python scripts/benchmark_execution_layers.py --bsl-route default --iterations 100000 --rounds 9 > performance-results/execution-layers.json
+      - name: Render default timing table
+        run: |
+          python scripts/benchmark_summary.py performance-results/execution-layers.json > performance-results/summary.md
+      - name: Measure prepared execution separately
+        run: |
+          python scripts/benchmark_execution_layers.py --bsl-route prepared --iterations 100000 --rounds 9 > performance-results/execution-layers-prepared.json
+          python scripts/benchmark_summary.py performance-results/execution-layers-prepared.json > performance-results/summary-prepared.md
+      - name: Check extended benchmark correctness
+        run: python -m unittest tests.test_benchmark_extended_layers tests.test_benchmark_sqlite_update_reference
+      - name: Measure extended default reference
+        run: |
+          python scripts/benchmark_extended_layers.py --iterations 64 --rounds 5 --bsl-route default --output performance-results/extended-default.json --summary performance-results/extended-default.md
+      - name: Measure extended prepared reference
+        run: |
+          python scripts/benchmark_extended_layers.py --iterations 64 --rounds 5 --bsl-route prepared --output performance-results/extended-prepared.json --summary performance-results/extended-prepared.md
+      - name: Publish paired performance summary
+        if: ${{ !cancelled() }}
+        run: python scripts/benchmark_report.py --directory performance-results --output performance-results/summary-paired.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Collect separate untimed execution diagnostics
+        run: |
+          python -m unittest tests.test_benchmark_diagnostics
+          python scripts/benchmark_diagnostics.py --iterations 8 --output performance-results/diagnostics.json --summary performance-results/diagnostics.md
+          cat performance-results/diagnostics.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Explain incomplete results
+        if: failure()
+        run: echo 'Сравнение производительности не завершено. См. шаг с ошибкой и исходный артефакт. Порогов скорости нет; ошибки подготовки, корректности и измерения приводят к сбою этой задачи.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: performance-reference-${{ github.run_id }}-${{ github.run_attempt }}
+          path: performance-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # Diagnostic only: intentionally outside required verdict and release dependencies.
+  compatibility:
+    name: "Совместимость с 1С: известные расхождения"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install pinned runtime dependencies
+        run: python -m pip install -e . wcwidth==0.8.2
+      - name: Compare historical ValueTable ordering with 1C
+        id: table_order
+        run: python -m tests.compatibility_native_table_sort --summary-output native-table-order-summary.md > native-table-order.md
+      - name: Compare Array bounds error wording with the documented 1C phrase
+        if: ${{ !cancelled() }}
+        id: error_wording
+        run: python -m tests.compatibility_error_wording > error-wording.md
+      - name: Publish known compatibility differences
+        if: ${{ !cancelled() }}
+        env:
+          TABLE_ORDER_OUTCOME: ${{ steps.table_order.outcome }}
+          ERROR_WORDING_OUTCOME: ${{ steps.error_wording.outcome }}
+        run: |
+          {
+            echo '## Известные расхождения с 1С'
+            echo
+            echo '| Область | Проверка | Приоритет |'
+            echo '|---|---|---|'
+            echo '| ТаблицаЗначений | Точный порядок строк после сортировки | Низкий |'
+            echo '| Массив | Формулировка ошибки при чтении за границей | Низкий |'
+            echo
+            echo 'Диагностика не блокирует CI. Обычные тесты данных остаются обязательными.'
+            echo
+            if [ "$TABLE_ORDER_OUTCOME" = success ]; then
+              cat native-table-order-summary.md
+            else
+              echo '**Сравнение не завершилось.** См. ошибку или пропущенный шаг в логе; число расхождений неизвестно.'
+            fi
+            echo
+            if [ "$ERROR_WORDING_OUTCOME" = success ]; then
+              cat error-wording.md
+            else
+              echo '**Формулировка ошибок не проверена.** См. лог диагностического шага.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && (steps.table_order.outcome == 'success' || steps.error_wording.outcome == 'success') }}
+        with:
+          name: compatibility-differences-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            native-table-order.md
+            error-wording.md
+          if-no-files-found: error
+          retention-days: 30
 
   light:
     name: Light tests (${{ matrix.target }})
@@ -170,6 +288,23 @@ jobs:
         run: python -m pip install -e . wcwidth==0.8.2
       - name: Test native launcher without 1C
         run: python integrational_tests/check_launcher.py
+      # Linux lifecycle/ownership proof is separate from the portable
+      # exact-output test discovered and accounted for on every platform.
+      - name: Verify strict Linux-owned SQLite client replay
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          python -I -B - <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path.cwd().resolve(strict=True)
+          sys.path.insert(0, str(root / 'scripts'))
+          import native_1c_full_host as host
+
+          host.verify_client_interpreter(root, root / host.CLIENT_SOURCE,
+                                         host.PREPROCESSOR_SOURCE_SHA256)
+          PY
       - name: Run every light module (unknown tests included)
         id: partition
         run: python -m scripts.test_partition --tier light --report test-results/partition.json

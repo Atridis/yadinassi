@@ -9,12 +9,12 @@ import tempfile
 import unittest
 from unittest import mock
 
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui import configuration_app, database_launch
 from yadinassi.ui.local_app import RuntimeBridge
 from yadinassi.ui.protocol import encode_value
 from ui_catalog_fixture import configuration_files
-from yadinassi.configuration_xml import import_configuration
+from yadinassi.configuration.configuration_xml import import_configuration
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / 'examples/configuration-document-forms'
@@ -65,7 +65,7 @@ class StoredSourceProcessTests(unittest.TestCase):
         with closing(SQLiteCatalogBackend(self.path)) as backend:
             view=backend.begin_document_read()
             try:
-                from yadinassi.document_backend import DocumentSelection
+                from yadinassi.db.document.document_backend import DocumentSelection
                 cards=view.select_documents(view.documents()[0].identity,DocumentSelection())
                 self.assertEqual(len(cards),1)
             finally:view.close()
@@ -96,7 +96,7 @@ class StoredSourceProcessTests(unittest.TestCase):
         with closing(SQLiteCatalogBackend(other)) as backend:
             view=backend.begin_document_read()
             try:
-                from yadinassi.document_backend import DocumentSelection
+                from yadinassi.db.document.document_backend import DocumentSelection
                 self.assertEqual(view.select_documents(view.documents()[0].identity,DocumentSelection()),())
             finally:view.close()
 

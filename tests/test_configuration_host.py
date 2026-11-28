@@ -6,8 +6,8 @@ from unittest.mock import patch, PropertyMock
 
 from test_configuration_application_profile import application_sources
 from configuration_runtime_fixture import module_files, SERVER
-from yadinassi.configuration_application_profile import import_application_configuration
-from yadinassi.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_application_profile import import_application_configuration
+from yadinassi.configuration.configuration_forms import load_configuration_forms
 from yadinassi.ui.configuration_app import (ConfigurationBroker, ConfigurationController,
     ConfigurationProcess, load_application, PROTOCOL)
 from yadinassi.ui.protocol import decode_line, encode_line

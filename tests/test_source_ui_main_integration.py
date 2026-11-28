@@ -1,9 +1,9 @@
 """Restored workspace features retain main's profile and application exports."""
 import unittest
 from test_source_forms import files, FORM, request
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_forms import SourceFormController
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.forms.source_forms import SourceFormController
 from yadinassi.ui.source_workspace import SourceWorkspace
 
 CODE = b'''#If ThickClientManagedApplication Then

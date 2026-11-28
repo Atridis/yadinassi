@@ -1,0 +1,94 @@
+"""Direct storage keeps canonical transactions and refuses unconnected handlers."""
+from contextlib import contextmanager
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+
+from test_source_constant_store import configuration
+from test_source_catalog_object_modules import source as catalog_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication, _SourceInterpreter
+from yadinassi.db.metadata.source_constants_runtime import SourceConstants, ConstantCall
+from yadinassi.db.metadata.source_constant_managers import create_manager, write_values
+from yadinassi.db.metadata.source_references import SourceReferenceManager
+from yadinassi.db.catalog.source_catalog_runtime import create_object
+from yadinassi.db import source_transactions
+
+
+def finish(operation):
+    try:
+        next(operation)
+    except StopIteration as result:
+        return result.value
+    finally:
+        operation.close()
+    raise AssertionError('unexpected suspension')
+
+
+class DirectSourceStorageGuards(unittest.TestCase):
+    def app(self,source,*,catalog=False):
+        temporary=TemporaryDirectory();self.addCleanup(temporary.cleanup)
+        app=SourceApplication(source,scratch_database=Path(temporary.name)/'source.sqlite',
+            source_catalog_records=catalog,output=lambda value:None)
+        self.addCleanup(app.close);app.start()
+        caller=_SourceInterpreter(app,family_owner=app.interpreter)
+        caller._logical_side='server';self.addCleanup(caller.close)
+        caller._context_stack.append('server');self.addCleanup(caller._context_stack.pop)
+        return app,caller
+
+    @contextmanager
+    def no_vm(self,app):
+        with source_transactions.execution(app), app.safe_mode.execution():
+            yield
+
+    def test_constant_module_executes_generated_initializer_and_handler_without_vm(self):
+        source=configuration({'Constants/Text/Ext/ValueManagerModule.bsl':b'Value="initializer"; Procedure BeforeWrite(Cancel) Value="handler";EndProcedure'})
+        app,caller=self.app(source);owner=SourceConstants(app)
+        with self.no_vm(app):
+            manager=create_manager(caller,owner,'Text')
+            self.addCleanup(manager.interpreter.close)
+            self.assertEqual(manager.value_read(caller),'initializer')
+            ConstantCall(owner,'Text',True).dispatch(caller, ['submitted'])
+            self.assertEqual(app.constant_store.get('Text'),'handler')
+        self.assertFalse(app.constant_store.transaction_active)
+
+    def test_catalog_module_initializer_executes_without_vm(self):
+        app,caller=self.app(catalog_source('Description="initializer";'),catalog=True)
+        manager=SourceReferenceManager(app,'Catalog','Items')
+        with self.no_vm(app):
+            obj=create_object(caller,manager,app.constant_store.catalog('Items'))
+            self.addCleanup(obj.interpreter.close)
+            self.assertEqual(obj.property_read(caller,'Description'),'initializer')
+        self.assertEqual(app.constant_store.read_records('Items'),[])
+        self.assertFalse(app.constant_store.transaction_active)
+
+    def test_no_module_write_uses_canonical_descriptor_transaction_pipeline(self):
+        app,caller=self.app(configuration());owner=SourceConstants(app)
+        descriptor=ConstantCall(owner,'Text',True).descriptor()
+        with self.no_vm(app):
+            descriptor.prepare(caller,1)
+            descriptor.dispatch(caller,['saved'])
+        self.assertEqual(app.constant_store.get('Text'),'saved')
+        self.assertFalse(app.constant_store.transaction_active)
+
+    def test_no_module_writer_preserves_callers_outer_transaction(self):
+        app,caller=self.app(configuration());owner=SourceConstants(app)
+        with self.no_vm(app):
+            ConstantCall(owner,'Text',True).dispatch(caller, ['before'])
+            app.constant_store.begin_transaction()
+            ConstantCall(owner,'Text',True).dispatch(caller, ['temporary'])
+            self.assertTrue(app.constant_store.transaction_active)
+            app.constant_store.rollback_transaction()
+        self.assertEqual(app.constant_store.get('Text'),'before')
+
+    def test_late_handler_in_batch_rolls_back_without_prior_member_writes(self):
+        app,caller=self.app(configuration({'Constants/Text/Ext/ValueManagerModule.bsl':b'Procedure FillCheckProcessing(Cancel,Fields) EndProcedure'}))
+        owner=SourceConstants(app)
+        with self.no_vm(app):
+            ConstantCall(owner,'Flag',True).dispatch(caller, [False])
+            with self.assertRaisesRegex(ValueError,'FillCheckProcessing'):
+                write_values(caller,owner,{'Flag':True,'Text':'blocked'})
+        self.assertFalse(app.constant_store.get('Flag'))
+        self.assertFalse(app.constant_store.transaction_active)
+
+
+if __name__=='__main__':unittest.main()

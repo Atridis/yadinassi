@@ -132,9 +132,12 @@ NoContext/dual NoContext, если имя не затенено явно. Пер
 - Пропущенное значение при добавлении или вставке — `Неопределено`.
   Вставка за текущей границей дополняет промежуток `Неопределено`.
   Чтение, запись и `Удалить / Delete` требуют существующего индекса.
-  Удаление из пустого массива или выше `ВГраница()` вызывает ошибку,
-  не меняя содержимое (нативный результат 1С 8.3.27.2342, Windows, ru-RU).
-  Отрицательные, дробные и нечисловые индексы также отклоняются.
+  Для `[]` конечный неотрицательный числовой индекс усекается к нулю;
+  отрицательные и булевы индексы отклоняются. `Получить / Get` и
+  `Установить / Set` сначала преобразуют булево значение в 0 или 1
+  либо усекают конечное число к нулю, затем проверяют границы.
+  Удаление сохраняет отдельное правило целого неотрицательного индекса:
+  неверный индекс не меняет массив (1С 8.3.27.2342, Windows, ru-RU).
 - `ВГраница()` пустого массива возвращает `-1`, неудачный поиск — `Неопределено`.
 - Многомерный массив состоит из отдельных вложенных массивов. Размеры целые,
   неотрицательные; при нескольких измерениях все размеры должны быть положительными.
@@ -793,6 +796,11 @@ UTF-16 сохраняется, отдельные суррогаты удаля�
 
 ### Внутреннее представление значений
 
+Порядок сериализованных пар соответствий и структур (в том числе фиксированных)
+не является требованием совместимости; содержимое и типы проверяются независимо
+от порядка пар. Порядок последовательностей сохраняется. Подробнее:
+[политика ассоциативной сериализации](docs/associative-serialization.md).
+
 - `ЗначениеВСтрокуВнутр / ValueToStringInternal(Значение)`.
 - `ЗначениеИзСтрокиВнутр / ValueFromStringInternal(Представление)`.
 
@@ -875,13 +883,13 @@ ID и истории их выделения. Поддержана только 
 ## Основание справочника
 
 Регистрация API: [runtime.py](yadinassi/runtime.py). Реализация объектов:
-[values.py](yadinassi/values.py), [structures.py](yadinassi/structures.py),
-[maps.py](yadinassi/maps.py), [type_values.py](yadinassi/type_values.py),
+[values.py](yadinassi/types/values.py), [structures.py](yadinassi/collections/structures.py),
+[maps.py](yadinassi/collections/maps.py), [type_values.py](yadinassi/types/type_values.py),
 [round_modes.py](yadinassi/numeric/round_modes.py),
-[search_directions.py](yadinassi/search_directions.py). Функции:
-[strings.py](yadinassi/strings.py), [numbers.py](yadinassi/numeric/numbers.py),
-[dates.py](yadinassi/dates.py), [bits.py](yadinassi/numeric/bits.py), [value_checks.py](yadinassi/value_checks.py),
-[xml_values.py](yadinassi/xml_values.py), [serialization.py](yadinassi/serialization.py).
+[search_directions.py](yadinassi/collections/search_directions.py). Функции:
+[strings.py](yadinassi/text/strings.py), [numbers.py](yadinassi/numeric/numbers.py),
+[dates.py](yadinassi/temporal/dates.py), [bits.py](yadinassi/numeric/bits.py), [value_checks.py](yadinassi/types/value_checks.py),
+[xml_values.py](yadinassi/formats/xml/xml_values.py), [serialization.py](yadinassi/formats/storage/serialization.py).
 Проверки находятся в [tests](tests); подтвержденные ручные прогоны 1С —
 в [integrational_tests](integrational_tests). Наличие локального теста само по себе
 не означает, что все варианты вызова проверены на реальной 1С.

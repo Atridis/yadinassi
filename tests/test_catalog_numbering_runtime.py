@@ -10,9 +10,9 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from catalog_sections_fixture import configuration_files_with_sections
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
@@ -55,10 +55,8 @@ R=O.Lines.Add(); R.Text="row"; N=O.Notes.Add(); N.Text="note";''')
             return db.execute('SELECT next_value FROM catalog_sequence').fetchone()[0]
 
     def assert_frozen(self, obj):
-        pending = obj._pending_write
-        self.assertIsNotNone(pending)
-        self.assertTrue(pending[0].auto_number)
-        self.assertEqual(pending[0].code, '')
+        self.assertTrue(obj._uncertain_write)
+        self.assertIsNone(obj._pending_write)
         self.assertEqual(obj.get_member('Code'), '')
         section = obj.get_member('Lines')
         row = section.get(Decimal(0))
@@ -70,7 +68,8 @@ R=O.Lines.Add(); R.Text="row"; N=O.Notes.Add(); N.Text="note";''')
                        obj.get_member('Notes').add):
             with self.subTest(mutate=mutate), self.assertRaisesRegex(BackendError, 'uncertain_commit'):
                 mutate()
-        self.assertIs(obj._pending_write, pending)
+        self.assertTrue(obj._uncertain_write)
+        self.assertIsNone(obj._pending_write)
 
     def test_new_object_and_abandoned_edit_allocate_nothing_until_write(self):
         abandoned = self.new_object()
@@ -114,51 +113,40 @@ R=O.Lines.Add(); R.Text="row"; N=O.Notes.Add(); N.Text="note";''')
         next_obj.write()
         self.assertEqual(next_obj.get_member('Code'), '01')
 
-    def test_lost_commit_response_keeps_code_and_sections_frozen_until_exact_resolution(self):
-        for fault in ({'commit_fault': 'after'}, {'close_fault': 'after', 'close_count': 1}):
-            with self.subTest(fault=fault):
-                obj = self.new_object()
-                expected = obj._section_draft()
-                number = self.counter()
-                with self.fault(**fault), self.assertRaisesRegex(BackendError, 'uncertain_commit'):
-                    obj.write()
-                self.assertTrue(obj.is_new())
-                self.assert_frozen(obj)
-                draft, previous, operation = obj._pending_write
-                outcome = self.context.backend.resolve_write_outcome(operation, draft, previous)
-                self.assertEqual(outcome.code, str(number).zfill(2))
-                with patch.object(self.context.backend, 'begin_write', side_effect=AssertionError('must not replay')):
-                    obj.write()
-                self.assertEqual(obj.get_member('Code'), outcome.code)
-                self.assertEqual(obj._revision, outcome.revision)
-                self.assertIsNone(obj._pending_write)
-                self.assertFalse(obj.is_new())
-                self.assertEqual(self.read(obj).tabular_sections, expected)
-                self.assertTrue(all(not s._dirty for s in obj._sections.values()))
-                self.assertEqual(self.counter(), number + 1)
-                obj.get_member('Lines').get(Decimal(0)).set_member('Text', 'editable again')
-                obj.write()
-                self.assertEqual(self.counter(), number + 1)
-                self.assertEqual(self.context.backend.resolve_write_outcome(operation, draft, previous), outcome)
-
-    def test_before_commit_failure_retries_frozen_intent_with_original_operation(self):
+    def test_lost_commit_response_requires_fresh_read_of_number_and_sections(self):
         obj = self.new_object()
         expected = obj._section_draft()
+        with self.fault(commit_fault='after'), self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+            obj.write()
+        self.assert_frozen(obj)
+        with patch.object(self.context.backend, 'begin_write', side_effect=AssertionError('must not replay')):
+            with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+                obj.write()
+        card = self.read(obj)
+        self.assertEqual((card.code, card.tabular_sections), ('01', expected))
+        self.assertEqual(self.counter(), 2)
+        ref = obj._manager._ref(card.key.record_id)
+        fresh = ref.get_object(ref)
+        fresh.get_member('Lines').get(Decimal(0)).set_member('Text', 'fresh edit')
+        fresh.write()
+        self.assertEqual(self.counter(), 2)
+
+    def test_before_commit_failure_retains_number_for_a_new_object(self):
+        obj = self.new_object()
         with self.fault(commit_fault='before'), self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             obj.write()
         self.assert_frozen(obj)
-        draft, previous, operation = obj._pending_write
-        self.assertIsNone(self.context.backend.resolve_write_outcome(operation, draft, previous))
         self.assertIsNone(self.read(obj))
         self.assertEqual(self.counter(), 1)
-        obj._operation_id = uuid4()
-        begin = self.context.backend.begin_write
-        with patch.object(self.context.backend, 'begin_write', wraps=begin) as called:
-            obj.write()
-        called.assert_called_once_with(operation)
-        self.assertEqual(obj.get_member('Code'), '01')
-        self.assertEqual(self.read(obj).tabular_sections, expected)
-        self.assertIsNone(obj._pending_write)
+        with patch.object(self.context.backend, 'begin_write', side_effect=AssertionError('must not replay')):
+            with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+                obj.write()
+        fresh = self.new_object()
+        expected = fresh._section_draft()
+        fresh.write()
+        self.assertNotEqual(fresh._key, obj._key)
+        self.assertEqual(fresh.get_member('Code'), '01')
+        self.assertEqual(self.read(fresh).tabular_sections, expected)
         self.assertEqual(self.counter(), 2)
 
     def test_numbered_runtime_requires_outcome_capability_before_any_write(self):

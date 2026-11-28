@@ -70,10 +70,10 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
     def test_compact_formatter_preserves_scalar_bytes_and_container_kinds(self):
         # Local formatter contract, never a newly manufactured native golden.
         from decimal import Decimal
-        from yadinassi.serialization import value_to_string_internal
-        from yadinassi.structures import BSLStructure
-        from yadinassi.values import BSLArray, NULL
-        vm = Interpreter()
+        from yadinassi.formats.storage.serialization import value_to_string_internal
+        from yadinassi.collections.structures import BSLStructure
+        from yadinassi.types.values import BSLArray, NULL
+        vm = Interpreter(allow_extensions=True)
         vm.execute(helpers())
         scalars = [None, NULL, False, Decimal(0), '0', '',
                    'quotes " and delimiters ;[]= with \\n and CR\rLF\nTAB\t Я😀']
@@ -91,7 +91,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         self.assertEqual(len(set(representations)), 3)
 
         # Actual controls and their literal escape spellings must never collide.
-        from yadinassi.serialization import value_from_string_internal
+        from yadinassi.formats.storage.serialization import value_from_string_internal
         pairs = ['\n', r'\n', '\r', r'\r', '\\', '"', ';[]=', '\t', r'\t', '\x00']
         encoded = []
         for value in pairs:
@@ -171,7 +171,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
 
     def test_unknown_and_bad_expressions_do_not_abort_next_probe(self):
         output = []
-        vm = Interpreter(output=output.append)
+        vm = Interpreter(output=output.append, allow_extensions=True)
         vm.register_function('UnserializableHost', lambda: object())
         vm.execute(helpers() + '''
 НаблюдатьТипы("missing", "NoSuchFunction()");
@@ -189,7 +189,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         result = vm.execute('СнимокТипов(12.5)')
         self.assertEqual(result.get('Write'), '{"N",12.5}')
         self.assertTrue(result.get('ReadWriteEqual'))
-        self.assertNotIn('readwrite', result._items)  # Equal stream is represented once.
+        self.assertFalse(result.property('ReadWrite'))  # Equal stream is represented once.
         self.assertTrue(result.get('TypeReadEqual'))
         self.assertEqual(result.get('ReadType'), result.get('Type'))
         self.assertTrue(result.get('Equal'))
@@ -197,8 +197,8 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
 
     def test_qualifier_snapshot_retains_exact_differing_inverse_from_owner_evidence(self):
         import re
-        from yadinassi.serialization import value_to_string_internal
-        from yadinassi.values import BSLType
+        from yadinassi.formats.storage.serialization import value_to_string_internal
+        from yadinassi.types.values import BSLType
         # Exact fields of the genuine compact owner record, not generated goldens.
         native = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
         records = re.findall(r'^types\.number\.default\.en: \[(.*)\]$', native, re.MULTILINE)
@@ -220,11 +220,11 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         # Synthetic stage failure/change is a formatter observability test,
         # not a claim about a new native TypeDescription conversion.
         _, supplement = split_type_supplement(historical_source())
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute(supplement.split(TYPES_SUPPLEMENT_BODY_START, 1)[0])
         ordinary = vm.execute('КвалификаторыОписанияДополнения(New TypeDescription("Number"))')
         self.assertTrue(ordinary.get('ReadWriteEqual'))
-        self.assertNotIn('readwrite', ordinary._items)
+        self.assertFalse(ordinary.property('ReadWrite'))
         vm.register_function('ЗначениеИзСтрокиВнутр', lambda text: None)
         changed = vm.execute('КвалификаторыОписанияДополнения(New TypeDescription("Number"))')
         self.assertEqual(changed.get('Write'), ordinary.get('Write'))
@@ -232,7 +232,7 @@ class TypeDescriptionCheckpointTests(unittest.TestCase):
         self.assertEqual(changed.get('ReadWrite'), '{"U"}')
 
     def test_snapshot_failed_stages_do_not_prevent_record(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.register_function('UnknownHost', lambda: object())
         vm.execute(helpers())
         result = vm.execute('СнимокТипов(UnknownHost())')
@@ -311,11 +311,13 @@ class SupplementalTypesGateTests(unittest.TestCase):
 class StrictNativeGateTests(unittest.TestCase):
     def test_comparator_has_reviewed_source_bound_historical_replay(self):
         actual = (ROOT / 'tests/test_native_outputs.py').read_bytes().replace(b'\r\n', b'\n')
-        # Reviewed migration preserves every captured output byte and binds the
-        # complete historical source; live Docker compares all current cases.
-        # Reviewed 9b91a5eb: only the authenticated replay timeout and runner
-        # tests changed; selector, comparator, replay sources and goldens did not.
-        self.assertEqual(hashlib.sha256(actual).hexdigest(), '0c15d12b3ae06ef123fdf4bd1a0e52321a3458d2d2005f7aa4fe38614b838937')
+        # Reviewed associative-order layer: only root historical collections,
+        # authenticated source AND original native fixture, twelve named codec
+        # fields. Rejection falls through to the unchanged raw comparison.
+        # Pin the entire reviewed runner, including the layer's exact position.
+        # Native output fixtures and their historical provenance are unchanged.
+        self.assertEqual(hashlib.sha256(actual).hexdigest(),
+                         '544b2ac220c18e00e247c1caa92c3eb5bc378efaa9685a0f65c2d93d7f56df40')
 
     def test_frozen_full_native_comparator_has_reviewed_historical_replay(self):
         text = (ROOT / 'scripts/smoke_test.py').read_text(encoding='utf-8')

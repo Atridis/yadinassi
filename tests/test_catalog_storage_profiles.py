@@ -7,9 +7,9 @@ import tempfile
 import unittest
 from uuid import uuid4
 
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
-from yadinassi.configuration_xml import import_inert_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_xml import import_inert_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from test_catalog_atomic_numbering import numbered_configuration
 from test_inert_configuration_sources import sources, CATALOG
 
@@ -39,7 +39,9 @@ class CatalogStorageProfileTests(unittest.TestCase):
                 outcome = tx.commit_outcomes()[0]
             finally: tx.close()
             self.assertEqual(outcome.code, '01')
-            self.assertEqual(backend.resolve_write_outcome(operation,draft),outcome)
+            with closing(backend.begin_read()) as tx:
+                saved = tx.read_catalog(draft.key)
+                self.assertEqual((saved.code, saved.revision), (outcome.code, outcome.revision))
         finally: backend.close()
 
     def test_inert_v5_has_no_sequence_section_registry_or_record_outcomes(self):
@@ -51,10 +53,9 @@ class CatalogStorageProfileTests(unittest.TestCase):
             self.assertFalse(caps.catalog_write_outcomes)
             self.assertFalse(caps.catalog_tabular_sections)
             self.assertEqual(backend.read_form_source(CATALOG).catalog_name, 'Items')
-            with self.assertRaisesRegex(BackendError, 'unsupported'):
-                backend.resolve_write_outcome(uuid4(), None)
             with closing(sqlite3.connect(path)) as db:
                 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertNotIn('commit_receipt', tables)
             self.assertNotIn('catalog_sequence',tables)
             self.assertNotIn('catalog_section_storage_map',tables)
             self.assertNotIn('catalog_section_field_storage_map',tables)

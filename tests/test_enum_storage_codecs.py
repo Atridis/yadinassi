@@ -6,14 +6,14 @@ import json
 import unittest
 from uuid import UUID
 
-from yadinassi import sqlite_catalog as codec
-from yadinassi.accumulation_movements import (
+from yadinassi.db.sqlite import sqlite_catalog as codec
+from yadinassi.db.registers.accumulation_movements import (
     AccumulationRegisterSchema, AccumulationMovementRow, AccumulationDirection,
     AccumulationReplacement, validate_schema, validate_replacement)
-from yadinassi.catalog_backend import BackendError, FieldSchema, CatalogSchema
-from yadinassi.document_backend import DocumentKey
-from yadinassi.enum_storage_values import EnumKey, EnumValueDomain
-from yadinassi.sqlite_accumulation_movements import schema_data
+from yadinassi.db.catalog.catalog_backend import BackendError, FieldSchema, CatalogSchema
+from yadinassi.db.document.document_backend import DocumentKey
+from yadinassi.db.metadata.enum_storage_values import EnumKey, EnumValueDomain
+from yadinassi.db.sqlite.sqlite_accumulation_movements import schema_data
 from test_enum_storage_values import DB, OTHER_DB, UNITS, STATES, PIECE, definitions, Hostile
 
 

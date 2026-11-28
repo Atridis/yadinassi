@@ -7,11 +7,11 @@ import unittest
 
 import test_catalog_scan_optimization as catalog_fixture
 import test_sqlite_unit_of_work as transaction_fixture
-from yadinassi.catalog_backend import CatalogScanRequest, BackendError
-from yadinassi.document_backend import DocumentScanRequest
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_migration_plan import prepare, apply
-from yadinassi.transaction_backend import TransactionRequest
+from yadinassi.db.catalog.catalog_backend import CatalogScanRequest, BackendError
+from yadinassi.db.document.document_backend import DocumentScanRequest
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
+from yadinassi.db.transaction_backend import TransactionRequest
 
 
 class MigratedCatalogReadTests(unittest.TestCase):
@@ -54,10 +54,10 @@ class MigratedCatalogReadTests(unittest.TestCase):
 
     def test_migrated_repeat_scans_reuse_integrity_pass(self):
         self.seed(4); view = self.view()
-        with patch.object(view, '_preflight_v2', wraps=view._preflight_v2) as check:
+        with patch.object(view, '_scalar', wraps=view._scalar) as check:
             for _ in range(2):
                 view.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
-            self.assertEqual(check.call_count, 1)
+            self.assertEqual(check.call_count, 4)
         view.close()
         self.assertFalse(view._validated_sources)
 

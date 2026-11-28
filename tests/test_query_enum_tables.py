@@ -2,21 +2,23 @@
 from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
-import sqlite3
+import sys
 import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.query_packages import BSLTempTablesManager
-from yadinassi.values import NULL, BSLType
-from yadinassi.sqlite_catalog import _View
-from yadinassi.sqlite_documents import DocumentView
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.query.query_packages import BSLTempTablesManager
+from yadinassi.types.values import NULL, BSLType
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_documents import DocumentView
 import test_inventory_enum_queries as enum_fixtures
 
 
 class EnumTableTests(unittest.TestCase):
-    setUp = enum_fixtures.InventoryEnumQueryTests.setUp
+    def setUp(self):
+        enum_fixtures.InventoryEnumQueryTests.setUp(self, allow_extensions=True)
 
     def q(self, text, table=None, manager=None, vm=None):
         q = (vm or self.vm).execute('New Query')
@@ -45,6 +47,50 @@ class EnumTableTests(unittest.TestCase):
             self.assertIsNone(r._columns[0].enum_descriptor)
             self.assertEqual(len(r.unload().rows), 3)
 
+    def test_enum_preparation_proves_namespace_once_per_column_not_per_row(self):
+        from yadinassi.db.metadata.enum_storage_binding import EnumStorageBinding
+        from yadinassi.db.query.query_enum_tables import prepare_tables
+
+        def count(copies):
+            source = ' UNION ALL '.join(['SELECT Unit FROM Catalog.Products'] * copies)
+            table = self.q(source).execute().unload()
+            query = self.q('SELECT Unit FROM &Input', table)
+            code = EnumStorageBinding._require_namespace.__code__
+            preparation = prepare_tables.__code__
+            visits = 0
+            def trace(frame, event, arg):
+                nonlocal visits
+                if event == 'call' and frame.f_code is code:
+                    parent = frame.f_back
+                    while parent is not None:
+                        if parent.f_code is preparation:
+                            visits += 1
+                            break
+                        parent = parent.f_back
+            previous = sys.getprofile()
+            sys.setprofile(trace)
+            try:
+                rows = query.execute()._rows
+            finally:
+                sys.setprofile(previous)
+            self.assertEqual(len(rows), 3 * copies)
+            self.assertTrue(all(any(row[0] is value for value in values) for row in rows))
+            return visits
+
+        values = (self.piece, self.empty, self.vm.execute('Enums.Units.Pack'))
+        small = count(1)
+        self.assertGreater(small, 0)
+        self.assertEqual(count(8), small)
+
+    def test_temp_rows_reject_impostor_before_unused_column_drifts_out_of_scope(self):
+        manager = BSLTempTablesManager()
+        self.q('SELECT Unit INTO Saved FROM Catalog.Products', manager=manager).execute()
+        saved = manager._tables['saved']
+        manager._tables['saved'] = replace(saved, rows=((replace(self.piece),),) + saved.rows[1:])
+        with self.assertRaises(BackendError):
+            self.q('SELECT 1 AS N FROM Saved', manager=manager).execute()
+        self.assertIsNone(self.context.backend._active)
+
     def test_unload_no_scope_or_lease_and_no_io(self):
         r = self.q('SELECT Unit FROM Catalog.Products').execute()
         with patch.object(self.context.backend, 'begin_read', side_effect=AssertionError('point read')):
@@ -68,8 +114,13 @@ class EnumTableTests(unittest.TestCase):
 
     def test_forged_equal_enum_instance_rejected(self):
         t = self.table()
-        c = t.columns.items[1]
-        t.rows[0].cells[c] = replace(self.piece)
+        forged = replace(self.piece)
+        self.assertEqual(forged,self.piece)
+        self.assertIsNot(forged,self.piece)
+        with self.assertRaises(BackendError): t.rows[0].set_member('Unit', forged)
+        # Simulate a malformed table received from Python. Public row cells
+        # cannot be used to bypass their own canonical enum check.
+        list.__setitem__(t.rows[0], t._storage.schema.offset('Unit'), forged)
         with self.assertRaises(BackendError): self.q('SELECT Code FROM &Input WHERE Code="missing"', t).execute()
 
     def test_empty_table_keeps_enum_domain(self):
@@ -85,8 +136,8 @@ class EnumTableTests(unittest.TestCase):
         self.assertEqual(r._rows, ((NULL,), (self.empty,)))
 
     def test_array_and_external_parameters_snapshot_once(self):
-        from yadinassi.query_sources import _snapshot
-        import yadinassi.query_sources as sources
+        from yadinassi.db.query.query_sources import _snapshot
+        import yadinassi.db.query.query_sources as sources
         t = self.table()
         with patch.object(sources, '_snapshot', wraps=_snapshot) as snapshot:
             r = self.q('SELECT Unit INTO A FROM &Input; SELECT Unit FROM A '
@@ -114,7 +165,7 @@ class EnumTableTests(unittest.TestCase):
                 patch.object(backend, 'begin_read', wraps=backend.begin_read) as base_read:
             r = self.q('SELECT Ref AS Item,Unit FROM Catalog.Products', vm=other).execute().unload()
         self.assertEqual(query_view.call_count, 1)
-        self.assertEqual(base_read.call_count, 1)
+        self.assertEqual(base_read.call_count, 0)
         self.assertEqual(len(r.rows), 3)
 
     def test_external_and_persistent_reads_share_one_view(self):
@@ -123,7 +174,7 @@ class EnumTableTests(unittest.TestCase):
                 patch.object(backend, 'begin_read', wraps=backend.begin_read) as base_read:
             self.q('SELECT T.Unit FROM &Input AS T JOIN Catalog.Products AS P ON T.Item=P.Ref', t).execute()
         self.assertEqual(query_view.call_count, 1)
-        self.assertEqual(base_read.call_count, 1)
+        self.assertEqual(base_read.call_count, 0)
 
     def test_failed_package_rolls_back_destroy(self):
         m = BSLTempTablesManager()
@@ -156,12 +207,21 @@ class EnumTableTests(unittest.TestCase):
         m.close(); m.close()
         self.assertEqual(m._tables, {})
 
-    def test_external_empty_generation_change_fails(self):
-        t = self.q('SELECT Unit FROM Catalog.Products WHERE Code="missing"').execute().unload()
-        with closing(sqlite3.connect(self.context.path)) as connection:
-            with connection:
-                connection.execute('UPDATE database_info SET generation=generation+1')
-        with self.assertRaises(BackendError): self.q('SELECT Unit FROM &Input', t).execute()
+    def test_empty_enum_table_cannot_cross_database_reopen(self):
+        text = 'SELECT Unit FROM Catalog.Products WHERE Code="missing"'
+        previous = self.q(text).execute().unload()
+        self.assertFalse(previous.rows)
+        # Even with the same SQLite file and declarations, a new open DB
+        # owner must not acquire the previous namespace through its type.
+        self.vm.close()
+        self.context.close()
+        with closing(SQLiteDBContext(self.path)) as context:
+            with closing(Interpreter(database_context=context)) as vm:
+                local = self.q(text, vm=vm).execute().unload()
+                self.assertEqual(self.q('SELECT Unit FROM &Input', local, vm=vm).execute()._rows, ())
+                with self.assertRaises(BackendError):
+                    self.q('SELECT Unit FROM &Input', previous, vm=vm).execute()
+                self.assertIsNone(context.backend._active)
 
     def test_warm_metadata_corruption_refused_before_scan(self):
         item = self.vm._catalogs._metadata._items['products']
@@ -169,32 +229,39 @@ class EnumTableTests(unittest.TestCase):
         with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('scan')):
             with self.assertRaises(BackendError): self.q('SELECT Unit FROM Catalog.Products').execute()
 
-    def test_cold_metadata_failure_leaves_no_partial_cache(self):
+    def test_catalog_enum_projection_does_not_prepare_unused_documents(self):
+        other = Interpreter(database_context=self.context); self.addCleanup(other.close)
+        with patch.object(DocumentView, 'documents', side_effect=AssertionError('unused documents')):
+            self.assertEqual(len(self.q('SELECT Unit FROM Catalog.Products', vm=other).execute()._rows), 3)
+        self.assertIsNotNone(other._catalogs._metadata._items)
+        self.assertIsNone(other._documents._metadata._items)
+
+    def test_cold_requested_document_failure_leaves_its_cache_unpublished(self):
         other = Interpreter(database_context=self.context); self.addCleanup(other.close)
         with patch.object(DocumentView, 'documents', side_effect=ValueError('metadata failure')):
             with self.assertRaisesRegex(ValueError, 'metadata failure'):
-                self.q('SELECT Unit FROM Catalog.Products', vm=other).execute()
+                self.q('SELECT Number FROM Document.Missing', vm=other).execute()
         self.assertIsNone(other._catalogs._metadata._items)
         self.assertIsNone(other._documents._metadata._items)
 
     def test_document_wrapper_identity_must_match_underlying_view(self):
         original = self.context.backend.begin_query_read
-        def opened():
-            view = original(); view.configuration_generation += 1; return view
+        def opened(**kwargs):
+            view = original(**kwargs); view.configuration_generation += 1; return view
         with patch.object(self.context.backend, 'begin_query_read', opened):
             with self.assertRaises(BackendError): self.q('SELECT Unit FROM Catalog.Products').execute()
 
     def test_no_query_scope_retained_by_published_columns(self):
         m = BSLTempTablesManager()
         r = self.q('SELECT Unit INTO Saved FROM Catalog.Products; SELECT Unit FROM Saved', manager=m).execute()
-        from yadinassi.query_enum_tables import _EnumBinding
+        from yadinassi.db.query.query_enum_tables import _EnumBinding
         for c in (r._columns[0], m._tables['saved'].columns[0]):
             self.assertIsNone(c.enum_descriptor)
             self.assertIs(type(c.reference_binding), _EnumBinding)
             self.assertFalse(hasattr(c.reference_binding, '_scope'))
 
     def test_budgets_fail_before_publish(self):
-        from yadinassi import query_packages
+        from yadinassi.db.query import query_packages
         m = BSLTempTablesManager()
         with patch.object(query_packages, 'MAX_CELLS', 2):
             with self.assertRaises(ValueError):
@@ -222,7 +289,7 @@ class EnumTableTests(unittest.TestCase):
                 self.q('SELECT Amount FROM InformationRegister.Unknown', vm=other).execute()
 
     def test_transaction_query_uses_one_registered_lease(self):
-        from yadinassi.database_transactions import Transaction
+        from yadinassi.db.database_transactions import Transaction
         original = Transaction.read_lease; calls = []
         def read(tx):
             calls.append(tx); return original(tx)
@@ -233,7 +300,7 @@ class EnumTableTests(unittest.TestCase):
         self.assertEqual(calls[0]._read_leases, {})
 
     def test_registered_lease_rejects_forgery_and_closed_identity(self):
-        from yadinassi.database_transactions import require_registered_query_lease
+        from yadinassi.db.database_transactions import require_registered_query_lease
         def probe():
             wrapped = self.context.backend.begin_query_read(); lease = wrapped._view
             self.assertIs(require_registered_query_lease(self.context.backend, lease), lease)
@@ -247,7 +314,7 @@ class EnumTableTests(unittest.TestCase):
         self.vm.execute('BeginTransaction(); Probe(); RollbackTransaction();')
 
     def test_registered_lease_rejects_wrong_execution_token(self):
-        import yadinassi.database_transactions as tx
+        import yadinassi.db.database_transactions as tx
         def probe():
             wrapped = self.context.backend.begin_query_read()
             token = tx._execution.set(object())
@@ -259,11 +326,11 @@ class EnumTableTests(unittest.TestCase):
         self.vm.execute('BeginTransaction(); Probe(); RollbackTransaction();')
 
     def test_failed_transaction_lease_cleanup_retains_owner_until_retry(self):
-        import yadinassi.database_transactions as tx
-        from yadinassi.sqlite_catalog import _close_document_scan
+        import yadinassi.db.database_transactions as tx
+        from yadinassi.db.sqlite.sqlite_catalog import _close_document_scan
         def probe():
             current = tx.current(self.context.backend)
-            with patch('yadinassi.sqlite_catalog._close_document_scan', wraps=_close_document_scan) as cleanup:
+            with patch('yadinassi.db.sqlite.sqlite_catalog._close_document_scan', wraps=_close_document_scan) as cleanup:
                 wrapped = self.context.backend.begin_query_read(); lease = wrapped._view
                 entry = current._read_leases[id(lease)]
                 cleanup.side_effect = ValueError('cleanup failure')
@@ -280,7 +347,7 @@ class EnumTableTests(unittest.TestCase):
         self.vm.execute('BeginTransaction(); Probe(); RollbackTransaction();')
 
     def test_lease_registration_failure_does_not_leak_count(self):
-        import yadinassi.database_transactions as tx
+        import yadinassi.db.database_transactions as tx
         class Broken(dict):
             def __setitem__(self, key, value): raise MemoryError('allocation')
         def probe():

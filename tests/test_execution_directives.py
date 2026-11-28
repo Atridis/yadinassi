@@ -1,17 +1,20 @@
 """Bounded logical client/server calls; predictions are not native captures."""
 from decimal import Decimal
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
 from yadinassi import Interpreter, BSLError
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
 
 
 class ExecutionDirectiveTests(unittest.TestCase):
     def setUp(self):
         self.messages = []
-        self.vm = Interpreter(self.messages.append)
+        self.vm = Interpreter(self.messages.append, allow_extensions=True)
         self.vm.register_function('Context', lambda: self.vm.execution_context)
 
     def test_bilingual_server_calls_and_context_restoration(self):
@@ -63,8 +66,11 @@ Function AlsoInvisible() Return 0; EndFunction
 Message(S());
 ''')
         self.assertEqual(self.messages, ['42'])
-        self.assertEqual(set(self.vm.server_routines), {'s'})
-        self.assertNotIn('invisible', self.vm.routines)
+        for name in ('Invisible', 'AlsoInvisible'):
+            with self.subTest(name=name), self.assertRaisesRegex(
+                    BoundaryViolation, r'unregistered host service: (?i:' + re.escape(name) + r')$'):
+                self.vm.execute(f'Message({name}());')
+        self.assertEqual(self.messages, ['42'])
 
     def test_nested_server_calls_and_recursion_stay_server(self):
         self.vm.execute('''
@@ -109,11 +115,9 @@ Message(Outer(40));
         self.vm.execute('Function F() Return "client"; EndFunction')
         self.vm.execute('&AtServer\nFunction F() Return "server"; EndFunction')
         self.assertEqual(self.vm.execute('F()'), 'server')
-        self.assertNotIn('f', self.vm.routines)
         self.vm.execute('&AtClient\nFunction F() Return "client-again"; EndFunction')
         self.assertEqual(self.vm.execute('F()'), 'client-again')
-        self.assertNotIn('f', self.vm.server_routines)
-        with self.assertRaisesRegex(BSLError, 'Одноименные'):
+        with self.assertRaisesRegex(PythonDirectUnsupported, 'duplicate routine declarations'):
             self.vm.execute('Message("bad"); Function F() Return 0; EndFunction\n'
                             '&AtServer\nFunction F() Return 1; EndFunction')
         self.assertEqual(self.messages, [])
@@ -131,9 +135,10 @@ Message(Outer(40));
 EndProcedure
 #EndIf
 """)
-                self.assertNotIn('s', self.vm.server_routines)
-                with self.assertRaises(BSLError):
+                with self.assertRaisesRegex(BoundaryViolation, r'unregistered host service: (?i:s)$'):
                     self.vm.execute('S();')
+                self.assertEqual(self.vm.execution_context, 'client')
+                self.assertEqual(self.messages, [])
 
     def test_server_to_client_denied_before_argument_effects(self):
         self.vm.execute('''
@@ -176,6 +181,25 @@ Counter = 42; Message(S()); Message(Counter);
         with self.assertRaisesRegex(BSLError, 'без Знач'):
             self.vm.execute('S(Effect());')
         self.assertEqual(calls, [])
+
+    def test_prepared_call_checks_current_crossing_before_actuals(self):
+        for local_signature in ('X', 'Val X'):
+            with self.subTest(local_signature=local_signature):
+                trace = []
+                self.vm.register_function('Effect', lambda: trace.append('actual') or 1)
+                self.vm.execute(f'Procedure Change({local_signature}) X=2; EndProcedure')
+                prepared = self.vm.prepare('Change((Effect()));')
+                self.vm.execute_prepared(prepared)
+                self.assertEqual(trace, ['actual'])
+
+                self.vm.execute('&AtServer\nProcedure Change(Val X) X=2; EndProcedure')
+                self.vm.execute_prepared(prepared)
+                self.assertEqual(trace, ['actual', 'actual'])
+
+                self.vm.execute('&AtServer\nProcedure Change(X) X=2; EndProcedure')
+                with self.assertRaisesRegex(BSLError, 'без Знач'):
+                    self.vm.execute_prepared(prepared)
+                self.assertEqual(trace, ['actual', 'actual'])
 
     def test_scalar_values_and_val_rebinding(self):
         self.vm.execute('''

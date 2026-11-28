@@ -1,0 +1,209 @@
+"""Typed, read-only independent register queries over a logical read snapshot.
+
+Rows have a complete dimension key, not a fabricated Ref or owner. No virtual
+period tables, recorder semantics, native parity or implicit scalar conversion.
+"""
+from uuid import UUID
+
+from . import query_parser as syntax
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.registers.register_backend import RegisterKey, RegisterRevision, RegisterRecord, RegisterScanRequest, RegisterPage
+
+
+def needs_registers(statements):
+    return any(arm.family == 'information_register' or any(j.source.family == 'information_register' for j in arm.joins)
+               for arm in syntax.selects(statements))
+
+
+def register_field(manager, field, source_alias):
+    from .queries import _Column
+    if len(field.parts) == 2 and field.parts[0].casefold() != source_alias.casefold():
+        raise ValueError('Unknown query source qualifier')
+    name = 'period' if manager._schema.periodic and field.parts[-1].casefold() == 'период' else field.parts[-1].casefold()
+    matches = [f for f in manager._schema.fields if f.name.casefold() == name]
+    if len(matches) != 1: raise ValueError('Unknown information-register query field')
+    item = matches[0]
+    identity = (manager._catalogs._metadata, item.target_catalog_id) if item.kind == 'catalog_ref' else None
+    return _Column('', item.identity, item.kind, item.qualifiers, item, reference_identity=identity)
+
+
+def _record_values(manager, record, view, seen, digests, budget):
+    from .queries import _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
+    from .relational_queries import _key
+    schema = manager._schema
+    if (type(record) is not RegisterRecord or type(record.key) is not RegisterKey
+            or type(record.key.database_id) is not UUID or type(record.key.register_id) is not UUID
+            or record.key.database_id != view.database_id or record.key.register_id != schema.identity
+            or type(record.key.dimensions) is not tuple or len(record.key.dimensions) != len(schema.key_fields)
+            or type(record.values) is not tuple or len(record.values) != len(schema.resources) + len(schema.attributes)
+            or type(record.revision) is not RegisterRevision
+            or type(record.revision.database_id) is not UUID or type(record.revision.register_id) is not UUID
+            or type(record.revision.configuration_generation) is not int
+            or (record.revision.database_id, record.revision.configuration_generation, record.revision.register_id)
+                != (view.database_id, view.configuration_generation, schema.identity)
+            or type(record.revision.key_digest) is not str or len(record.revision.key_digest) != 64
+            or any(c not in '0123456789abcdef' for c in record.revision.key_digest)
+            or type(record.revision.token) is not str or not 1 <= len(record.revision.token) <= 19
+            or not record.revision.token.isascii() or not record.revision.token.isdecimal()
+            or not 1 <= int(record.revision.token) < 2**63
+            or str(int(record.revision.token)) != record.revision.token):
+        raise BackendError('integrity')
+    if schema.periodic:
+        from yadinassi.db.registers.periodic_information_registers import storage_period
+        if storage_period(record.key.dimensions[0],schema.periodicity)!=record.key.dimensions[0]: raise BackendError('integrity')
+    values = tuple(_section_value(manager, f, v)
+                   for f, v in zip(schema.fields, record.key.dimensions + record.values))
+    # Storage key identity is exact, while query string comparisons still use
+    # the existing casefold policy. Case-distinct dimension keys are valid rows.
+    key = tuple(('string', v) if type(v) is str else _key(v) for v in values[:len(schema.key_fields)])
+    if key in seen or record.revision.key_digest in digests: raise BackendError('integrity')
+    seen.add(key); digests.add(record.revision.key_digest)
+    budget[0] += len(values)
+    budget[1] += sum(len(v) for v in values if type(v) is str)
+    if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
+        raise ValueError('Query input resource limit exceeded')
+    return dict(zip((f.identity for f in schema.fields), values))
+
+
+def load_register(manager, columns, view, budget, *, source=None, parameters=None, condition=None):
+    manager._check_view(view)
+    rows, seen, digests, cursors = [], set(), set(), set()
+    if source is not None and source.section is not None:
+        from yadinassi.temporal.dates import _parts
+        from yadinassi.db.registers.periodic_information_registers import moment
+        boundary=moment(parameters[source.period_boundary.name.casefold()])
+        # Validate and charge the entire historical source before deriving the
+        # slice, so projection and edge reduction do not bypass query budgets.
+        records=[];continuation=None;historical_count=0
+        if condition is not None: condition.require_current(manager)
+        while True:
+            page=view.scan_register(manager._schema.identity,RegisterScanRequest(1000,continuation))
+            if type(page) is not RegisterPage or type(page.rows) is not tuple or len(page.rows)>1000:
+                raise BackendError('integrity')
+            for record in page.rows:
+                values=_record_values(manager,record,view,seen,digests,budget)
+                historical_count += 1
+                if condition is None or condition.matches(values): records.append(record)
+                if historical_count>syntax.MAX_ROWS: raise ValueError('Query input row limit exceeded')
+            if page.continuation is None: break
+            if not page.rows or type(page.continuation) is not str or len(page.continuation)!=32 or page.continuation in cursors: raise BackendError('integrity')
+            continuation=page.continuation;cursors.add(continuation)
+        from yadinassi.db.registers.periodic_information_registers import edge_records
+        records=edge_records(records,manager._schema,_parts(boundary),source.section=='first')
+        # Conversion was validated above; do not charge rows a second time.
+        from .queries import _section_value
+        for record in records:
+            values={f.identity:_section_value(manager,f,v) for f,v in zip(manager._schema.fields,record.key.dimensions+record.values)}
+            rows.append(tuple(values[c.field] for c in columns))
+        return rows
+    continuation = None
+    while True:
+        page = view.scan_register(manager._schema.identity, RegisterScanRequest(1000, continuation))
+        if (type(page) is not RegisterPage or type(page.rows) is not tuple or len(page.rows) > 1000
+                or (page.continuation is not None and (type(page.continuation) is not str
+                    or len(page.continuation) != 32 or page.continuation in cursors))):
+            raise BackendError('integrity')
+        for record in page.rows:
+            values = _record_values(manager, record, view, seen, digests, budget)
+            rows.append(tuple(values[column.field] for column in columns))
+            if len(rows) > syntax.MAX_ROWS: raise ValueError('Query input row limit exceeded')
+        if page.continuation is None: return rows
+        if not page.rows: raise BackendError('integrity')
+        continuation = page.continuation
+        cursors.add(continuation)
+
+
+
+def try_ordered_register(plan, view, budget, projection, condition):
+    """Materialize a bounded native ORDER/TOP page from the exact register port."""
+    from yadinassi.db.catalog.catalog_backend import CatalogOrder
+    from yadinassi.db.registers.information_registers import BSLInformationRegisterManager
+    from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
+    columns, project = projection
+    manager = plan.managers[0]
+    provider = getattr(view,'ordered_register_records',None)
+    if provider is None or type(manager) is not BSLInformationRegisterManager:
+        return None
+    orders = {}
+    for field, descending in plan.orders:
+        orders.setdefault(field.column.field, descending)
+    if not 1<=len(orders)<=16:
+        return None
+    manager._check_view(view)
+    order = tuple(CatalogOrder(field, descending) for field, descending in orders.items())
+    filtered = condition is not None
+    if filtered:
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        from .query_ordered_predicates import bind_scalar_predicate
+        if (type(view) is not DocumentView or not view._view._query_language
+                or view._view._operation_id is not None
+                or any(c.kind in ('catalog_ref','document_ref','enum_ref') for c in plan.fields[0])):
+            return None
+        predicate = bind_scalar_predicate(plan,condition)
+        if predicate is None: return None
+        page = provider(manager._schema.identity, order, plan.query.limit, predicate=predicate)
+    else:
+        page = provider(manager._schema.identity, order, plan.query.limit)
+    if page is None:
+        return None
+    manager._check_view(view)
+    if (type(page) is not RegisterPage or type(page.rows) is not tuple
+            or len(page.rows)>plan.query.limit or page.continuation is not None):
+        raise BackendError('integrity')
+    if budget is None: budget = [0,0]
+    rows, seen, digests, text = [], set(), set(), 0
+    for record in page.rows:
+        values = _record_values(manager,record,view,seen,digests,budget)
+        row = project(values[column.field] for column in columns)
+        text += sum(len(value) for value in row if type(value) is str)
+        rows.append(row)
+        if len(rows)*len(plan.columns)>_MAX_CELLS or text>_MAX_RESULT_TEXT:
+            raise ValueError('Query result resource limit exceeded')
+    return BSLQueryResult(plan.columns,tuple(rows))
+
+
+def try_count_register(plan,view,budget):
+    """Only COUNT(*) of a flat independent register on the SQLite query lease."""
+    q=plan.query
+    if (type(q) is not syntax.Select or q.family!='information_register'
+            or len(plan.sources)!=1 or q.section is not None
+            or q.temporary or q.external or q.derived is not None or q.into is not None
+            or q.virtual_condition is not None or q.joins or q.groups or q.predicate is not None
+            or q.having is not None or q.order or q.distinct
+            or plan.memberships or plan.hierarchies or plan.enum_scope is not None
+            or plan.enum_binding is not None or len(plan.projections)!=1):
+        return None
+    from .relational_queries import _BoundAggregate
+    item=plan.projections[0]
+    if (type(item) is not _BoundAggregate or item.function!='count'
+            or item.field is not None or item.distinct is not False):
+        return None
+    from yadinassi.db.registers.information_registers import BSLInformationRegisterManager
+    from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend, _View
+    from yadinassi.db.sqlite.sqlite_documents import DocumentView
+    manager=plan.managers[0]
+    if type(manager) is not BSLInformationRegisterManager or type(view) is not DocumentView:
+        return None
+    raw=view._view
+    if (type(raw) is not _View or type(raw._backend) is not SQLiteCatalogBackend
+            or not raw._query_language or raw._operation_id is not None):
+        return None
+    if manager._backend is not raw._backend:
+        raise BackendError('schema_changed')
+    if raw._backend._active is not raw:
+        raise BackendError('closed')
+    manager._check_view(view)
+    from yadinassi.db.sqlite.sqlite_register_count import count_register
+    result=count_register(view._register_reader(),manager._schema)
+    if result is None:return None
+    count,text=result
+    from decimal import Decimal
+    from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
+    # The residual charges every logical field, even under COUNT(*).
+    budget[0]+=len(manager._schema.fields)*count
+    budget[1]+=text
+    if count>syntax.MAX_ROWS or (count and (budget[0]>_MAX_CELLS or budget[1]>_MAX_RESULT_TEXT)):
+        raise ValueError('Query input resource limit exceeded')
+    if _MAX_CELLS<1:
+        raise ValueError('Query result resource limit exceeded')
+    return BSLQueryResult(plan.columns,((Decimal(count),),) if q.limit else ())

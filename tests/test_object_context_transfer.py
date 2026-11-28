@@ -1,13 +1,14 @@
 """Measured object copy semantics and explicitly local fail-closed guards."""
 import unittest
 from decimal import Decimal
+from contextlib import closing
 from yadinassi import Interpreter, BSLError
-from yadinassi.values import BSLArray
-from yadinassi.structures import BSLStructure
+from yadinassi.types.values import BSLArray
+from yadinassi.collections.structures import BSLStructure
 
 class ObjectContextTransferTests(unittest.TestCase):
     def setUp(self):
-        self.messages=[]; self.vm=Interpreter(self.messages.append)
+        self.messages=[]; self.vm=Interpreter(self.messages.append, allow_extensions=True)
 
     def test_per_occurrence_copy_and_independent_packet_roots(self):
         child=BSLArray();child.add(Decimal(1));root=BSLStructure('Left,Right',child,child)
@@ -18,6 +19,70 @@ class ObjectContextTransferTests(unittest.TestCase):
         self.assertEqual(a.get('Right').items,[Decimal(1)])
         self.assertEqual(b.get('Left').items,[Decimal(1)])
         self.assertEqual(child.items,[Decimal(1)])
+
+    def test_standalone_native_array_copies_nested_occurrences_and_copyout(self):
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared), closing(Interpreter()) as vm:
+                vm.execute("Child=New Array;Child.Add(1);")
+                vm.execute("Items=New Array;")
+                vm.execute('Items.Add(New Structure("Left,Right",Child,Child));Original=Items;')
+                vm.execute("""&AtServer
+                    Function Change(A, Val B)
+                        A[0].Left.Add(7); A[0].Right.Add(8); B.Add(12); Return A;
+                    EndFunction""")
+                source = 'Result=Change(Items,Items);'
+                if prepared:
+                    vm.execute_prepared(vm.prepare(source))
+                else:
+                    vm.execute(source)
+                self.assertEqual(vm.execute('Original[0].Left.Count()'), 1)
+                self.assertEqual(vm.execute('Child.Count()'), 1)
+                self.assertEqual(vm.execute('Items.Count()'), 1)
+                self.assertEqual(vm.execute('Items[0].Left[1]'), 7)
+                self.assertEqual(vm.execute('Items[0].Right[1]'), 8)
+                self.assertFalse(vm.execute('(Items[0].Left = Items[0].Right)'))
+                self.assertFalse(vm.execute('(Items = Result)'))
+                vm.execute('Items[0].Left.Add(9);')
+                self.assertEqual(vm.execute('Result[0].Left.Count()'), 2)
+                self.assertEqual(vm.execution_context, 'client')
+
+    def test_standalone_native_array_uses_existing_input_packet_guards(self):
+        cases = (
+            ('Items.Add(Items);', 'циклических коллекций'),
+            ('Items.Add(New Map);', 'поддерживает скаляры'),
+            ('For I=1 To 10000 Do Items.Add(1);EndDo;', 'превышен предел размера'),
+        )
+        for setup, reason in cases:
+            with self.subTest(setup=setup):
+                output = []
+                with closing(Interpreter(output.append)) as vm:
+                    vm.execute('Items=New Array;')
+                    vm.execute(setup)
+                    vm.execute('&AtServer\nProcedure Receive(A) Message("entered");EndProcedure')
+                    original = vm.variables['items']
+                    count = vm.execute('Items.Count()')
+                    with self.assertRaisesRegex(BSLError, reason):
+                        vm.execute('Receive(Items);')
+                    self.assertEqual(output, [])
+                    self.assertIs(vm.variables['items'], original)
+                    self.assertEqual(vm.execute('Items.Count()'), count)
+                    self.assertEqual(vm.execution_context, 'client')
+
+    def test_native_array_subclass_is_not_a_standalone_packet_array(self):
+        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+
+        class HostArray(PlainArray):
+            def __iter__(self):
+                raise AssertionError('noncanonical array iteration must not run')
+
+        output = []
+        with closing(Interpreter(output.append)) as vm:
+            vm.variables['items'] = HostArray()
+            vm.execute('&AtServer\nProcedure Receive(A) Message("entered");EndProcedure')
+            with self.assertRaisesRegex(BSLError, 'поддерживает скаляры'):
+                vm.execute('Receive(Items);')
+            self.assertEqual(output, [])
+            self.assertEqual(vm.execution_context, 'client')
 
     def test_client_state_unchanged_during_server_body(self):
         seen=[]

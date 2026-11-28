@@ -5,15 +5,14 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError, CatalogDraft, CatalogKey
-from yadinassi.configuration_xml import import_demo_kinds_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
-from yadinassi.form_event_simulation import VerifiedFormDraftSession
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogDraft, CatalogKey
+from yadinassi.configuration.configuration_xml import import_demo_kinds_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.forms.form_event_simulation import VerifiedFormDraftSession
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
 from legacy_demo_fixture import legacy_demo_files
@@ -35,8 +34,8 @@ class DemoKindsStorageTests(unittest.TestCase):
     def draft(self, description='Товары'):
         return CatalogDraft(CatalogKey(self.backend.database_id, self.schema.identity, uuid4()), '', description, False, (), auto_number=True)
 
-    def save(self, draft, operation=None):
-        tx = self.backend.begin_write(operation or uuid4())
+    def save(self, draft):
+        tx = self.backend.begin_write(uuid4())
         try:
             tx.create(draft)
             return tx.commit_outcomes()[0]
@@ -95,63 +94,86 @@ class DemoKindsStorageTests(unittest.TestCase):
                 with self.assertRaises(Exception): vm.execute('Catalogs.' + name + '.CreateItem()')
         finally: context.close()
 
-    def test_source_change_blocks_new_work_but_resolves_historical_receipt(self):
-        draft = self.draft(); operation = uuid4(); self.save(draft, operation)
+    def test_source_change_blocks_new_work(self):
+        draft = self.draft()
+        self.assertEqual(self.save(draft).code, '000000001')
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.read_catalog(draft.key).description, draft.description)
         self.mutate_source()
         for action in (self.backend.begin_read, lambda: self.backend.begin_write(uuid4()),
                        lambda: self.backend.read_form_source(self.schema.identity),
                        lambda: SQLiteCatalogBackend(self.path)):
             with self.subTest(action=action), self.assertRaises(BackendError): action()
         self.assertIsNone(self.backend._active)
-        with patch.object(_View, 'create', side_effect=AssertionError('replay')), patch.object(_View, 'commit', side_effect=AssertionError('recommit')):
-            self.assertEqual(self.backend.resolve_write_outcome(operation, draft).code, '000000001')
-        self.assertIsNone(self.backend.resolve_write_outcome(uuid4(), self.draft()))
         with self.assertRaises(BackendError): self.save(self.draft())
 
     def test_generation_change_blocks_transaction(self):
-        draft = self.draft(); operation = uuid4(); self.save(draft, operation)
+        draft = self.draft()
+        self.assertEqual(self.save(draft).code, '000000001')
+        # Admit a read before changing the on-disk generation, too.
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.read_catalog(draft.key).description, draft.description)
         with closing(sqlite3.connect(self.path)) as connection, connection:
             connection.execute('UPDATE database_info SET generation=generation+1')
-        with self.assertRaisesRegex(BackendError, 'schema_changed'): self.backend.begin_write(uuid4())
-        with self.assertRaisesRegex(BackendError, 'schema_changed'): self.backend.resolve_write_outcome(operation, draft)
-        self.assertIsNone(self.backend._active)
+        for begin in (self.backend.begin_read, lambda: self.backend.begin_write(uuid4())):
+            with self.assertRaisesRegex(BackendError, 'schema_changed'):
+                begin()
+            self.assertIsNone(self.backend._active)
 
     def test_source_change_after_snapshot_before_begin_is_rejected(self):
         self.backend.read_form_source(self.schema.identity)
         self.mutate_source()
         with self.assertRaisesRegex(BackendError, 'schema_changed'): self.save(self.draft())
+        from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
+        table = quote_identifier(self.backend._layout.table_name(self.schema.identity))
         with closing(sqlite3.connect(self.path)) as connection:
-            self.assertEqual(connection.execute('SELECT COUNT(*) FROM commit_receipt').fetchone()[0], 0)
+            self.assertEqual(connection.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0], 0)
 
     def test_write_lock_covers_source_check_and_record_commit(self):
-        with self.assertRaisesRegex(BackendError, 'unsupported'): self.backend._begin(uuid4(), _receipt_only=True)
-        tx = self.backend.begin_write(uuid4())
-        try:
-            with closing(sqlite3.connect(self.path, timeout=0)) as connection:
-                with self.assertRaises(sqlite3.OperationalError):
-                    connection.execute('UPDATE database_info SET generation=generation+1')
-            tx.create(self.draft())
-            self.assertEqual(tx.commit_outcomes()[0].code, '000000001')
-        finally: tx.close()
+        draft = self.draft()
+        with closing(sqlite3.connect(self.path, timeout=0)) as competitor:
+            with closing(self.backend.begin_write(uuid4())) as tx:
+                with self.assertRaisesRegex(sqlite3.OperationalError, 'locked'):
+                    competitor.execute('UPDATE database_info SET generation=generation+1')
+                tx.create(draft)
+                with self.assertRaisesRegex(sqlite3.OperationalError, 'locked'):
+                    competitor.execute('UPDATE database_info SET generation=generation+1')
+                self.assertEqual(tx.commit_outcomes()[0].code, '000000001')
+            self.assertIsNone(self.backend._active)
+            with competitor:
+                self.assertEqual(competitor.execute(
+                    'UPDATE database_info SET generation=generation').rowcount, 1)
+        with closing(self.backend.begin_read()) as view:
+            self.assertEqual(view.read_catalog(draft.key).description, draft.description)
 
-    def test_uncertain_after_commit_resolves_once_after_reopen(self):
-        draft = self.draft(); operation = uuid4()
-        tx = self.backend.begin_write(operation); tx.create(draft)
-        tx._connection = FaultConnection(tx._connection, commit_fault='after')
-        with self.assertRaisesRegex(BackendError, 'uncertain_commit'): tx.commit_outcomes()
-        self.backend.close(); self.backend = SQLiteCatalogBackend(self.path)
-        with patch.object(_View, 'create', side_effect=AssertionError('replay')):
-            outcome = self.backend.resolve_write_outcome(operation, draft)
-        self.assertEqual(outcome.code, '000000001')
-        self.assertEqual(self.save(self.draft()).code, '000000002')
+    def interrupted_write(self, draft, fault):
+        with closing(self.backend.begin_write(uuid4())) as tx:
+            tx.create(draft)
+            connection = FaultConnection(tx._connection, commit_fault=fault)
+            tx._connection = connection
+            with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+                tx.commit_outcomes()
+            self.assertEqual(connection.commit_calls, 1)
+        self.assertIsNone(self.backend._active)
 
-    def test_uncertain_before_commit_can_retry_only_after_absence(self):
-        draft = self.draft(); operation = uuid4()
-        tx = self.backend.begin_write(operation); tx.create(draft)
-        tx._connection = FaultConnection(tx._connection, commit_fault='before')
-        with self.assertRaisesRegex(BackendError, 'uncertain_commit'): tx.commit_outcomes()
-        self.assertIsNone(self.backend.resolve_write_outcome(operation, draft))
-        self.assertEqual(self.save(draft, operation).code, '000000001')
+    def test_uncertain_after_commit_current_record_is_present_on_reopen(self):
+        draft = self.draft()
+        self.interrupted_write(draft, 'after')
+        with closing(SQLiteCatalogBackend(self.path, read_only=True)) as reader:
+            with closing(reader.begin_read()) as view:
+                record = view.read_catalog(draft.key)
+                self.assertEqual((record.code, record.description), ('000000001', draft.description))
+        self.assertEqual(self.save(self.draft('Other')).code, '000000002')
+
+    def test_uncertain_before_commit_current_record_is_absent_on_reopen(self):
+        draft = self.draft()
+        self.interrupted_write(draft, 'before')
+        with closing(SQLiteCatalogBackend(self.path, read_only=True)) as reader:
+            with closing(reader.begin_read()) as view:
+                self.assertIsNone(view.read_catalog(draft.key))
+        self.assertEqual(self.save(self.draft('Other')).code, '000000001')
+        with closing(self.backend.begin_read()) as view:
+            self.assertIsNone(view.read_catalog(draft.key))
 
     def test_read_only_form_source_without_write_authority(self):
         backend = SQLiteCatalogBackend(self.path, read_only=True)

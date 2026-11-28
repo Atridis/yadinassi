@@ -9,13 +9,14 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID
 
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi import Interpreter
-from yadinassi import query_parser as syntax
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_types import BSLCatalogReference
-from yadinassi.configuration_accumulation_references import PROFILE
-from yadinassi.configuration_profile_import import prepare_directory, create_prepared
-from yadinassi.dates import _from_parts
+from yadinassi.db.query import query_parser as syntax
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference
+from yadinassi.configuration.configuration_accumulation_references import PROFILE
+from yadinassi.configuration.configuration_profile_import import prepare_directory, create_prepared
+from yadinassi.temporal.dates import _from_parts
 
 ROOT = Path(__file__).resolve().parents[1]
 REG = 'AccumulationRegister.Stock.'
@@ -167,7 +168,7 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
         self.seed()
         for value in (empty,missing):
             for table in ('Balance','Turnovers','BalanceAndTurnovers'):
-                with self.subTest(table=table),patch('yadinassi.catalogs.BSLCatalogManager._view',side_effect=AssertionError('no existence read')):
+                with self.subTest(table=table),patch('yadinassi.db.catalog.catalogs.BSLCatalogManager._view',side_effect=AssertionError('no existence read')):
                     expected = () if table=='Turnovers' else ((Decimal(0),)*(2 if table=='BalanceAndTurnovers' else 1),)
                     self.assertEqual(self.report(table,P=value)._rows,expected)
 
@@ -245,7 +246,7 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
         for mode in ('Day','Month'):
             for table in ('Turnovers','BalanceAndTurnovers'):
                 self.assertEqual(self.report(table,mode=mode)._rows,())
-        with patch('yadinassi.queries._MAX_CELLS',1):
+        with patch('yadinassi.db.query.queries._MAX_CELLS',1):
             with self.assertRaisesRegex(ValueError,'result resource limit'):self.report()
 
     def test_derived_and_package_condition_use_single_view(self):
@@ -263,7 +264,7 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
         self.seed()
         with patch.object(syntax,'MAX_ROWS',4):
             with self.assertRaisesRegex(ValueError,'input row limit'):self.report()
-        with patch('yadinassi.queries._MAX_CELLS',49):
+        with patch('yadinassi.db.query.queries._MAX_CELLS',49):
             with self.assertRaisesRegex(ValueError,'input resource limit'):self.report()
 
     def test_explicit_condition_avoids_unrequested_generated_groups_but_where_does_not(self):
@@ -280,7 +281,8 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
         self.seed();self.report()
         key=self.vm.execute('OtherProduct')._key
         with closing(sqlite3.connect(self.path)) as db,db:
-            db.execute('UPDATE accumulation_movement SET values_json=? WHERE record_id=?',('[]',str(key.record_id)))
+            table = movement_table('accumulation', self.context.backend.accumulation_configuration.registers[0])
+            db.execute('UPDATE '+table+' SET period=? WHERE record_id=?',('00000000000000',str(key.record_id)))
         with self.assertRaises((BackendError,ValueError)):self.report()
 
     def test_unselected_zero_group_does_not_expand_legacy_turnover_admission(self):
@@ -293,11 +295,16 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
             self.query('SELECT QuantityTurnover FROM '+REG+'Turnovers(&A,&B) WHERE Product=&P')
 
     def test_query_inside_writer_observes_staging_and_rollback(self):
-        seen=[]
-        def read():seen.append(self.report()._rows)
-        self.vm.register_function('ReadScoped',read,returns_value=False)
-        self.vm.execute('BeginTransaction(); D=Move("T",P,W,Date(2024,1,5),7); ReadScoped(); RollbackTransaction();')
-        self.assertEqual(seen,[((Decimal(7),),)])
+        select = 'SELECT QuantityBalance FROM ' + REG + 'Balance(&At,Product=&P AND Warehouse=&W)'
+        self.vm.execute('BeginTransaction(); D=Move("T",P,W,Date(2024,1,5),7);'
+            'Q=New Query("'+select+';'+select+'");'
+            'Q.SetParameter("At",Date(2024,3,31,23,59,59));'
+            'Q.SetParameter("P",P);Q.SetParameter("W",W);'
+            'Results=Q.ExecuteBatch();First=Results[0].Select();Second=Results[1].Select();'
+            'First.Next();Second.Next();A=First.QuantityBalance;B=Second.QuantityBalance;'
+            'RollbackTransaction();')
+        self.assertEqual((self.vm.execute('A'), self.vm.execute('B')), (Decimal(7), Decimal(7)))
+        self.assertIsNone(self.context.backend._active)
         self.assertEqual(self.report()._rows,((Decimal(0),),))
 
     def test_reference_results_keep_owned_types_in_unload(self):

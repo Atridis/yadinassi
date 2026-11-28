@@ -14,7 +14,7 @@ import unittest
 
 from yadinassi import BSLError, Interpreter
 from yadinassi.syntax import ast
-from yadinassi.errors import BSLRuntimeError, IncompleteInput
+from yadinassi.types.errors import BSLRuntimeError, IncompleteInput
 from yadinassi.syntax.lexer import Lexer
 from yadinassi.syntax.parser import parse
 
@@ -26,7 +26,7 @@ UNSUPPORTED_BLOCK = 'Переход внутрь другого блока по�
 class GotoTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def test_bilingual_mixed_case_keywords_and_labels(self):
         self.vm.execute('''
@@ -666,31 +666,17 @@ class GotoValidationTests(unittest.TestCase):
             vm.execute_program(program)
         self.assertEqual(output, [])
 
-    def test_mutated_interpreter_routine_cannot_leak_control_flow_into_callers_labels(self):
+    def test_direct_routine_snapshot_cannot_jump_to_callers_labels_after_origin_mutation(self):
         output = []
-        # The compatibility interpreter executes a mutable public AST.
-        vm = Interpreter(output=output.append, execution_backend="interpreter")
-        vm.execute('Procedure P(Val ignored) Message("bad"); Goto ~Done; ~Done: EndProcedure')
-        vm.routines['p'].body[1].name = 'Caller'
-        with self.assertRaisesRegex(BSLError, 'Метка не определена'):
-            vm.execute('P(Message("bad argument")); ~Caller: Message("bad caller");')
-        self.assertEqual(output, [])
-        self.assertIsNone(vm.locals)
-
-
-    def test_compiled_routine_snapshot_cannot_jump_to_callers_labels_after_origin_mutation(self):
-        output = []
-        vm = Interpreter(output=output.append, execution_backend='compiled-strict')
-        vm.execute('Procedure P(Val ignored) Goto ~Done; Message("unreachable"); '
-                   '~Done: Message("routine"); EndProcedure')
-        # Admission owns a sealed snapshot. Mutating the public origin must
-        # neither change its destination nor skip the rest of either frame.
-        vm.routines['p'].body[0].name = 'Caller'
+        vm = Interpreter(output=output.append)
+        program = parse('Procedure P(Val ignored) Goto ~Done; Message("unreachable"); '
+                        '~Done: Message("routine"); EndProcedure')
+        vm.execute_program(program)
+        # Mutating the caller's AST cannot redirect an installed routine.
+        program[0].body[0].name = 'Caller'
         vm.execute('P(Message("argument")); Message("returned"); ~Caller: Message("caller");')
         self.assertEqual(output, ['argument', 'routine', 'returned', 'caller'])
         self.assertIsNone(vm.locals)
-        self.assertEqual(vm.compiled_backend_stats['active_ast_contract'], 'snapshot')
-        self.assertEqual(vm.compiled_backend_stats['interpreter_fallbacks'], 0)
 
 
 class GotoImportTests(unittest.TestCase):

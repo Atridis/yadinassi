@@ -1,9 +1,67 @@
 """Interpreter dispatch for the native-backed default-state ValueList subset."""
 
 from decimal import Decimal
+from pathlib import Path
 import unittest
 
-from yadinassi import BSLError, Interpreter
+from yadinassi import BSLError, BSLRuntimeError, Interpreter
+from tests.native_observations import extract_payload
+
+
+class NativeValueListPositionsTests(unittest.TestCase):
+    def test_positional_operations_match_all_eight_archived_records(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+        expected = (root / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
+        output = []
+        vm = Interpreter(output.append)
+        self.addCleanup(vm.close)
+        vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
+        for name in ('insert.boundaries', 'insert.coercion', 'get.access', 'get.boundaries',
+                     'move.index', 'move.invalid', 'delete.index', 'id.find'):
+            with self.subTest(name=name):
+                label = 'list.' + name
+                code, = (line for line in source.splitlines()
+                         if line.startswith(f'НаблюдатьТаблицы("{label}",'))
+                output.clear()
+                vm.execute(code)
+                self.assertEqual(len(output), 1)
+                self.assertEqual(extract_payload(output[0], 'table.' + label),
+                                 extract_payload(expected, 'table.' + label))
+
+    def test_item_index_distinguishes_foreign_item_from_invalid_values(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+        archive = (root / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
+        output = []
+        vm = Interpreter(output.append)
+        self.addCleanup(vm.close)
+        vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
+        label = 'list.indexof'
+        code, = (line for line in source.splitlines()
+                 if line.startswith(f'НаблюдатьТаблицы("{label}",'))
+        vm.execute_prepared(vm.prepare(code))
+        self.assertEqual(len(output), 1)
+        self.assertEqual(extract_payload(output[0], 'table.' + label),
+                         extract_payload(archive, 'table.' + label))
+
+    def test_foreign_item_move_matches_both_archived_records(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
+        expected = (root / 'tests/fixtures/native_windows/collections.out').read_text(encoding='utf-8-sig')
+        output = []
+        vm = Interpreter(output.append)
+        self.addCleanup(vm.close)
+        vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
+        for label in ('list.move.item', 'list.extra.foreign-move'):
+            with self.subTest(label=label):
+                code, = (line for line in source.splitlines()
+                         if line.startswith(f'НаблюдатьТаблицы("{label}",'))
+                output.clear()
+                vm.execute_prepared(vm.prepare(code))
+                self.assertEqual(len(output), 1)
+                self.assertEqual(extract_payload(output[0], 'table.' + label),
+                                 extract_payload(expected, 'table.' + label))
 
 
 class ValueListRuntimeTests(unittest.TestCase):
@@ -12,6 +70,17 @@ class ValueListRuntimeTests(unittest.TestCase):
         self.vm = Interpreter(self.output.append)
         self.vm.execute('values = New ValueList; first = values.Add(10, "first", True); '
                         'values.Добавить(20, "second", False);')
+
+    def test_add_and_insert_omit_trailing_picture_without_shifting_values(self):
+        vm = self.vm
+        vm.execute('Added=Values.Add(30,,True,);')
+        vm.execute_prepared(vm.prepare('Inserted=Values.Вставить(0,,,False,);'))
+        self.assertEqual(vm.execute('Added.Value'), Decimal(30))
+        self.assertEqual(vm.execute('Added.Presentation'), '')
+        self.assertIs(vm.execute('Added.Check'), True)
+        self.assertIsNone(vm.execute('Inserted.Value'))
+        self.assertIs(vm.execute('Inserted.Check'), False)
+        self.assertEqual(vm.execute('Values.Count()'), 4)
 
     def test_types_constructor_aliases_and_presentation(self):
         self.assertTrue(self.vm.execute('(TypeOf(values) = Type("СписокЗначений"))'))
@@ -49,6 +118,28 @@ class ValueListRuntimeTests(unittest.TestCase):
         self.assertIsNone(self.vm.execute('c.Value'))
         self.assertIs(self.vm.execute('c.Check'), False)
 
+    def test_delete_index_bounds_leave_items_and_warmed_presentation_unchanged(self):
+        # Native collections.out, table.list.delete.index, rejects -1 and
+        # Count() without deleting; table.list.string-cache.controls keeps
+        # already rendered text across that failure.
+        self.assertEqual(self.vm.execute('String(values)'), 'first; second')
+        self.vm.execute('second=values.Get(1); first.Presentation="changed";')
+        for index in ('-1', 'values.Count()'):
+            with self.subTest(index=index):
+                with self.assertRaises(BSLError):
+                    self.vm.execute(f'values.Delete({index});')
+                self.assertEqual(self.vm.execute('values.Count()'), Decimal(2))
+                self.assertIs(self.vm.execute('(values.Get(0) = first)'), True)
+                self.assertIs(self.vm.execute('(values.Get(1) = second)'), True)
+                self.assertEqual(self.vm.execute('first.GetID()'), Decimal(0))
+                self.assertEqual(self.vm.execute('second.GetID()'), Decimal(1))
+                self.assertEqual(self.vm.execute('first.Presentation'), 'changed')
+                self.assertEqual(self.vm.execute('String(values)'), 'first; second')
+        self.vm.execute('values.Delete(1);')
+        self.assertEqual(self.vm.execute('values.Count()'), Decimal(1))
+        self.assertEqual(self.vm.execute('second.GetID()'), Decimal(-1))
+        self.assertEqual(self.vm.execute('String(values)'), 'changed')
+
     def test_required_and_computed_receiver_holes_reject_before_effects(self):
         self.vm.execute('Var touches; touches = 0; '
                         'Function Touch() touches = touches + 1; Return 7; EndFunction '
@@ -70,6 +161,39 @@ class ValueListRuntimeTests(unittest.TestCase):
                      'values.AvailableValues = Undefined;', 'first.Picture = Undefined;'):
             with self.assertRaises(BSLError):
                 self.vm.execute(code)
+
+    def test_plain_list_readonly_and_missing_properties_are_catchable(self):
+        self.vm.execute(
+            'Var Touches; Touches=0; '
+            'Function Touch() Touches=Touches+1; Return 99; EndFunction'
+        )
+        cases = (
+            ('values.ТипЗначения=Touch();', 'недоступно для записи'),
+            ('values.AvailableValues=Touch();', 'недоступно для записи'),
+            ('values.UnknownMember=Touch();', 'не обнаружено'),
+            ('values.UnknownMember;', 'не обнаружено'),
+        )
+        source = 'value-list-properties.bsl'
+        for prepared in (False, True):
+            for code, reason in cases:
+                with self.subTest(prepared=prepared, code=code):
+                    program = '\n' + code
+                    plan = self.vm.prepare(program, source) if prepared else None
+                    with self.assertRaisesRegex(BSLRuntimeError, reason) as failure:
+                        if prepared:
+                            self.vm.execute_prepared(plan)
+                        else:
+                            self.vm.execute(program, source)
+                    self.assertEqual((failure.exception.source, failure.exception.line,
+                                      failure.exception.source_line), (source, 2, code))
+        self.vm.execute('Denied=False; Try values.ValueType=Touch(); '
+                        'Except Denied=True; EndTry;')
+        self.assertIs(self.vm.execute('Denied'), True)
+        self.assertEqual(self.vm.execute('Touches'), 0)
+        self.assertEqual(self.vm.execute('values.Count()'), 2)
+        self.assertIs(self.vm.execute('values.Get(0)'), self.vm.variables['first'])
+        self.assertEqual(self.vm.execute('values.ValueType.Types().Count()'), 0)
+        self.assertIsNone(self.vm.execute('values.ДоступныеЗначения'))
 
     def test_bilingual_methods_and_detached_fields(self):
         self.vm.execute('inserted = values.Вставить(0, 30); '
@@ -108,6 +232,29 @@ class ValueListRuntimeTests(unittest.TestCase):
                         'Message(Find(ErrorDescription(), "пока не поддерживается") > 0); EndTry;')
         self.assertEqual(self.output, ["Да"])
         self.assertTrue(self.vm.execute('(values.Get(0) = first)'))
+
+    def test_item_move_does_not_generalize_to_other_offsets_or_deleted_local_items(self):
+        self.vm.execute('foreign = New ValueList; foreignItem = foreign.Add(100); '
+                        'removed = values.Add(30); values.Delete(removed);')
+        for statement in ('values.Move(foreignItem, -1)', 'values.Move(foreignItem, 1.5)',
+                          'values.Move(removed, 1)', 'values.Delete(foreignItem)'):
+            with self.subTest(statement=statement):
+                with self.assertRaises(BSLError):
+                    self.vm.execute(statement + ';')
+                self.assertTrue(self.vm.execute('(values.Get(0) = first)'))
+                self.assertEqual(self.vm.execute('values.Count()'), 2)
+                self.assertTrue(self.vm.execute('(foreign.Get(0) = foreignItem)'))
+
+    def test_native_array_values_survive_copy_load_and_find_by_identity(self):
+        vm = self.vm
+        vm.execute('A=New Array; A.Add(7); B=New Array; B.Add(7); '
+                   'L=New ValueList; First=L.Add(A); Second=L.Add(B); '
+                   'Copy=L.Copy(); Loaded=New ValueList; Loaded.LoadValues(L.UnloadValues());')
+        for name, getter in (('first', 'L.FindByValue(A)'), ('second', 'L.FindByValue(B)')):
+            self.assertIs(vm.execute(getter), vm.variables[name])
+        self.assertIs(vm.execute('Copy.Get(0).Value'), vm.variables['a'])
+        self.assertIs(vm.execute('Loaded.Get(1).Value'), vm.variables['b'])
+        self.assertIsNone(vm.execute('L.FindByValue(New Array)'))
 
     def test_copy_load_unload_bilingual_dispatch(self):
         self.vm.execute('copy = values.Скопировать(); a = values.ВыгрузитьЗначения(); '

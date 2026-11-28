@@ -9,11 +9,11 @@ import gc
 import unittest
 from unittest.mock import patch
 
-from yadinassi import value_lists
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType, NULL, equal
+from yadinassi.collections import value_lists
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType, NULL, equal
 
 
 D = Decimal
@@ -494,19 +494,27 @@ class ValueListTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             next(iterator)
 
-    def test_limits_fail_before_mutation_or_id_consumption(self):
+    def test_identifier_limit_fails_before_mutation_or_id_consumption(self):
         values = base()
         before = fields(values)
-        with patch.object(value_lists, "_MAX_ITEMS", 2):
-            with self.assertRaisesRegex(ValueError, "предел ресурсов"):
+        with patch.object(value_lists, "_MAX_ID", 2):
+            with self.assertRaisesRegex(ValueError, "идентификаторов"):
                 values.add(D(30))
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "идентификаторов"):
                 values.load_values(array(D(1), D(2), D(3)))
         self.assertEqual(fields(values), before)
         self.assertEqual(values.add(D(40)).get_id(), D(2))
         with patch.object(value_lists, "_MAX_ID", 3):
             with self.assertRaisesRegex(ValueError, "идентификаторов"):
                 values.add(D(50))
+
+    def test_load_accepts_more_than_former_item_limit(self):
+        source = array()
+        source.items = [None] * 100_001
+        values = BSLValueList()
+        values.load_values(source)
+        self.assertEqual(values.count(), D(100_001))
+        self.assertIsNone(values.get(D(100_000)).value)
 
     def test_text_and_numeric_budgets_are_bounded_and_context_independent(self):
         values = base()

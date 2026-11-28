@@ -2,8 +2,8 @@
 import unittest
 from uuid import uuid5, NAMESPACE_URL
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source import import_source
-from yadinassi.source_catalog_definitions import source_catalog_definitions, catalog_definition_record
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.db.catalog.source_catalog_definitions import source_catalog_definitions, catalog_definition_record
 
 MD='http://v8.1c.ru/8.3/MDClasses'
 BASE='<Name>Items</Name><CodeType>String</CodeType><CodeLength>9</CodeLength><DescriptionLength>64</DescriptionLength><Hierarchical>false</Hierarchical><Autonumbering>false</Autonumbering><CheckUnique>true</CheckUnique><CodeSeries>WholeCatalog</CodeSeries>'

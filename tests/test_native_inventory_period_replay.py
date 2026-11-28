@@ -7,8 +7,8 @@ import tempfile
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.configuration_accumulation_references import PROFILE
-from yadinassi.configuration_profile_import import prepare_directory,create_prepared
+from yadinassi.configuration.configuration_accumulation_references import PROFILE
+from yadinassi.configuration.configuration_profile_import import prepare_directory,create_prepared
 
 ROOT=Path(__file__).resolve().parents[1]
 FIXTURE=ROOT/'tests/fixtures/native_inventory_period'
@@ -42,7 +42,7 @@ class InventoryPeriodEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as temp:
             prepared=prepare_directory(ROOT/'scripts/inventory_reference_behavior/runtime_source',profile=PROFILE)
             with closing(create_prepared(Path(temp)/'period.sqlite',prepared)) as context:
-                with closing(Interpreter(database_context=context,output=lambda text:None)) as vm:
+                with closing(Interpreter(database_context=context,output=lambda text:None, allow_extensions=True)) as vm:
                     observed=[];diagnostics=[]
                     vm.register_function('ПодробноеПредставлениеОшибки',lambda info:info.get_member('Description'))
                     vm.register_function('AccumulationEmit',lambda n,value:observed.append((int(n),value)),returns_value=False)

@@ -149,6 +149,20 @@ class TextDocumentNativeObservations(unittest.TestCase):
             elif label not in {'constructor.ru', 'constructor.en'}:
                 self.assertNotIn('Ответ = ', action)
 
+    def test_in_memory_text_and_count_emit_concrete_calls(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        plan = vm.prepare('D=Новый ТекстовыйДокумент; D.УстановитьТекст("A"); '
+                          'D.AddLine("B"); Text=D.ПолучитьТекст(); N=D.LineCount(); '
+                          'D.Очистить(); Empty=D.GetText();')
+        vm.execute_prepared(plan)
+        self.assertEqual((vm.variables['text'], vm.variables['n'], vm.variables['empty']),
+                         ('A\nB\n', Decimal(2), ''))
+        for method in ('settext', 'addline', 'clear'):
+            self.assertIn('d._bsl_proc_' + method + '(', plan._plan.generated_source)
+        for method in ('gettext', 'linecount'):
+            self.assertIn('d._bsl_value_' + method + '(', plan._plan.generated_source)
+
     def test_all_44_native_witnesses_through_independent_raw_field_reads(self):
         expected_states = {label: (text, lines) for label, text, lines in OBSERVED_STATES}
         for label, setup, action in measured_cases():

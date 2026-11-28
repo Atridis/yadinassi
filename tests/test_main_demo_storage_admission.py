@@ -4,10 +4,10 @@ from dataclasses import replace
 import sqlite3
 import tempfile
 import unittest
-from yadinassi.configuration_main_demo import import_main_demo_configuration, PROFILE
-from yadinassi.sqlite_inventory_enum_profile import create_main_demo, create, read_source
-from yadinassi.catalog_backend import BackendError
-from yadinassi.sqlite_catalog import register_query_collations
+from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration, PROFILE
+from yadinassi.db.sqlite.sqlite_inventory_enum_profile import create_main_demo, create, read_source
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.sqlite.sqlite_catalog import register_query_collations
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -30,7 +30,7 @@ class MainDemoStorageAdmissionTests(unittest.TestCase):
             self.assertEqual(fresh,config)
             self.assertEqual(db.execute('PRAGMA user_version').fetchone(),(16,))
             self.assertEqual(db.execute('SELECT profile FROM inventory_profile').fetchone(),(PROFILE,))
-            from yadinassi.sqlite_main_demo_profile import preflight_catalog_sections
+            from yadinassi.db.sqlite.sqlite_main_demo_profile import preflight_catalog_sections
             layout,sections=preflight_catalog_sections(config,domain)
             for cat in config.catalogs:
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM "'+layout.table_name(cat.identity)+'"').fetchone()[0],0)

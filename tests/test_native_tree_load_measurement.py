@@ -9,11 +9,11 @@ from unittest import mock
 
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.value_trees import BSLValueTree, BSLValueTreeRowCollection, BSLValueTreeColumnCollection
-from yadinassi.values import BSLArray, BSLFixedArray, HostFunction, NULL
-from yadinassi.structures import BSLStructure
+from yadinassi.collections.value_trees import BSLValueTree, BSLValueTreeRowCollection, BSLValueTreeColumnCollection
+from yadinassi.types.values import BSLArray, BSLFixedArray, HostFunction, NULL
+from yadinassi.collections.structures import BSLStructure
 from scripts import native_historical_replay as replay
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 ROOT = Path(__file__).resolve().parents[1]
 START = '// Begin bounded ValueTree LoadColumn helpers (measurement only; no native answers).\n'

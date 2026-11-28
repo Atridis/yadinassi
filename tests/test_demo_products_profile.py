@@ -11,11 +11,11 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_object_preparation import CatalogWriteRefused, write_prepared_catalog_object
-from yadinassi.configuration_xml import import_demo_products_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused, write_prepared_catalog_object
+from yadinassi.configuration.configuration_xml import import_demo_products_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 
 class DemoProductsProfileTests(unittest.TestCase):

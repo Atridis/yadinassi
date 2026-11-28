@@ -4,7 +4,7 @@ from unittest import mock
 from decimal import Decimal
 import test_orders_workspace as base
 from test_order_workbench import seed
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.database_context import SQLiteDBContext
 from yadinassi.ui.local_app import LocalTransportError
 from yadinassi.ui.protocol import encode_value, decode_line, encode_line
 

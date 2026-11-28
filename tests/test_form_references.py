@@ -3,15 +3,15 @@ from copy import deepcopy
 from uuid import UUID, uuid4
 import unittest
 
-from yadinassi.catalog_types import BSLCatalogReference, BSLCatalogType
-from yadinassi.form_references import FormReferenceBinding, FormReferenceScope, FormCatalogReference
-from yadinassi.form_model import BSLFormAttribute, scalar
-from yadinassi.form_tables import FormTableColumn, FormTableSchema
-from yadinassi.form_replication import (ReplicatedFormServer, ReplicatedFormSession,
+from yadinassi.db.catalog.catalog_types import BSLCatalogReference, BSLCatalogType
+from yadinassi.forms.form_references import FormReferenceBinding, FormReferenceScope, FormCatalogReference
+from yadinassi.forms.form_model import BSLFormAttribute, scalar
+from yadinassi.forms.form_tables import FormTableColumn, FormTableSchema
+from yadinassi.forms.form_replication import (ReplicatedFormServer, ReplicatedFormSession,
     _pack_state, _unpack_state, _admit_delta, _capture)
-from yadinassi.form_table_replication import admit_table_delta
-from yadinassi.invocation import _encode_scalar
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_table_replication import admit_table_delta, pack_tables
+from yadinassi.execution.invocation import _encode_scalar
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 
 def scopes():
@@ -36,6 +36,30 @@ def pair():
 
 
 class FormReferenceTests(unittest.TestCase):
+    def test_custom_presentations_run_live_even_for_repeated_table_reference(self):
+        original, _, empty, ref = scopes()
+        binding = original.targets[1]
+        calls = []
+        def presentation(value):
+            calls.append(value)
+            # Each validation checks a cell twice. Keep those two reads
+            # equal, but let each following read observe a fresh caption.
+            n = len(calls)
+            return f'live caption {(n + 1) // 2 if n <= 4 else n - 2}'
+        scope = FormReferenceScope(bindings={1: FormReferenceBinding(
+            binding.value_type, empty, binding.validate, presentation)})
+        server = ReplicatedFormServer('', {}, handlers=(), reference_scope=scope,
+            tables=(FormTableSchema('Lines', (FormTableColumn('Product', scope.descriptor(1), read_only=True),)),))
+        table = server.session.form._tables['lines']
+        table._replace_rows(((1, (ref,)), (2, (ref,))), 2)
+        calls.clear()
+        table_packet, = pack_tables(server.session.form)
+        # Closed SQLite reuse does not alter the fallback's actual callback
+        # count or presentation order: validation and encoding are both live.
+        self.assertEqual(calls, [ref] * 6)
+        self.assertEqual([cells[0]['text'] for _, cells in table_packet['rows']],
+                         ['live caption 3', 'live caption 4'])
+
     def test_typed_empty_and_identity_roundtrip(self):
         server,client,empty,ref=scopes()
         a=client.decode(1,server.encode(1,ref)); b=client.decode(1,server.encode(1,ref))

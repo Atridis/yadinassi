@@ -9,13 +9,16 @@ import unittest
 from unittest.mock import patch
 
 from tests.native_observations import extract_payload, inverse_stream, read_observation
-from yadinassi import Interpreter, serialization
-from yadinassi.serialization import value_from_string_internal as read
-from yadinassi.serialization import value_to_string_internal as write
-from yadinassi.type_values import type_of
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.value_lists import BSLValueList
-from yadinassi.values import BSLArray, BSLType, NULL, equal
+from yadinassi import Interpreter
+from yadinassi.types.errors import BSLError
+from yadinassi.formats.storage import serialization
+from yadinassi.formats.storage.serialization import value_from_string_internal as read
+from yadinassi.formats.storage.serialization import value_to_string_internal as write
+from yadinassi.types.type_values import type_of
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.collections.value_lists import BSLValueList
+from yadinassi.collections.plain_value_list import PlainValueList
+from yadinassi.types.values import BSLArray, BSLType, NULL, equal
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -87,6 +90,57 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
                     self.assertEqual([i.get_id() for i in restored], [D(2), D(1)])
                     self.assertEqual(restored.add().get_id(), D(3))
         self.assertIsNot(read(write(populated)).items[1].value, array)
+
+    def test_direct_item_stream_matches_native_and_follows_lifetime(self):
+        from gc import collect
+
+        for route in ('ordinary', 'prepared', 'captured'):
+            with self.subTest(route=route):
+                vm = Interpreter(allow_extensions=route == 'captured')
+                self.addCleanup(vm.close)
+                vm.execute('L = New ValueList; I = L.Add(10, "first", True); '
+                           'J = L.Add(20, "second");')
+                name = 'ValueToStringInternal'
+                if route == 'captured':
+                    name = 'Saved'
+                    vm.variables['saved'] = vm.functions['valuetostringinternal']
+                def stream(item):
+                    source = f'{name}({item})'
+                    if route == 'prepared':
+                        return vm.execute_prepared(vm.prepare(source))
+                    return vm.execute(source)
+
+                payload = stream('I')
+                self.assertEqual(payload, self.native('item').get('Write'))
+                vm.execute('L.Move(I, 1);')
+                self.assertEqual(self._id(vm, 'I'), D(0))
+                self.assertEqual(stream('I'), payload)
+
+                vm.execute('L.Delete(I); L.Clear(); K = L.Add(30);')
+                self.assertEqual(self._id(vm, 'I'), D(-1))
+                self.assertEqual(self._id(vm, 'J'), D(-1))
+                self.assertEqual(self._id(vm, 'K'), D(2))
+                self.assertEqual(read(stream('I'))._id, -1)
+                self.assertEqual(read(stream('J'))._id, -1)
+                vm.execute('A = New Array; A.Add(40); L.LoadValues(A); H = L[0];')
+                self.assertEqual(self._id(vm, 'K'), D(-1))
+                self.assertEqual(read(stream('K'))._id, -1)
+                self.assertEqual(self._id(vm, 'H'), D(3))
+
+                vm.execute('L = Undefined;')
+                collect()
+                self.assertEqual(self._id(vm, 'K'), D(-1))
+                self.assertEqual(read(stream('H'))._id, -1)
+                with self.assertRaisesRegex(BSLError, 'освобождён'):
+                    self._id(vm, 'H')
+                vm.variables['decoded'] = read(payload)
+                self.assertEqual(stream('Decoded'), payload)
+                with self.assertRaisesRegex(BSLError, 'идентификатор'):
+                    self._id(vm, 'Decoded')
+
+    @staticmethod
+    def _id(vm, item):
+        return vm.execute(f'{item}.GetID()')
 
     def test_detached_item_and_history_empty_models_preserve_stream_ids(self):
         values = sample()
@@ -160,7 +214,7 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
         self.assertEqual(last._next_id, 2 ** 32)
         with self.assertRaisesRegex(ValueError, 'предел идентификаторов'):
             last.add()
-        from yadinassi.type_qualifiers import BSLNumberQualifiers
+        from yadinassi.types.type_qualifiers import BSLNumberQualifiers
         # Host-corrupted descriptors must not silently lose hidden qualifiers.
         object.__setattr__(values.value_type, "number_qualifiers", BSLNumberQualifiers(D(1)))
         with self.assertRaisesRegex(ValueError, 'квалификаторы отсутствующего типа'):
@@ -186,7 +240,7 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
             nested.add(child)
         stream = write(nested)
         self.assertEqual(write(read(stream)), stream)
-        with patch('yadinassi.serialization._MAX_NODES', 2):
+        with patch('yadinassi.formats.storage.serialization._MAX_NODES', 2):
             # Grammar-level limits still apply before semantic validation to
             # hostile streams containing many otherwise meaningless tokens.
             with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
@@ -195,15 +249,15 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
     def test_resource_budgets_for_nodes_depth_text_and_identifiers(self):
         values = sample()
         stream = write(values)
-        with patch('yadinassi.serialization._MAX_NODES', 3):
+        with patch('yadinassi.formats.storage.serialization._MAX_NODES', 3):
             for operation, value in ((write, values), (read, stream)):
                 with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
                     operation(value)
-        with patch('yadinassi.serialization._MAX_DEPTH', 1):
+        with patch('yadinassi.formats.storage.serialization._MAX_DEPTH', 1):
             for operation, value in ((write, values), (read, stream)):
                 with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
                     operation(value)
-        with patch('yadinassi.serialization._MAX_TEXT', 20):
+        with patch('yadinassi.formats.storage.serialization._MAX_TEXT', 20):
             for operation, value in ((write, values), (read, stream)):
                 with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
                     operation(value)
@@ -234,6 +288,49 @@ class ValueListCodecBoundaryTests(unittest.TestCase):
                 values.value_type = BSLTypeDescription('Number')
             with self.subTest(change=change), self.assertRaises(ValueError):
                 write(values)
+
+    def test_plain_list_matches_native_history_and_captured_codec(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables['encode'] = vm.functions['valuetostringinternal']
+        vm.execute_prepared(vm.prepare('''values = New ValueList;
+            values.Add(10, "first", True); values.Add(20, "second"); values.Delete(0);
+            values.Insert(0, 30, "third", True);
+            direct = ValueToStringInternal(values); captured = encode(values);
+            copy = ValueFromStringInternal(captured);'''))
+        expected = self.native('history').get('Write')
+        self.assertEqual(vm.variables['direct'], expected)
+        self.assertEqual(vm.variables['captured'], expected)
+        self.assertEqual(vm.execute('copy.Get(0).GetID()'), D(2))
+        self.assertEqual(vm.execute('copy.Get(1).GetID()'), D(1))
+        self.assertIs(vm.execute('copy.Get(0).Check'), True)
+
+    def test_plain_list_refuses_foreign_shape_metadata_and_cycles(self):
+        class Opaque:
+            def __getattribute__(self, name):
+                raise AssertionError(name)
+            def __bool__(self):
+                raise AssertionError('truth')
+            def __hash__(self):
+                raise AssertionError('hash')
+
+        encode = serialization._direct_value_to_string_internal
+        for change in ('shape', 'item', 'counter', 'id', 'duplicate', 'picture', 'check', 'presentation', 'cycle'):
+            with self.subTest(change=change):
+                values = PlainValueList()
+                first = values.add(1)
+                last = values.add(2)
+                if change == 'shape': first.append(3)
+                elif change == 'item': list.append(values, Opaque())
+                elif change == 'counter': values._next_id = Opaque()
+                elif change == 'id': first._id = Opaque()
+                elif change == 'duplicate': last._id = first._id
+                elif change == 'picture': first[3] = Opaque()
+                elif change == 'check': first[2] = Opaque()
+                elif change == 'presentation': first[1] = Opaque()
+                else: first[0] = values
+                with self.assertRaises(ValueError):
+                    encode(values)
 
     def test_bsl_errors_are_catchable_and_do_not_mutate_assignment(self):
         output = []

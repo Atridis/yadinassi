@@ -1,0 +1,139 @@
+"""Pure BSL operations stay native before a later host boundary."""
+import ast
+from decimal import Decimal
+from unittest import TestCase
+from unittest.mock import patch
+
+from yadinassi import BSLError, Interpreter
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext
+
+
+def source(iterations, steps):
+    arithmetic = ''.join(f'X=X*3+I-{k};' for k in range(steps))
+    return (f'R=0;For I=1 To {iterations} Do X=I;{arithmetic}'
+            'If I%2=0 Then R=R+X*2;Else R=R-X*3;EndIf;EndDo;')
+
+
+def reference(iterations, steps):
+    result = Decimal(0)
+    for index in range(1, iterations + 1):
+        i = Decimal(index)
+        x = i
+        for k in range(steps):
+            x = x * 3 + i - k
+        if i % 2 == 0:
+            result += x * 2
+        else:
+            result -= x * 3
+    return result
+
+
+class DirectScalarPrefixTests(TestCase):
+    def vm(self, *, allow_extensions=False):
+        vm = Interpreter(allow_extensions=allow_extensions)
+        self.addCleanup(vm.close)
+        return vm
+
+    def test_literal_sum_in_all_three_source_shapes(self):
+        for text in ('1+2+3+5', 'R=1+2+3+5;', 'R=1+2+3+5;Host();'):
+            with self.subTest(text=text):
+                vm = self.vm(allow_extensions=True)
+                observed = []
+                vm.register_function('Host', lambda: observed.append(vm.variables['r']))
+                prepared = vm.prepare(text)
+                code = prepared._plan.generated_source
+                tree = ast.parse(code)
+                # A host boundary also maintains its own reentry-depth counter.
+                # Count source arithmetic, not that envelope bookkeeping.
+                adds = [node for node in ast.walk(tree)
+                        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)
+                        and not (isinstance(node.left, ast.Name) and node.left.id == '_dynamic_depth')]
+                self.assertEqual(len(adds), 3)
+                self.assertNotIn('_native_add', code)
+                self.assertNotIn('_concatenate', code)
+                result = vm.execute_prepared(prepared)
+                self.assertEqual(result if text[0] == '1' else vm.variables['r'], Decimal(11))
+                if 'Host' in text:
+                    self.assertEqual(observed, [Decimal(11)])
+
+    def test_trailing_host_does_not_put_checks_or_truth_wrappers_in_loop(self):
+        for steps in (2, 6, 12):
+            for host_call in ('', 'Host();'):
+                with self.subTest(steps=steps, host=bool(host_call)):
+                    vm = self.vm(allow_extensions=True)
+                    published = []
+                    vm.register_function('Host', lambda: published.append(vm.variables['r']))
+                    prepared = vm.prepare(source(50, steps) + host_call)
+                    tree = ast.parse(prepared._plan.generated_source)
+                    loops = [n for n in ast.walk(tree) if isinstance(n, (ast.For, ast.While))]
+                    self.assertEqual(len(loops), 1)
+                    loop = ast.unparse(loops[0])
+                    for unexpected in ('_context.', '_truth(', '_equal(', '_native_add('):
+                        self.assertNotIn(unexpected, loop)
+                    vm.execute_prepared(prepared)
+                    expected = reference(50, steps)
+                    self.assertEqual(vm.variables['r'], expected)
+                    self.assertEqual(published, [expected] if host_call else [])
+
+    def test_check_count_with_host_does_not_grow_with_work(self):
+        calls = []
+        check = BoundaryContext._check
+
+        def counted(owner):
+            check(owner)
+            calls.append(None)
+
+        counts = []
+        for iterations, steps in ((4, 2), (40, 12)):
+            vm = self.vm(allow_extensions=True)
+            vm.register_function('Host', lambda: None)
+            prepared = vm.prepare(source(iterations, steps) + 'Host();')
+            before = len(calls)
+            with patch.object(BoundaryContext, '_check', counted):
+                vm.execute_prepared(prepared)
+            counts.append(len(calls) - before)
+        self.assertEqual(*counts)
+
+    def test_types_after_host_are_not_inferred_from_prefix(self):
+        vm = self.vm(allow_extensions=True)
+        vm.register_function('Host', lambda: vm.variables.update(r='host'))
+        vm.execute('R=1+2+3+5;Host();T=R+"!";')
+        self.assertEqual(vm.variables['t'], 'host!')
+
+    def test_unproven_suffix_preserves_dynamic_comparison(self):
+        vm = self.vm(allow_extensions=True)
+        vm.register_function('Host', lambda: vm.variables.update(r=True, v=1))
+        vm.execute('R=1+2+3+5;Host();T=(R=V);')
+        self.assertIs(vm.variables['t'], False)
+
+    def test_opaque_edges_do_not_preserve_initialization_facts(self):
+        vm = self.vm(allow_extensions=True)
+        vm.register_function('Clear', lambda: vm.variables.pop('r'))
+        with self.assertRaisesRegex(BSLError, 'не определена: R'):
+            vm.execute('R=1;Clear();T=R+1;')
+        self.assertNotIn('t', vm.variables)
+        vm.execute('R=1;Execute("R=30;");T=R+1;')
+        self.assertEqual(vm.variables['t'], 31)
+
+    def test_string_prefix_uses_bsl_concat_with_unknown_or_native_int_rhs(self):
+        vm = self.vm()
+        vm.variables['external'] = Decimal('1234.5')
+        source = 'R=("value=")+external; I=1000+234; T="value="+I;'
+        prepared = vm.prepare(source)
+        code = prepared._plan.generated_source
+        self.assertEqual(code.count('_concatenate('), 2)
+        self.assertNotIn('_native_add(', code)
+        vm.execute_prepared(prepared)
+        self.assertEqual(vm.variables['r'], 'value=1\u00a0234,5')
+        self.assertEqual(vm.variables['t'], 'value=1\u00a0234')
+
+    def test_native_int_concat_keeps_numeric_loop_direct(self):
+        vm = self.vm()
+        prepared = vm.prepare('N=0;For I=1 To 100 Do N=N+I;EndDo;R="total="+N;')
+        tree = ast.parse(prepared._plan.generated_source)
+        loop = next(n for n in ast.walk(tree) if isinstance(n, ast.For))
+        self.assertIn('range(1,', ast.unparse(loop))
+        for helper in ('_context.', '_native_add(', '_concatenate('):
+            self.assertNotIn(helper, ast.unparse(loop))
+        vm.execute_prepared(prepared)
+        self.assertEqual(vm.variables['r'], 'total=5\u00a0050')

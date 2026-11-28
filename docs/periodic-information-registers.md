@@ -11,7 +11,7 @@ A newly created configuration containing a periodic register uses SQLite v9.
 Existing v1–v8 files retain their format and semantics. A v8 file cannot admit a
 periodic schema by changing its stored definition. Nonperiodic-only new files
 still use v8. v9 may combine periodic and nonperiodic registers, documents and
-catalogs, retaining separate schemas and receipt domains.
+catalogs, retaining separate schemas.
 
 `Period` is a standard Date field before the declared dimensions. It is not a
 user-defined dimension. Its metadata identity is derived deterministically from
@@ -36,7 +36,7 @@ SessionModule and unsupported object behavior retain their existing refusals.
 
 ## Record buffers and selection
 
-RecordManager `Read`, `Write`, `Delete`, `Selected` and receipt recovery retain
+RecordManager `Read`, `Write`, `Delete` and `Selected` retain
 the independent register contract. Set `Period` alongside dimensions. A missing
 `Read` preserves the selected period/dimensions and resets resource defaults.
 
@@ -62,8 +62,8 @@ RecordSet additionally exposes `Filter.Period`. Its value is normalized like a
 record Period. A filtered replacement with that filter affects only that bucket
 and the selected dimensions. Without a period filter it deliberately covers all
 periods in the dimension scope. The existing requirement to `Read()` before an
-unfiltered replacement remains. Revisions, frozen write intents, atomic scopes
-and uncertain-commit receipt recovery are shared with the nonperiodic port.
+unfiltered replacement remains. Revisions, atomic scopes and the
+unknown-outcome contract are shared with the nonperiodic port.
 
 ## Filter order and Query virtual sources
 

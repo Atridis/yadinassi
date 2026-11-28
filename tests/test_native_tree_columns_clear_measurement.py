@@ -4,11 +4,11 @@ from decimal import Decimal as D
 from pathlib import Path
 import unittest
 from unittest.mock import patch
-from yadinassi import Interpreter, runtime, python_translation_expressions
-from yadinassi.value_trees import (BSLValueTree, BSLValueTreeColumn as Column,
+from yadinassi import Interpreter
+from yadinassi.collections.value_trees import (BSLValueTree, BSLValueTreeColumn as Column,
     BSLValueTreeColumnCollection as Columns, BSLValueTreeRow as Row,
     BSLValueTreeRowCollection as Rows)
-from yadinassi.values import BSLArray, HostFunction
+from yadinassi.types.values import BSLArray, HostFunction
 from scripts import native_1c_tree_columns_clear_contract as wire
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,154 +68,16 @@ def model(mode='detach', *, returns_value=True, result=None):
 
 
 class ClearObserverTests(unittest.TestCase):
-    def test_current_guard_and_explicit_missing_method_are_not_availability(self):
-        records = wire.validate_output(emit())
-        self.assertEqual([r['status'] for r in records[:2]], ['O', 'O'])
-        with self.assertRaises(wire.AvailabilityError): wire.require_available(emit())
-        with model('missing'):
-            raw = emit(); records = wire.validate_output(raw)
-        self.assertEqual({r['status'] for r in records}, {'M'})
-        with self.assertRaises(wire.AvailabilityError): wire.require_available(raw)
+    def test_current_direct_capture_is_not_native_availability(self):
+        records=wire.validate_output(emit())
+        self.assertEqual([r['status'] for r in records[:2]],['O','O'])
+        with self.assertRaises(wire.AvailabilityError):wire.require_available(emit())
 
-    def test_detach_invalidate_columns_only_and_noop_are_distinct_observations(self):
-        seen = {}
-        for mode in ('detach', 'invalidate', 'columns_only', 'noop'):
-            with model(mode):
-                raw = probe(); seen[mode] = wire.validate_payload(raw, 1)
-            self.assertEqual(seen[mode]['status'], 'S')
-        self.assertEqual(len({str(v['snapshots'][1]) for v in seen.values()}), 4)
-        self.assertEqual(len(seen['columns_only']['snapshots'][1]['nodes']), 3)
-        self.assertEqual(len(seen['detach']['snapshots'][1]['nodes']), 0)
-        query = wire.QUERY_NAMES.index('root.owner')
-        self.assertNotEqual(seen['detach']['snapshots'][1]['queries'][query],
-                            seen['invalidate']['snapshots'][1]['queries'][query])
-
-    def test_complete_capture_repeated_invocations_and_initial_followup_phases(self):
-        with model():
-            first = emit(); second = emit(); records = wire.require_available(first)
-        self.assertEqual(first, second)
-        self.assertLessEqual(len(first), wire.MAX_ENCODED_BYTES)
-        self.assertEqual(records[6]['status'], 'A')
-        self.assertEqual((records[8]['status'], records[8]['follow_status'], records[8]['phase']), ('S', 'O', 1))
-        self.assertEqual((records[11]['status'], records[11]['follow_status'], records[11]['phase']), ('S', 'S', 5))
-        self.assertEqual(records[7]['expression'], 'U_')
+    def test_retired_synthetic_class_hooks_fail_before_action(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
         with model('noop'):
-            repeated = wire.validate_payload(probe(12), 12)
-        self.assertEqual((repeated['status'], repeated['follow_status'], repeated['phase']), ('S', 'O', 1))
+            with self.assertRaisesRegex(BoundaryViolation,'ValueTree class hooks changed'):
+                probe()
 
-    def test_expression_results_and_procedure_rejection_are_not_assumed(self):
-        for result, token in ((None, 'U_'), (D(-1), 'Na'), (D(9), 'N9'), (True, 'B1'), ('a', 'Sa')):
-            with model(result=result): value = wire.validate_payload(probe(8), 8)
-            self.assertEqual((value['status'], value['expression']), ('S', token))
-        with model(returns_value=False): value = wire.validate_payload(probe(8), 8)
-        self.assertEqual(value['status'], 'O')
-        self.assertEqual(value['snapshots'][0], value['snapshots'][1])
-
-    def test_original_action_error_survives_later_query_errors_and_partial_mutation(self):
-        with model('partial'):
-            raw = probe(); value = wire.validate_payload(raw, 1)
-        self.assertEqual(value['status'], 'M')
-        self.assertNotEqual(value['snapshots'][0], value['snapshots'][1])
-        self.assertNotIn(b'private-original-action', raw)
-
-    def test_new_valid_column_and_row_identities_are_observed_not_normalized(self):
-        with model('replace'): value = wire.validate_payload(probe(), 1)
-        before, after = value['snapshots']
-        self.assertEqual(value['status'], 'S')
-        self.assertTrue({c[0] for c in before['schema']}.isdisjoint(c[0] for c in after['schema']))
-        self.assertTrue({r.row for r in before['nodes']}.isdisjoint(r.row for r in after['nodes']))
-        self.assertEqual([r.cells for r in before['nodes']], [r.cells for r in after['nodes']])
-
-    def test_postaction_named_positional_discrepancy_is_not_observer_failure(self):
-        original = Row.get; changed = [False]; original_method = Columns.get_method
-        def method(receiver, name):
-            if name.casefold() not in ('clear', 'очистить'): return original_method(receiver, name)
-            return HostFunction(name, lambda: changed.__setitem__(0, True))
-        def positional(row, index): return D(9) if changed[0] else original(row, index)
-        with patch.object(Columns, 'get_method', method), patch.object(Row, 'get', positional):
-            value = wire.validate_payload(probe(), 1)
-        before, after = value['snapshots']
-        self.assertEqual(before['nodes'][0].cells, before['nodes'][0].named_cells)
-        self.assertNotEqual(after['nodes'][0].cells, after['nodes'][0].named_cells)
-        self.assertEqual(value['status'], 'S')
-
-    def test_collection_wrapper_inequality_does_not_change_capture(self):
-        for backend, service in (('interpreter', runtime),
-                                 ('compiled-strict', python_translation_expressions)):
-            original = service.equal
-            comparisons = []
-            def unequal(a, b):
-                if type(a) in (Columns, Rows) or type(b) in (Columns, Rows):
-                    comparisons.append((a, b))
-                    return False
-                return original(a, b)
-            with self.subTest(backend=backend), model():
-                expected = emit(backend=backend)
-                with patch.object(service, 'equal', unequal): actual = emit(backend=backend)
-                self.assertEqual(actual, expected)
-                # Capture compares row/column identities, never collection
-                # wrappers: their synthetic equality must remain irrelevant.
-                self.assertEqual(comparisons, [])
-
-    def test_deleted_identity_comparison_failure_is_independent_query_outcome(self):
-        for backend, service in (('interpreter', runtime),
-                                 ('compiled-strict', python_translation_expressions)):
-            poisoned = []; comparisons = []; original = service.equal
-            def clear(receiver):
-                poisoned.extend(receiver.table._all_rows); poisoned.extend(receiver.items)
-                receiver.items.clear(); receiver.table.rows.items.clear()
-            def equal(a, b):
-                if any(a is value or b is value for value in poisoned):
-                    comparisons.append((a, b))
-                    raise ValueError('private deleted equality')
-                return original(a, b)
-            # Exercise the actual operator service in each backend. The guard
-            # outcome and private-error redaction must remain identical.
-            with self.subTest(backend=backend):
-                with patch.object(Columns, 'clear', clear), patch.object(service, 'equal', equal):
-                    raw = probe(backend=backend); value = wire.validate_payload(raw, 1)
-                queries = value['snapshots'][1]['queries']
-                self.assertEqual(value['status'], 'S')
-                self.assertEqual(queries[wire.QUERY_NAMES.index('root.id')], ('E', None))
-                self.assertEqual(queries[wire.QUERY_NAMES.index('root.owner')], ('I', 0))
-                self.assertNotIn(b'private deleted equality', raw)
-                self.assertTrue(comparisons)
-
-    def test_reported_owner_parent_and_level_are_not_forced_to_active_position(self):
-        changed = [False]; other = BSLValueTree(); foreign_parent = other.rows.add()
-        old_owner, old_level, old_member = Row.owner, Row.level, Row.get_member
-        def clear(receiver): changed[0] = True
-        def owner(row): return other if changed[0] else old_owner(row)
-        def level(row): return D(-1) if changed[0] else old_level(row)
-        def member(row, name):
-            if changed[0] and name.casefold() in ('parent', 'родитель'): return foreign_parent
-            return old_member(row, name)
-        with patch.object(Columns, 'clear', clear), patch.object(Row, 'owner', owner), \
-                patch.object(Row, 'level', level), patch.object(Row, 'get_member', member):
-            value = wire.validate_payload(probe(), 1)
-        before, after = value['snapshots']
-        self.assertEqual(value['status'], 'S')
-        self.assertNotEqual(after['nodes'][0].owner, after['tree'])
-        self.assertNotIn(after['nodes'][0].parent, {row.row for row in after['nodes']})
-        self.assertEqual(after['nodes'][0].level, -1)
-        self.assertNotEqual(before['nodes'][0], after['nodes'][0])
-        changed[0] = False
-        with patch.object(Columns, 'clear', clear), patch.object(Row, 'owner',
-                lambda row: None if changed[0] else old_owner(row)):
-            undefined = wire.validate_payload(probe(), 1)['snapshots'][1]
-        self.assertIsNone(undefined['nodes'][0].owner)
-        self.assertEqual(undefined['queries'][wire.QUERY_NAMES.index('root.owner')], ('I', None))
-
-    def test_unsupported_scalar_or_identity_type_is_observer_failure_not_query_error(self):
-        for result in (D(100), 'private-secret', BSLArray()):
-            with model(result=result): raw = probe(8)
-            self.assertEqual(raw, b'XO')
-            with self.assertRaises(wire.ObservationError): wire.validate_payload(raw, 8)
-        changed = [False]; original_owner = Row.owner
-        def clear(receiver): changed[0] = True
-        def owner(row): return BSLArray() if changed[0] else original_owner(row)
-        with patch.object(Columns, 'clear', clear), patch.object(Row, 'owner', owner): raw = probe()
-        self.assertEqual(raw, b'XO')
-
-
-if __name__ == '__main__': unittest.main()
+    def test_repeated_actual_capture_is_deterministic(self):
+        self.assertEqual(emit(),emit())

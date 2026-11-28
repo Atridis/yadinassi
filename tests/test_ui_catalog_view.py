@@ -8,8 +8,8 @@ from unittest import mock
 from uuid import UUID
 
 from ui_catalog_fixture import configuration_files, repository
-from yadinassi.catalog_backend import BackendError, CatalogSelection
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.catalog.catalog_backend import BackendError, CatalogSelection
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.catalog_view import CatalogRepository
 from yadinassi.ui.protocol import CatalogRef, UIError, encode_line
 
@@ -141,7 +141,8 @@ class UICatalogViewTests(unittest.TestCase):
     def test_adapter_has_only_logical_backend_dependencies(self):
         import yadinassi.ui.catalog_view as module
         tree = ast.parse(Path(module.__file__).read_text(encoding='utf-8'))
-        imported = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+        imported = {node.module.rsplit('.', 1)[-1] for node in ast.walk(tree)
+                    if isinstance(node, ast.ImportFrom) and node.module}
         self.assertTrue({'catalog_backend', 'dates', 'protocol'}.issubset(imported))
         self.assertFalse({'database_context', 'sqlite_catalog', 'catalogs', 'catalog_types',
                           'storage', 'metadata'}.intersection(imported))

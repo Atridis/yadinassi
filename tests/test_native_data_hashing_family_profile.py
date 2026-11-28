@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 import test_native_tree_profile_budget as budget
 from test_native_tree_profile_host import synthetic_producer_reader
 from test_native_1c_smoke import bootstrap_report
@@ -59,7 +59,9 @@ class DataHashingFamilyProfileTests(unittest.TestCase):
         vm=Interpreter(native_target=LINUX_8_3_27_1508)
         with tempfile.TemporaryDirectory(prefix='data-hashing-client-') as tmp, mock.patch('tempfile.gettempdir', return_value=tmp):
             vm.execute(module.decode('utf-8-sig'));vm.execute('Result = ВычислитьПробу();')
-        self.assertEqual(('\n'.join(vm.variables['result'].items)+'\n').encode(),emit())
+        lines = vm.variables['result']
+        self.assertIs(type(lines), list)
+        self.assertEqual(('\n'.join(lines)+'\n').encode(),emit())
         for bad in (source+b'\n',source.replace(b'\n',b'\r\n')):
             with self.assertRaises(full.FullError):tree.client_module(bad,(ROOT/full.CLIENT_SOURCE).read_bytes(),profile=PROFILE)
 

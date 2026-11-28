@@ -131,8 +131,9 @@ bound to the same DataPath rejects; at most four table controls exist per sessio
 
 ## Boundaries and limits
 
-The private replica protocol is `yadinassi-form/1`; the renderer protocol is
-`yadinassi-form-ui/1`. UI cell events carry only control, row ID, column, exact
+The private full-state replica protocol is `yadinassi-form/1`; trusted paired
+hosts can opt into [table image reuse](form-replication.md#fixed-table-replication)
+with `yadinassi-form/2`. The renderer protocol stays `yadinassi-form-ui/1`. UI cell events carry only control, row ID, column, exact
 revision and a tagged scalar; selection carries an owned row ID or null. The
 browser cannot choose database paths, table schemas, row structure, routines or
 endpoints. A table's readOnly flag and each column's readOnly flag are enforced

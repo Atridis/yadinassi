@@ -18,7 +18,7 @@ class ImportTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
         self.main = self.directory / 'Основное.bsl'
 
     def write(self, name, code, encoding='utf-8'):
@@ -42,6 +42,73 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(self.output, ['42', 'готово'])
         with self.assertRaisesRegex(BSLError, 'не определена'):
             self.vm.execute('Ответ()')
+
+    def test_imported_call_captures_routine_locals_in_both_argument_modes(self):
+        self.write('Side.bsl', """
+            Procedure Property(Target, Val Increment) Export
+                Target = Target + Increment;
+            EndProcedure
+        """)
+        source = """// #Import Side.bsl
+            Function Surprise()
+                Message("unexpected");
+                Return 0;
+            EndFunction
+            Function Caller(Val Increment)
+                Local = 40;
+                (Side.Property)(Local, Increment);
+                Try Side.Property(Local, Increment, Surprise());
+                Except Return Local; EndTry;
+                Return -1;
+            EndFunction
+            Caller(2)
+        """
+        self.main.write_text(source, encoding='utf-8')
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter(output=self.output.append)
+                self.addCleanup(vm.close)
+                if prepared:
+                    result = vm.execute_prepared(vm.prepare_program(parse(source, str(self.main))))
+                else:
+                    result = vm.execute(source, str(self.main))
+                self.assertEqual(result, Decimal(42))
+                self.assertEqual(self.output, [])
+
+    def test_capture_only_argument_names_are_not_lexical_bindings(self):
+        module = self.write('Side.bsl', """
+            Procedure Replace(Target) Export Target = 42; EndProcedure
+            Function Missing() Export Return TypeOf(NotDeclared); EndFunction
+            Function Shadow(Val Message) Export
+                Replace(Message);
+                Return TypeOf(Message) = Type("Number");
+            EndFunction
+        """)
+        source = "// #Import Side.bsl\nSide.Missing()"
+        self.main.write_text(source, encoding='utf-8')
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                with self.assertRaisesRegex(BSLError, 'не определена: NotDeclared') as error:
+                    if prepared:
+                        vm.execute_prepared(vm.prepare_program(parse(source, str(self.main))))
+                    else:
+                        vm.execute(source, str(self.main))
+                self.assertEqual(error.exception.source, str(module.resolve()))
+                self.assertEqual(error.exception.line, 3)
+                self.assertTrue(vm.execute('Side.Shadow("text")'))
+
+    def test_capture_only_name_cannot_become_a_writable_host_reference(self):
+        effects = []
+        self.vm.register_function('WriteRef', lambda reference: effects.append(reference))
+        self.vm.functions['writeref'].reference_parameters = frozenset({0})
+        with self.assertRaisesRegex(BSLError, 'не определена: Metadata'):
+            self.vm.execute("""Function Work()
+                Return WriteRef(Metadata);
+            EndFunction
+            Work()""")
+        self.assertEqual(effects, [])
 
     def test_directive_ast_preserves_filename_and_source_position(self):
         source = str(self.main)
@@ -191,6 +258,59 @@ Message(Side.F());
         self.assertEqual(self.output, ['7', '2', '11', '11', '8', '8',
                                        'A:B:C', 'A::Z', ':B:C'])
         self.assertIsNone(self.vm.locals)
+
+    def test_imported_omissions_preserve_effect_order_and_local_default_reference(self):
+        self.write('Side.bsl', """
+            Procedure Update(Target, Val Delta, Skipped = 20, Val Extra) Export
+                Message(Skipped);
+                Skipped = -1;
+                Target = Target + Delta + Extra;
+            EndProcedure
+        """)
+        source = """// #Import Side.bsl
+            Var Trace;
+            Function Touch(Val Marker, Val Value)
+                Trace = Trace + Marker;
+                Return Value;
+            EndFunction
+            Function Work()
+                Local = 4;
+                Side.Update(Local, Touch("D", 3), , Touch("E", 5));
+                // Presence of a hole does not permit missing the trailing
+                // required argument position or evaluating any prior actual.
+                Try Side.Update(Local, Touch("bad", 0), );
+                Except Return Local; EndTry;
+                Return -1;
+            EndFunction
+            Trace = "";
+            Result = Work();
+            Trace + ":" + String(Result)
+        """
+        self.main.write_text(source, encoding='utf-8')
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                output = []
+                vm = Interpreter(output=output.append)
+                self.addCleanup(vm.close)
+                if prepared:
+                    result = vm.execute_prepared(vm.prepare_program(parse(source, str(self.main))))
+                else:
+                    result = vm.execute(source, str(self.main))
+                self.assertEqual(result, 'DE:12')
+                self.assertEqual(output, ['20'])
+
+    def test_omitted_imported_server_argument_is_denied_before_effects(self):
+        self.write('Side.bsl', """
+            &AtServer
+            Function Sum(Val A = 1, Val B = 2) Export
+                Return A + B;
+            EndFunction
+        """)
+        self.assertEqual(self.execute('// #Import Side.bsl\nSide.Sum(3, 4)'), Decimal(7))
+        self.vm.execute('Function Touch() Message("unexpected"); Return 4; EndFunction')
+        with self.assertRaisesRegex(BSLError, 'omitted imported .*routine argument is unsupported'):
+            self.vm.execute('Side.Sum(, Touch())')
+        self.assertEqual(self.output, [])
 
     def test_reference_aliases_and_value_snapshots_are_bound_in_caller_order(self):
         self.write('Side.bsl', '''
@@ -498,6 +618,33 @@ Message(Side.F());
         self.assertEqual(self.vm.execute('Side.F()'), Decimal(42))
         with self.assertRaises(BSLError):
             self.vm.execute('Message(Side)')
+
+    def test_module_block_declarations_collide_before_import_or_source_effects(self):
+        self.write('Side.bsl', 'Message("import"); Function F() Export Return 42; EndFunction')
+        blocks = ('If False Then Var sIdE; EndIf;',
+                  'Try Raise "test"; Except While False Do Var sIdE; EndDo; EndTry;')
+        for block in blocks:
+            for prepared in (False, True):
+                with self.subTest(block=block, prepared=prepared):
+                    output = []
+                    vm = Interpreter(output=output.append)
+                    self.addCleanup(vm.close)
+                    source = '// #Import Side.bsl\nMessage("source");\n' + block
+                    self.main.write_text(source, encoding='utf-8')
+                    with self.assertRaisesRegex(BSLError, 'Имя импорта конфликтует с объявлением') as error:
+                        if prepared:
+                            vm.prepare_program(parse(source, str(self.main)))
+                        else:
+                            vm.execute(source, str(self.main))
+                    self.assertEqual(error.exception.source, str(self.main))
+                    self.assertEqual(error.exception.line, 3)
+                    self.assertEqual(output, [])
+                    self.assertEqual(vm.imports, {})
+                    self.assertNotIn('side', vm.variables)
+
+        # Without a matching imported root the declaration is still valid.
+        self.assertEqual(self.vm.execute(
+            'If True Then Var Side; Side = 7; EndIf; Side'), Decimal(7))
 
     def test_same_namespace_cannot_rebind_to_another_directory(self):
         self.write('Side.bsl', 'Function F() Export Return 1; EndFunction')

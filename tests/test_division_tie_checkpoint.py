@@ -12,7 +12,7 @@ from scripts.native_historical_replay import (
 from yadinassi import Interpreter
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
-from yadinassi.values import divide
+from yadinassi.types.values import divide
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'integrational_tests/tests/numbers.bsl'

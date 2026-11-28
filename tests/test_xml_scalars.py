@@ -10,11 +10,11 @@ import re
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.dates import BSLDate, MAX_TICKS, UnsupportedDateRange, date, shift_date
-from yadinassi.serialization import value_from_string_internal, value_to_string_internal
-from yadinassi.values import BSLType, NULL
-from yadinassi import xml_values
-from yadinassi.xml_values import xml_string, xml_value
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS, UnsupportedDateRange, date, shift_date
+from yadinassi.formats.storage.serialization import value_from_string_internal, value_to_string_internal
+from yadinassi.types.values import BSLType, NULL
+from yadinassi.formats.xml import xml_values
+from yadinassi.formats.xml.xml_values import xml_string, xml_value
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +44,19 @@ class NativeXMLScalarEvidenceTests(unittest.TestCase):
 
 
 class XMLNumberTests(unittest.TestCase):
+    def test_bsl_native_integer_writer_preserves_boolean_and_decimal(self):
+        source = 'A=XMLString(3*7); B=XMLСтрока(-5); C=XMLString(True); D=XMLString(1.25);'
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:
+                    vm.execute_prepared(vm.prepare(source))
+                else:
+                    vm.execute(source)
+                self.assertEqual(tuple(vm.variables[key] for key in 'abcd'),
+                                 ('21', '-5', 'true', '1.25'))
+
     def test_writer_uses_exact_fixed_point_without_localized_presentation(self):
         samples = [
             ('0', '0'), ('-0.000', '0'), ('12345.6700', '12345.67'),

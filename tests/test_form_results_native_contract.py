@@ -38,7 +38,7 @@ class NativeFormResultsContractTests(unittest.TestCase):
         s=self.read('scripts/native_1c_form_results_profile.py')
         self.assertIn("'runtime_parity_accepted':False",s)
         self.assertIn("'acceptance_status':'not_evaluated'",s)
-        self.assertNotIn('EXECUTE_SCRIPT=',s);self.assertNotIn('from yadinassi.form_runtime import FormSession',s)
+        self.assertNotIn('EXECUTE_SCRIPT=',s);self.assertNotIn('from yadinassi.forms.form_runtime import FormSession',s)
 
     def test_lifecycle_is_native_open_close_not_handler_calls(self):
         a=self.read('scripts/form_results_packet/Launcher/Forms/Main/Ext/Form/Module.bsl')

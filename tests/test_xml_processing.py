@@ -8,13 +8,15 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi import xml_processing
-from yadinassi.serialization import (
+from yadinassi.execution.codegen.direct_boundaries import BoundaryContext, BoundaryViolation
+from yadinassi.syntax.parser import parse
+from yadinassi.formats.xml import xml_processing
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.values import BSLType, HostFunction, NULL
-from yadinassi.xml_processing import (
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.values import BSLType, HostFunction, NULL
+from yadinassi.formats.xml.xml_processing import (
     BSLXMLStringProcessingManager, XML_STRING_PROCESSING,
     delete_disallowed_xml_characters as clean,
 )
@@ -157,11 +159,25 @@ class XMLStringProcessingManagerTests(unittest.TestCase):
         self.assertIs(type_of(XML_STRING_PROCESSING), BSLType.XML_STRING_PROCESSING_MANAGER)
 
     def test_no_implicit_globals_constructor_iteration_or_reflection(self):
-        vm = Interpreter()
+        messages = []
+        vm = Interpreter(messages.append)
+        self.addCleanup(vm.close)
         vm.variables['manager'] = XML_STRING_PROCESSING
-        for expression in ('DeleteDisallowedXMLCharacters("text")',
-                           'УдалитьНедопустимыеСимволыXML("text")',
-                           'New XMLStringProcessingManager', 'New МенеджерОбработкиСтрокиXML',
+        vm.execute('Function Arg() Message("argument"); Return "text"; EndFunction')
+        for name in ('DeleteDisallowedXMLCharacters', 'УдалитьНедопустимыеСимволыXML'):
+            for argument in ('"text"', 'Arg()'):
+                expression = f'{name}({argument})'
+                with self.subTest(expression=expression):
+                    with self.assertRaises(BoundaryViolation) as denied:
+                        vm.execute(expression)
+                    self.assertIs(type(denied.exception), BoundaryViolation)
+                    self.assertEqual(str(denied.exception), 'unregistered host service: ' + name.casefold())
+                    self.assertEqual(messages, [])
+            # The same argument is evaluated when the public method is qualified.
+            self.assertEqual(vm.execute(f'manager.{name}(Arg())'), 'text')
+            self.assertEqual(messages, ['argument'])
+            messages.clear()
+        for expression in ('New XMLStringProcessingManager', 'New МенеджерОбработкиСтрокиXML',
                            'New (TypeOf(manager))', 'manager()', 'manager[0]',
                            'manager.__class__', 'manager.__dict__', 'manager.get_member("x")',
                            'manager.FindDisallowedXMLCharacters("x")',
@@ -191,7 +207,7 @@ class XMLStringProcessingManagerTests(unittest.TestCase):
             vm.execute(prefix + '("x",)')
 
     def test_receiver_and_arguments_evaluate_once_left_to_right(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         seen = []
         def record(label, value):
             def call():
@@ -225,10 +241,46 @@ class XMLStringProcessingManagerTests(unittest.TestCase):
             with self.assertRaises(TypeError):
                 function(HostManager())
 
+    def test_direct_canonical_cleanup_is_pure_and_explicitly_shadowable(self):
+        code = 'Result=XMLStringProcessing.DeleteDisallowedXMLCharacters(Text, "1.1");'
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                vm.variables['text'] = CONTROLS
+                with patch.object(BoundaryContext, '_check', side_effect=AssertionError('unexpected Light check')):
+                    if prepared:
+                        vm.execute_prepared(vm.prepare_program(parse(code)))
+                    else:
+                        vm.execute(code)
+                    self.assertEqual(vm.variables['result'], clean(CONTROLS, '1.1'))
+                    vm.execute('Var XMLStringProcessing; XMLStringProcessing="local";')
+                    self.assertEqual(vm.execute('XMLStringProcessing'), 'local')
+
+    def test_direct_foreign_manager_cannot_dispatch(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.variables['fake'] = BSLXMLStringProcessingManager()
+        with patch.object(BSLXMLStringProcessingManager, 'get_member',
+                          side_effect=AssertionError('foreign method executed')):
+            with self.assertRaisesRegex(BoundaryViolation, 'foreign database receiver'):
+                vm.execute('Fake.DeleteDisallowedXMLCharacters("x")')
+
+    def test_native_xml_checkpoint_manager_and_cleanup_records(self):
+        from test_xml_checkpoint import source
+        output = []
+        vm = Interpreter(output.append)
+        self.addCleanup(vm.close)
+        vm.execute(source())
+        self._assert_native_cleanup(output)
+
     def test_native_manager_and_cleanup_records_are_unchanged(self):
         output = []
         Interpreter(output.append).execute(
             (ROOT / 'integrational_tests/tests/values.bsl').read_text(encoding='utf-8-sig'))
+        self._assert_native_cleanup(output)
+
+    def _assert_native_cleanup(self, output):
         actual = {line.split(': [', 1)[0]: line for line in output
                   if line.startswith(('xml.manager.', 'xml.clean.'))}
         native = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')

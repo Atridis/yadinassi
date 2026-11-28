@@ -4,8 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from test_source_constant_store import configuration
-from yadinassi.configuration_source import import_source
-from yadinassi.source_constant_store import SourceConstantStore
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
 
 
 def configured(length, history=False):

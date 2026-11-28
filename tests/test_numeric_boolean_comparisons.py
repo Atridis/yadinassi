@@ -5,8 +5,8 @@ import operator
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.values import BSLObject
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import BSLObject
 
 
 OPERATORS = {'=': operator.eq, '<>': operator.ne, '<': operator.lt,
@@ -57,6 +57,8 @@ class NumericBooleanComparisonTests(unittest.TestCase):
                                        'Нет', 'Да', 'Да', '{"B",1}', '{"N",1}'])
 
     def test_operands_evaluate_once_in_order_and_errors_recover(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
         def left():
             calls.append('left')
@@ -89,6 +91,8 @@ class NumericBooleanComparisonTests(unittest.TestCase):
                             self.vm.execute(f'({left} {symbol} {right})')
 
     def test_host_int_float_and_decimal_subclasses_do_not_gain_conversion(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         class HostDecimal(Decimal):
             pass
         class HostObject(BSLObject):

@@ -11,12 +11,12 @@ from test_configuration_form_results import HostFixture
 from configuration_form_results_fixture import OWNER_MODULE, OPEN
 from configuration_dialog_fixture import sources, QUESTION, WARNING
 from yadinassi import Interpreter, BSLError
-from yadinassi.configuration_application_profile import import_application_configuration
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.form_dialogs import DIALOG_CAPABILITY, DialogReturnCode, QuestionDialogMode
+from yadinassi.configuration.configuration_application_profile import import_application_configuration
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.forms.form_dialogs import DIALOG_CAPABILITY, DialogReturnCode, QuestionDialogMode
 from yadinassi.ui.configuration_app import ConfigurationBroker, ConfigurationController, PROTOCOL
 from yadinassi.ui.protocol import encode_line, decode_line
-from yadinassi.values import BSLType
+from yadinassi.types.values import BSLType
 
 
 class DialogFixture(HostFixture):
@@ -24,8 +24,8 @@ class DialogFixture(HostFixture):
         files=sources() if files is None else files
         database=None
         if business:
-            from yadinassi.configuration_business_profile import import_business_configuration
-            from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+            from yadinassi.configuration.configuration_business_profile import import_business_configuration
+            from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
             temporary=tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
             database=Path(temporary.name)/'dialogs.sqlite'
             SQLiteCatalogBackend.create_business_application(database,files).close()
@@ -438,7 +438,7 @@ class DialogValueTests(unittest.TestCase):
         with self.assertRaises(BSLError): vm.execute('DialogReturnCode.Yes=1;')
 
     def test_types_have_no_invented_internal_codecs(self):
-        from yadinassi import serialization
+        from yadinassi.formats.storage import serialization
         vm=Interpreter(output=lambda value:None); self.addCleanup(vm.close)
         for kind,expression in [(BSLType.QUESTION_DIALOG_MODE,'QuestionDialogMode.OK'),(BSLType.DIALOG_RETURN_CODE,'DialogReturnCode.OK')]:
             self.assertIn(kind,serialization._UNSUPPORTED_CODEC_TYPES); self.assertNotIn(kind,serialization._TYPE_IDS)
@@ -447,7 +447,7 @@ class DialogValueTests(unittest.TestCase):
             with self.assertRaises(BSLError): vm.execute('String('+expression+');')
 
     def test_enum_is_not_a_scalar_form_or_invocation_packet(self):
-        from yadinassi.invocation import _encode_scalar
+        from yadinassi.execution.invocation import _encode_scalar
         for value in (QuestionDialogMode.OK,DialogReturnCode.OK):
             with self.assertRaises((TypeError,ValueError)): _encode_scalar(value)
 

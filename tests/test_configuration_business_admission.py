@@ -10,15 +10,15 @@ import unittest
 
 from business_configuration_fixture import sources
 from test_configuration_catalog_profile import CATALOG, FORM
-from yadinassi.catalog_backend import BackendError
-from yadinassi.catalog_object_preparation import CatalogWriteRefused
-from yadinassi.catalogs import BSLCatalogs
-from yadinassi.configuration_business_profile import import_business_configuration
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.metadata import BSLCatalogMetadataCollection
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_migration_plan import prepare
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.catalog.catalog_object_preparation import CatalogWriteRefused
+from yadinassi.db.catalog.catalogs import BSLCatalogs
+from yadinassi.configuration.configuration_business_profile import import_business_configuration
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.metadata import BSLCatalogMetadataCollection
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare
 
 
 class BusinessAdmissionTests(unittest.TestCase):
@@ -69,7 +69,7 @@ class BusinessAdmissionTests(unittest.TestCase):
         with self.assertRaises(BackendError): SQLiteCatalogBackend(self.path)
 
     def test_document_metadata_tamper_rejected_on_export(self):
-        from yadinassi.sqlite_documents import schema_data
+        from yadinassi.db.sqlite.sqlite_documents import schema_data
         schema = self.backend._document_schemas[0]
         definition = json.dumps(schema_data(replace(schema, number_length=8)), ensure_ascii=False, separators=(',', ':'))
         self.mutate('UPDATE document_schema SET definition=? WHERE identity=?', (definition, str(schema.identity)))
@@ -105,7 +105,7 @@ class BusinessAdmissionTests(unittest.TestCase):
             ConfigurationApplication(import_business_configuration(changed), side='server', database_context=context)
 
     def test_forged_runtime_cannot_leave_partly_created_file(self):
-        from yadinassi.configuration_business_profile import BUSINESS_PROFILE
+        from yadinassi.configuration.configuration_business_profile import BUSINESS_PROFILE
         canonical = import_business_configuration(self.files)
         forged = replace(canonical, module_runtime=None, common_modules=(), modules=())
         target = self.path.with_name('forged-runtime.sqlite')

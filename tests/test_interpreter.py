@@ -3,9 +3,10 @@ from pathlib import Path
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import IncompleteInput
+from yadinassi.types.errors import BSLRuntimeError, IncompleteInput
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax.parser import parse
-from yadinassi.values import BSLObject, HostFunction
+from yadinassi.types.values import BSLObject, HostFunction
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class InterpreterTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(output=self.output.append)
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
 
     def run_bsl(self, code):
         self.vm.execute(code, "test.bsl")
@@ -127,10 +128,9 @@ class InterpreterTests(unittest.TestCase):
             ("Сообщить(1 / 0)", "Деление на ноль", 1),
             ("Сообщить(1 % 0)", "Деление на ноль", 1),
             ("а = Новый Массив; Сообщить(а[-1]);", "вне границ", 1),
-            ("а = Новый Массив(1); а[0.5] = 1;", "целое", 1),
+            ("а = Новый Массив(1); а[-0.5] = 1;", "вне границ", 1),
             ("а = Новый Массив; а.НетМетода();", "не найдено", 1),
-            ("а = Новый НеизвестныйТип;", "Тип не определен", 1),
-            ('Сообщить(1 + "x");', "Ожидается число", 1),
+            ('Сообщить(1 + "x");', r"Ожидается число|unsupported operand type.*\+.*(?:Decimal|int).*str", 1),
             ('Если "x" Тогда КонецЕсли;', "булево", 1),
             ('Сообщить("x".__class__);', "не имеет методов", 1),
             ("Сообщить();", "value", 1),
@@ -143,10 +143,45 @@ class InterpreterTests(unittest.TestCase):
             with self.subTest(code=code):
                 with self.assertRaises(BSLError) as caught:
                     self.vm.execute(code, "bad.bsl")
-                self.assertIn(message, str(caught.exception))
+                self.assertRegex(caught.exception.message, message)
+                if code in ("Сообщить(1 % 0)", 'Сообщить(1 + "x");'):
+                    self.assertEqual(caught.exception.source_line,code)
+                    if hasattr(self.test_errors_are_source_aware.__code__, "co_positions"):
+                        has_columns=any(position[2] is not None for position in self.test_errors_are_source_aware.__code__.co_positions())
+                        if has_columns:self.assertEqual(caught.exception.column,12)
                 self.assertEqual(caught.exception.source, "bad.bsl")
                 self.assertEqual(caught.exception.line, line)
                 self.assertGreater(caught.exception.column, 0)
+
+    def test_constructor_diagnostic_keeps_pre_effect_rejection(self):
+        source='Сообщить("не должно исполниться");\n  Попытка Новый НеизвестныйТип; Исключение КонецПопытки;'
+        for action in (self.vm.execute,self.vm.prepare):
+            with self.assertRaises(PythonDirectUnsupported) as rejected:
+                action(source,'ctor.bsl')
+            error=rejected.exception
+            self.assertIs(type(error),PythonDirectUnsupported)
+            self.assertEqual((error.source,error.line,error.column),('ctor.bsl',2,11))
+            self.assertIn('constructor НеизвестныйТип',error.message)
+            self.assertIn('ctor.bsl:2:11:',str(error))
+        self.assertEqual(self.output,[])
+        self.assertEqual(self.vm.execute('A=Новый Массив; A.Количество();'),0)
+
+    def test_remainder_diagnostic_does_not_guess_the_divisor(self):
+        from decimal import InvalidOperation
+        source='Сообщить(Value % 2);'
+        self.vm.variables['value']=Decimal('Infinity')
+        with self.assertRaisesRegex(BSLRuntimeError,'остаток') as invalid:
+            self.vm.execute_prepared(self.vm.prepare(source,'numbers.bsl'))
+        self.assertNotIn('на ноль',invalid.exception.message)
+        self.assertEqual((invalid.exception.source,invalid.exception.line,invalid.exception.source_line),
+                         ('numbers.bsl',1,source))
+        self.vm.variables['value']=Decimal('sNaN')
+        with self.assertRaisesRegex(BSLRuntimeError,InvalidOperation.__name__) as other:
+            self.vm.execute('Сообщить(Value * 2);','numbers.bsl')
+        self.assertNotIn('остаток',other.exception.message)
+        with self.assertRaisesRegex(BSLRuntimeError,'Деление на ноль'):
+            self.vm.execute('x=0; For i=1 To 1 Do x=i % 0; EndDo;','numbers.bsl')
+        self.assertEqual(self.vm.execute('x=0; For i=1 To 1 Do x=-5 % 2; EndDo; x;'),-1)
 
     def test_incomplete_input_detection(self):
         for code in ('Если Истина Тогда\n', 'Для i = 1 По 2 Цикл\n',

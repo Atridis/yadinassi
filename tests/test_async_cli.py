@@ -62,7 +62,7 @@ class AsyncCLITests(unittest.TestCase):
         self.assertEqual((r.returncode,r.stdout,r.stderr),(0,'caught\n',''))
 
     def test_noninteractive_interrupt_keeps_130(self):
-        vm=Interpreter(lambda _:None)
+        vm=Interpreter(lambda _:None, allow_extensions=True)
         def interrupt(): raise KeyboardInterrupt
         vm.register_function('Interrupt',interrupt)
         program='Async Procedure P() x=Await 1; Interrupt(); EndProcedure P();'
@@ -72,7 +72,7 @@ class AsyncCLITests(unittest.TestCase):
         self.assertEqual(vm.pending_promises,())
 
     def test_interactive_interrupt_cancels_siblings_before_next_command(self):
-        output=[];vm=Interpreter(output.append)
+        output=[];vm=Interpreter(output.append, allow_extensions=True)
         def interrupt(): raise KeyboardInterrupt
         vm.register_function('Interrupt',interrupt)
         program=('Async Procedure P() x=Await 1; Interrupt(); EndProcedure '

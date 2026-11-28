@@ -7,7 +7,7 @@ import hashlib
 from pathlib import Path
 import unittest
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 from scripts.native_1c_tree_load_contract import validate_records
 
 ROOT = Path(__file__).resolve().parents[1]

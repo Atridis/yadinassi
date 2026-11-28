@@ -2,9 +2,9 @@
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
-from yadinassi.form_runtime import FormSession, FormLimitError
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_runtime import FormSession, FormLimitError
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 SOURCE = '''
 &AtServer
@@ -47,6 +47,30 @@ EndProcedure
 def make(source=SOURCE):
     return FormSession(source, attributes=(BSLFormAttribute('Name',BSLTypeDescription('String')),),
         bindings={'OnCreateAtServer':'Create','OnOpen':'Open','BeforeClose':'Before','OnClose':'Closed'})
+
+
+class FormExtensionRegistrationTests(unittest.TestCase):
+    def test_platform_bindings_do_not_enable_python_extensions(self):
+        from yadinassi.forms.form_runtime import FormServerBinding
+        session=FormSession('',server_bindings=(FormServerBinding('Read',lambda _:1),))
+        vm=session.interpreter
+        self.addCleanup(vm.close)
+        self.assertFalse(vm.allow_extensions)
+        self.assertIn('formattribute',vm.types)
+        self.assertIn('changeattributes',vm.functions)
+        self.assertIn('read',vm.functions)
+        with self.assertRaisesRegex(ValueError,'allow_extensions'):
+            vm.register_function('PythonHook',lambda:None)
+
+    def test_explicit_opt_in_is_preserved_by_form_activation(self):
+        session=FormSession('',allow_extensions=True)
+        vm=session.interpreter
+        self.addCleanup(vm.close)
+        child=vm._activation_interpreter()
+        self.addCleanup(child.close)
+        self.assertTrue(child.allow_extensions)
+        child.register_function('PythonHook',lambda:None)
+        self.assertIn('pythonhook',child.functions)
 
 
 class FormRuntimeTests(unittest.TestCase):
@@ -103,7 +127,7 @@ class FormRuntimeTests(unittest.TestCase):
 
     def test_execution_budget(self):
         session=make(SOURCE.replace('ThisObject.Dynamic = ThisObject.Dynamic + ":open";', 'While True Do EndDo;'))
-        with patch('yadinassi.form_runtime.MAX_STEPS',100):
+        with patch('yadinassi.forms.form_runtime.MAX_STEPS',100):
             with self.assertRaises(FormLimitError):session.open()
         self.assertFalse(session._busy)
         self.assertTrue(session.closed)
@@ -141,15 +165,43 @@ class FormIntegrityTests(unittest.TestCase):
         self.assertNotIn('good',session.form._attributes)
 
     def test_nocontext_cannot_access_form(self):
-        source=SOURCE.replace('ThisObject.Dynamic = "command";', 'Detached();')+'''
+        from yadinassi import BSLRuntimeError
+        from yadinassi.execution.invocation import InvocationBinding, InvocationPort, InvocationServer
+
+        # Use the documented client-to-NoContext binding, not a monolithic
+        # FormSession initializer (which refuses detached declarations).
+        source=SOURCE.replace('ThisObject.Dynamic = "command";', 'Detached();')
+        for statement, denied in (('Local = "safe";', False), ('ThisObject.Dynamic = "wrong";', True)):
+            with self.subTest(statement=statement):
+                session=make(source)
+                self.addCleanup(session.interpreter.close)
+                server=InvocationServer('''
 &AtServerNoContext
 Procedure Detached()
- ThisObject.Dynamic = "wrong";
+ Message("entered detached");
+ Try
+  '''+statement+'''
+ Except
+  Message(ErrorDescription());
+  Raise;
+ EndTry;
+ Message("finished detached");
 EndProcedure
-'''
-        session=make(source);session.open()
-        with self.assertRaises(Exception):session.dispatch('command',revision=1,control='ApplyButton')
-        self.assertEqual(dict(session.snapshot().attributes)['Dynamic'],'created:open')
+''', {1:'Detached'})
+                port=InvocationPort(server.exchange)
+                port.bind_form(session,InvocationBinding('Detached',1,(),False))
+                self.assertEqual(dict(session.open().attributes)['Dynamic'],'created:open')
+                if denied:
+                    with self.assertRaisesRegex(BSLRuntimeError,'server_error'):
+                        session.dispatch('command',revision=1,control='ApplyButton')
+                    entered, description=session.messages
+                    self.assertEqual(entered,'entered detached')
+                    self.assertTrue(description.endswith(
+                        'Переменная или функция не определена: ThisObject'),description)
+                else:
+                    session.dispatch('command',revision=1,control='ApplyButton')
+                    self.assertEqual(session.messages,('entered detached','finished detached'))
+                self.assertEqual(dict(session.snapshot().attributes)['Dynamic'],'created:open')
 
     def test_contextful_server_updates_form(self):
         source=SOURCE.replace('ThisObject.Dynamic = "command";', 'UpdateAtServer();')+'''
@@ -181,7 +233,7 @@ EndProcedure
 
     def test_allocation_ledger_and_no_partially_added_item(self):
         session=make()
-        with patch('yadinassi.form_model.MAX_ALLOCATED',2):
+        with patch('yadinassi.forms.form_model.MAX_ALLOCATED',2):
             with self.assertRaises(Exception):session.open()
         self.assertEqual(session._allocated,2)
         self.assertEqual(tuple(session.form.commands._values),())
@@ -204,8 +256,8 @@ EndProcedure
         self.assertEqual(session.revision,1)
 
     def test_registry_codec_refusal(self):
-        from yadinassi import type_values
-        from yadinassi.values import BSLType
+        from yadinassi.types import type_values
+        from yadinassi.types.values import BSLType
         session=make();session.open()
         self.assertIs(type_values.type_of(session.form),BSLType.FORM)
         self.assertIs(type_values.type_of(session.form.items),BSLType.FORM_ITEMS)

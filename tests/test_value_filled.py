@@ -1,14 +1,16 @@
 """EDT-documented filled values, plus explicitly local compatibility limits."""
 from decimal import Decimal, localcontext, Inexact, Rounded
 import unittest
+from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.maps import BSLMap, BSLFixedMap
-from yadinassi.structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType
 from yadinassi.numeric.round_modes import BSLRoundMode, ROUND_MODES
-from yadinassi.strings import _WHITESPACE
-from yadinassi.value_checks import value_is_filled
+from yadinassi.syntax.parser import parse
+from yadinassi.text.strings import _WHITESPACE
+from yadinassi.types.value_checks import value_is_filled
 
 
 class ValueFilledTests(unittest.TestCase):
@@ -111,6 +113,35 @@ class ValueFilledTests(unittest.TestCase):
         for value in (Hostile(), ArraySubclass()):
             with self.assertRaises(TypeError):
                 value_is_filled(value)
+
+    def test_direct_native_storage_never_uses_host_length_hooks(self):
+        from yadinassi.execution.direct.python_direct_plain_array import PlainArray
+
+        class HostArray(list):
+            def __len__(self):
+                raise AssertionError("host length")
+
+        native = PlainArray([None])
+        self.vm.variables.update(native=native, foreign=HostArray([None]))
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                def run(source):
+                    return (self.vm.execute_prepared(self.vm.prepare_program(parse(source)))
+                            if prepared else self.vm.execute(source))
+
+                with patch.object(PlainArray, '__len__', side_effect=AssertionError("patched length")):
+                    self.assertIs(run('ValueIsFilled(native)'), True)
+                with self.assertRaisesRegex(BSLError, 'пока не поддерживается в Yadinassi'):
+                    run('ЗначениеЗаполнено(foreign)')
+
+    def test_explicit_host_function_override_still_wins(self):
+        vm = Interpreter(allow_extensions=True)
+        self.addCleanup(vm.close)
+        expression = 'ValueIsFilled(New Array)'
+        plan = vm.prepare_program(parse(expression))
+        for run in (lambda: vm.execute(expression), lambda: vm.execute_prepared(plan)):
+            vm.register_function('ValueIsFilled', lambda value: 'host override')
+            self.assertEqual(run(), 'host override')
 
     def test_errors_preserve_assignment_and_recover(self):
         for expression in ('ValueIsFilled()', 'ЗначениеЗаполнено(1, 2)',

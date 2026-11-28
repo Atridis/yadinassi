@@ -4,7 +4,7 @@ from unittest.mock import patch
 import unittest
 import test_configuration_inventory_app as base
 import test_configuration_record_pages as pages
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.db.database_context import SQLiteDBContext
 
 
 class ReferencePagesIntegrationTests(unittest.TestCase):
@@ -56,7 +56,7 @@ class ReferencePagesIntegrationTests(unittest.TestCase):
 
     def test_full_budget_refusal_exact_filter_recovery_and_search(self):
         sid=self.prepare();self.seed(32)
-        with patch('yadinassi.reference_choice_pages.MAX_ROWS',32):
+        with patch('yadinassi.forms.reference_choice_pages.MAX_ROWS',32):
             first=self.begin(sid);self.assertEqual(first['error'],'snapshot_limit');self.assertIsNone(first['navigation']);self.assertEqual(first['rows'],[])
             filtered=self.reference(sid,dict(action='filter',ticket=first['ticket'],code='X0031'))['state']['choice']
             self.assertEqual(filtered['navigation']['total'],1)
@@ -68,8 +68,8 @@ class ReferencePagesIntegrationTests(unittest.TestCase):
 
     def test_external_deletion_mark_before_apply_is_refused(self):
         import sqlite3
-        from yadinassi.sqlite_catalog import quote_identifier
-        from yadinassi.sqlite_query_indexes import register_query_collations
+        from yadinassi.db.sqlite.sqlite_catalog import quote_identifier
+        from yadinassi.db.sqlite.sqlite_query_indexes import register_query_collations
         sid=self.prepare();self.seed(32);first=self.begin(sid)
         found=self.reference(sid,dict(action='search',ticket=first['ticket'],query='X0031'))['state']['choice']
         with closing(SQLiteDBContext(self.path)) as context:

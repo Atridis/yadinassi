@@ -6,13 +6,22 @@ import tempfile
 import unittest
 
 from yadinassi.cli import main
-from yadinassi.configuration_modules import MODULE_RUNTIME, compile_module
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME, compile_module
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
 from configuration_runtime_fixture import CLIENT, SERVER, module_files
+
+
+def source_application(files, output):
+    files = dict(files)
+    files.setdefault('Ext/ManagedApplicationModule.bsl', b'')
+    return SourceApplication(import_source(files), output=output)
 
 
 class ModuleValidationTests(unittest.TestCase):
@@ -112,26 +121,37 @@ class ConfiguredCallsTests(unittest.TestCase):
         app.start()
         return app, output
 
+    def source_app(self, modules=(CLIENT,), application=''):
+        # General BSL calls use the source application. Keep self.app() for
+        # the distinct, deliberately narrow ConfigurationApplication API.
+        output = []
+        app = source_application(module_files(modules, application=application), output.append)
+        self.addCleanup(app.close)
+        app.start()
+        return app, output
+
     def test_named_export_private_routine_and_casefold(self):
         source = 'Function Hidden(X) Return X+1; EndFunction\nFunction Public(X) Export Return Hidden(X)*2; EndFunction'
-        app, output = self.app([('Tools', source, {})])
-        app.execute('Message(tOoLs.pUbLiC(3));')
+        app, output = self.source_app([('Tools', source, {})])
+        app.interpreter.execute('Message(tOoLs.pUbLiC(3));')
         self.assertEqual(output, ['8'])
-        with self.assertRaises(BSLError): app.execute('Tools.Hidden(1);')
+        with self.assertRaises(BSLError): app.interpreter.execute('Tools.Hidden(1);')
 
     def test_same_side_byref_defaults_and_procedure(self):
         source = 'Procedure Add(X, Val N = 2) Export X = X+N; EndProcedure'
-        app, output = self.app([('Tools', source, {})])
-        app.execute('X=1; Tools.Add(X,); Message(X);')
+        app, output = self.source_app([('Tools', source, {})])
+        app.interpreter.execute('X=1; Tools.Add(X,); Message(X);')
         self.assertEqual(output, ['3'])
-        with self.assertRaises(BSLError): app.execute('Y=Tools.Add(X);')
+        with self.assertRaises(BSLError): app.interpreter.execute('Y=Tools.Add(X);')
 
     def test_global_exports_call_private_helpers(self):
         source = 'Function Helper() Return 7; EndFunction\nFunction Public() Export Return Helper(); EndFunction'
         app, output = self.app([('GlobalTools', source, {'Global': 'true'})])
         app.execute('Message(Public());')
         self.assertEqual(output, ['7'])
-        with self.assertRaises(BSLError): app.execute('Helper();')
+        # The narrow direct command lane rejects unresolved bare calls before
+        # lowering. The private helper must remain unreachable from the command.
+        with self.assertRaises(PythonDirectUnsupported): app.execute('Helper();')
         with self.assertRaises(BSLError): app.execute('GlobalTools.Public();')
 
     def test_cross_module_repeated_nested_calls(self):
@@ -141,34 +161,34 @@ class ConfiguredCallsTests(unittest.TestCase):
 
     def test_two_context_copies_selected_by_caller(self):
         source = '#If Client Then\nFunction Side() Export Return "client"; EndFunction\n#Else\nFunction Side() Export Return "server"; EndFunction\n#EndIf'
-        app, output = self.app([('Both', source, {'Server': 'true'}),
+        app, output = self.source_app([('Both', source, {'Server': 'true'}),
             ('Gateway', 'Function Go() Export Return Both.Side(); EndFunction', SERVER)])
-        app.execute('Message(Both.Side()); Message(Gateway.Go());')
+        app.interpreter.execute('Message(Both.Side()); Message(Gateway.Go());')
         self.assertEqual(output, ['client', 'server'])
 
     def test_global_two_context_copies(self):
         source = '#If Client Then\nFunction Side() Export Return "client"; EndFunction\n#Else\nFunction Side() Export Return "server"; EndFunction\n#EndIf'
-        app, output = self.app([('Both', source, {'Server': 'true', 'Global': 'true'}),
+        app, output = self.source_app([('Both', source, {'Server': 'true', 'Global': 'true'}),
             ('Gateway', 'Function Go() Export Return Side(); EndFunction', SERVER)])
-        app.execute('Message(Side()); Message(Gateway.Go());')
+        app.interpreter.execute('Message(Side()); Message(Gateway.Go());')
         self.assertEqual(output, ['client', 'server'])
 
     def test_servercall_copy_in_out_and_value_result(self):
         source = 'Function Change(X, Val Y) Export X.Add(2); Y.Add(3); Return X; EndFunction'
-        app, output = self.app([('Gateway', source, SERVER)])
-        app.execute('X=New Array; Y=X; R=Gateway.Change(X,Y); R.Add(4); Message(X.Count()); Message(Y.Count()); Message(R.Count());')
+        app, output = self.source_app([('Gateway', source, SERVER)])
+        app.interpreter.execute('X=New Array; Y=X; R=Gateway.Change(X,Y); R.Add(4); Message(X.Count()); Message(Y.Count()); Message(R.Count());')
         self.assertEqual(output, ['1', '0', '2'])
 
     def test_unsupported_crossing_argument_before_side_effects(self):
         source = 'Procedure P(Val A, B) Export EndProcedure'
-        app, output = self.app([('Gateway', source, SERVER)], 'Function Effect() Message("bad"); Return 1; EndFunction')
-        with self.assertRaises(BSLError): app.execute('Gateway.P(Effect(), New Structure);')
+        app, output = self.source_app([('Gateway', source, SERVER)], 'Function Effect() Message("bad"); Return 1; EndFunction')
+        with self.assertRaises(BSLError): app.interpreter.execute('Gateway.P(Effect(), New Structure);')
         self.assertEqual(output, [])
 
     def test_unavailable_context_before_argument_effects(self):
-        app, output = self.app([('Hidden', CLIENT[1], {'ClientManagedApplication': 'false', 'Server': 'true'})],
+        app, output = self.source_app([('Hidden', CLIENT[1], {'ClientManagedApplication': 'false', 'Server': 'true'})],
                               'Function Effect() Message("bad"); Return 1; EndFunction')
-        with self.assertRaises(BSLError): app.execute('Hidden.Double(Effect());')
+        with self.assertRaises(BSLError): app.interpreter.execute('Hidden.Double(Effect());')
         self.assertEqual(output, [])
 
     def test_server_cannot_enter_client_module(self):
@@ -177,8 +197,8 @@ class ConfiguredCallsTests(unittest.TestCase):
         self.assertEqual(output, [])
 
     def test_stored_receiver_eval_and_identity(self):
-        app, output = self.app()
-        app.execute('M=Eval("Tools"); Message(M=Tools); Message(M.Double(3));')
+        app, output = self.source_app()
+        app.interpreter.execute('M=Eval("Tools"); Message(M=Tools); Message(M.Double(3));')
         self.assertEqual(output, ['Да', '6'])
 
     def test_callback_by_receiver_and_string(self):
@@ -197,10 +217,10 @@ class ConfiguredCallsTests(unittest.TestCase):
     def test_application_exports_persistent_state_and_instance_isolation(self):
         source = 'Function Go() Export Return Next(); EndFunction'
         program = 'Var N;\nFunction Next() Export N=N+1; Return N; EndFunction\nN=0;'
-        app, output = self.app([('Tools', source, {})], program)
-        other, other_output = self.app([('Tools', source, {})], program)
-        app.execute('Message(Tools.Go()); Message(Tools.Go());')
-        other.execute('Message(Tools.Go());')
+        app, output = self.source_app([('Tools', source, {})], program)
+        other, other_output = self.source_app([('Tools', source, {})], program)
+        app.interpreter.execute('Message(Tools.Go()); Message(Tools.Go());')
+        other.interpreter.execute('Message(Tools.Go());')
         self.assertEqual(output, ['1', '2']); self.assertEqual(other_output, ['1'])
 
     def test_readonly_metadata_registry(self):
@@ -246,6 +266,31 @@ class ApplicationLifecycleTests(unittest.TestCase):
         self.assertTrue(app.start()); self.assertEqual(app.state, 'running')
         self.assertTrue(app.close()); self.assertTrue(app.close())
         self.assertEqual(output, ['body', 'before', '4', 'leaving'])
+
+    def test_scalar_startup_rejects_transaction_before_initializer_effects(self):
+        app, output = self.prepare(
+            'Procedure OnStart() Message("hook"); EndProcedure\n'
+            'Message("initializer"); If False Then BeginTransaction(); EndIf;')
+        with self.assertRaises(PythonDirectUnsupported):
+            app.start()
+        self.assertEqual(output, [])
+        self.assertEqual(app.state, 'failed')
+        self.assertTrue(app.interpreter._family_closed)
+        with self.assertRaises(ValueError):
+            app.execute('Message("after failure");')
+        self.assertEqual(output, [])
+
+    def test_scalar_startup_output_cannot_reenter_application_command(self):
+        output = []
+        def emit(value):
+            output.append(value)
+            with self.assertRaisesRegex(ValueError, 'must be running'):
+                app.execute('Message("reentered");')
+        app = ConfigurationApplication.from_files(
+            module_files([CLIENT], application='Message("body");'), output=emit)
+        self.addCleanup(app.close, force=True)
+        self.assertTrue(app.start())
+        self.assertEqual(output, ['body'])
 
     def test_start_cancel_skips_onstart_and_cannot_restart(self):
         app, output = self.prepare('Procedure BeforeStart(Cancel) Cancel=True; EndProcedure\nProcedure OnStart() Message("bad"); EndProcedure')
@@ -354,16 +399,21 @@ class AdditionalConfigurationBoundaryTests(unittest.TestCase):
         with self.assertRaises(BSLError): interpreter.execute('Message(Metadata.CommonModules.Count());')
 
     def test_server_error_has_no_partial_copyback(self):
-        app = ConfigurationApplication.from_files(module_files([('Gateway',
-            'Procedure Fail(X) Export X.Add(1); Raise "bad"; EndProcedure', SERVER)]))
-        self.addCleanup(app.close, force=True); app.start()
-        app.execute('A=New Array; Try Gateway.Fail(A); Except EndTry;')
-        self.assertEqual(len(app.interpreter.variables['a'].items), 0)
+        output = []
+        app = source_application(module_files([('Gateway',
+            'Procedure Fail(X) Export X.Add(1); Raise "bad"; EndProcedure', SERVER)]), output.append)
+        self.addCleanup(app.close); app.start()
+        app.interpreter.execute('A=New Array; Try Gateway.Fail(A); Except Message(ErrorDescription()); EndTry; Message(A.Count());')
+        self.assertEqual(len(output), 2)
+        self.assertIn('bad', output[0])
+        self.assertEqual(output[1], '0')
 
     def test_dynamic_assignment_does_not_replace_module(self):
-        app = ConfigurationApplication.from_files(module_files([CLIENT]))
-        self.addCleanup(app.close, force=True); app.start()
-        app.execute('Execute("Tools=7;"); Result=Tools.Double(2);')
+        app = source_application(module_files([CLIENT]), lambda _: None)
+        self.addCleanup(app.close); app.start()
+        with self.assertRaisesRegex(BSLError, 'namespace is read-only'):
+            app.interpreter.execute('Execute("Tools=7;");')
+        app.interpreter.execute('Result=Tools.Double(2);')
         self.assertEqual(app.interpreter.variables["result"], 4)
 
     def test_host_interpreter_binding_reuses_module_state_and_exports(self):
@@ -386,12 +436,12 @@ class AdditionalConfigurationBoundaryTests(unittest.TestCase):
 
     def test_global_unavailable_on_client_rejected_before_effect(self):
         out = []
-        app = ConfigurationApplication.from_files(module_files([('G',
+        app = source_application(module_files([('G',
             'Function Public(Val X) Export Return X; EndFunction',
             {'Global': 'true', 'ClientManagedApplication': 'false', 'Server': 'true'})],
-            application='Function Effect() Message("bad"); Return 1; EndFunction'), output=out.append)
-        self.addCleanup(app.close, force=True); app.start()
-        with self.assertRaises(BSLError): app.execute('Public(Effect());')
+            application='Function Effect() Message("bad"); Return 1; EndFunction'), out.append)
+        self.addCleanup(app.close); app.start()
+        with self.assertRaises(BSLError): app.interpreter.execute('Public(Effect());')
         self.assertEqual(out, [])
 
     def test_closed_lifetime_cannot_be_used_through_bound_child(self):
@@ -428,12 +478,12 @@ class ModuleOnlyConfigurationTests(unittest.TestCase):
 
     def test_application_only_configuration(self):
         output = []
-        app = ConfigurationApplication.from_files(self.files(application='Message("start");'), output=output.append)
-        self.addCleanup(app.close, force=True); self.assertEqual(output, [])
+        app = source_application(self.files(application='Message("start");'), output.append)
+        self.addCleanup(app.close); self.assertEqual(output, [])
         app.start(); self.assertEqual(output, ['start'])
 
     def test_default_importer_and_storage_zero_inventory_stay_closed(self):
-        from yadinassi.catalog_backend import BackendError
+        from yadinassi.db.catalog.catalog_backend import BackendError
         files = self.files([CLIENT])
         with self.assertRaises(ValueError): import_configuration(files)
         config = import_configuration(files, module_runtime=MODULE_RUNTIME)
@@ -441,3 +491,41 @@ class ModuleOnlyConfigurationTests(unittest.TestCase):
             path = Path(temp)/'db.sqlite'
             with self.assertRaises(BackendError): SQLiteDBContext.create(path, config)
             self.assertFalse(path.exists())
+
+
+class ConfigurationExtensionPolicyTests(unittest.TestCase):
+    def make(self, **kwargs):
+        app = ConfigurationApplication.from_files(module_files([CLIENT]), **kwargs)
+        self.addCleanup(lambda: app.close(force=True))
+        return app
+
+    def test_default_is_closed_and_family_inherits(self):
+        app = self.make()
+        app.start()
+        self.assertFalse(app.interpreter.allow_extensions)
+        self.assertFalse(app._modules['tools', 'client'].interpreter.allow_extensions)
+        with self.assertRaisesRegex(ValueError, 'allow_extensions=True'):
+            app.interpreter.register_function('Embed', lambda: 42)
+
+    def test_embedding_must_explicitly_opt_in(self):
+        app = self.make(allow_extensions=True)
+        app.start()
+        app.interpreter.register_function('Embed', lambda: 42)
+        self.assertTrue(app.interpreter.allow_extensions)
+        self.assertTrue(app._modules['tools', 'client'].interpreter.allow_extensions)
+        self.assertEqual(app.interpreter.functions['embed'](), 42)
+        with self.assertRaisesRegex(TypeError, 'allow_extensions must be bool'):
+            self.make(allow_extensions=1)
+
+    def test_named_host_services_are_narrow_not_general_extensions(self):
+        from yadinassi.types.values import HostFunction
+        service = HostFunction('Embed', lambda: 42)
+        app = self.make(host_services={'Embed': service})
+        app.start()
+        owner = app.interpreter_factory(lambda value: None)
+        self.addCleanup(owner.close)
+        self.assertIs(app.interpreter.functions['embed'], service)
+        self.assertIs(owner.functions['embed'], service)
+        self.assertFalse(owner.allow_extensions)
+        with self.assertRaisesRegex(ValueError, 'allow_extensions=True'):
+            owner.register_function('Other', lambda: 42)

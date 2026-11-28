@@ -4,15 +4,15 @@ from dataclasses import replace
 import unittest
 from test_enum_storage_binding import Lifetime
 from test_enum_storage_values import DB, UNITS, definitions
-from yadinassi.enum_storage_binding import EnumStorageBinding
-from yadinassi.enum_storage_values import EnumValueDomain
-from yadinassi.enumerations import BSLEnumerations
-from yadinassi.form_references import FormReferenceScope, FormEnumBinding, FormEnumTarget, FormEnumReference
-from yadinassi.form_model import BSLFormAttribute, scalar
-from yadinassi.form_tables import FormTableSchema, FormTableColumn
-from yadinassi.form_replication import ReplicatedFormServer, ReplicatedFormSession, _pack_state, _unpack_state
-from yadinassi.catalog_backend import BackendError
-from yadinassi.invocation import _encode_scalar
+from yadinassi.db.metadata.enum_storage_binding import EnumStorageBinding
+from yadinassi.db.metadata.enum_storage_values import EnumValueDomain
+from yadinassi.db.metadata.enumerations import BSLEnumerations
+from yadinassi.forms.form_references import FormReferenceScope, FormEnumBinding, FormEnumTarget, FormEnumReference
+from yadinassi.forms.form_model import BSLFormAttribute, scalar
+from yadinassi.forms.form_tables import FormTableSchema, FormTableColumn
+from yadinassi.forms.form_replication import ReplicatedFormServer, ReplicatedFormSession, _pack_state, _unpack_state
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.execution.invocation import _encode_scalar
 
 
 def scopes():

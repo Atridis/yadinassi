@@ -4,9 +4,9 @@ from uuid import uuid4
 import test_source_document_records as document
 import test_source_document_sections as section
 import test_source_catalog_definitions as catalog
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 def package(body='',where='document',target='Invoice'):
     field=catalog.attribute('Link','<v8:Type>cfg:DocumentRef.'+target+'</v8:Type>')

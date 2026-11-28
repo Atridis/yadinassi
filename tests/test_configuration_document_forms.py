@@ -4,10 +4,10 @@ from decimal import Decimal
 import unittest
 from uuid import uuid4
 from document_form_fixture import sources
-from yadinassi.configuration_document_profile import import_document_forms_configuration
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.configuration_document import DocumentImage, DocumentRowImage
-from yadinassi.form_program import compile_form_module
+from yadinassi.configuration.configuration_document_profile import import_document_forms_configuration
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_document import DocumentImage, DocumentRowImage
+from yadinassi.forms.form_program import compile_form_module
 
 
 class DocumentFormCompilerTests(unittest.TestCase):
@@ -73,7 +73,7 @@ class DocumentFormCompilerTests(unittest.TestCase):
 
     def test_save_preflight_preserves_noninitial_row_identity_and_selection(self):
         from types import SimpleNamespace
-        from yadinassi.configuration_document import DocumentSaveResult
+        from yadinassi.configuration.configuration_document import DocumentSaveResult
         from test_form_tables import active
         d=self.definition();server=d.create_server();session=server.session
         self.addCleanup(session.interpreter.close)

@@ -57,6 +57,23 @@ def signature(result):
 
 
 class TestDurationRunnerTests(unittest.TestCase):
+    def test_lone_surrogate_failure_keeps_summary_on_strict_utf8_stream(self):
+        class Case(unittest.TestCase):
+            def runTest(self):
+                self.fail('диагностика: \ud800')
+
+        raw = io.BytesIO()
+        with io.TextIOWrapper(raw, encoding='utf-8', errors='strict') as stream:
+            result = TimedTextTestRunner(stream=stream, verbosity=2).run(
+                unittest.TestSuite([Case()]))
+            stream.flush()
+            log = raw.getvalue().decode('utf-8')
+        self.assertFalse(result.wasSuccessful())
+        self.assertEqual(len(result.failures), 1)
+        self.assertIn('диагностика: \\ud800', log)
+        self.assertIn('Ran 1 test', log)
+        self.assertIn('FAILED (failures=1)', log)
+
     def test_all_outcomes_and_subtests_preserve_results(self):
         for verbosity in (0, 1, 2):
             for failfast in (False, True):

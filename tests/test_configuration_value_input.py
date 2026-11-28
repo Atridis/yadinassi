@@ -11,15 +11,15 @@ from test_configuration_form_results import HostFixture
 from configuration_form_results_fixture import OWNER_MODULE, OPEN, CHILD_MODULE, business_sources
 from configuration_dialog_fixture import sources as dialog_sources, QUESTION, WARNING
 from yadinassi import Interpreter, BSLError
-from yadinassi.configuration_application_profile import import_application_configuration
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.form_dialogs import DIALOG_CAPABILITY
-from yadinassi.form_value_input import INPUT_CAPABILITY
+from yadinassi.configuration.configuration_application_profile import import_application_configuration
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.forms.form_dialogs import DIALOG_CAPABILITY
+from yadinassi.forms.form_value_input import INPUT_CAPABILITY
 from yadinassi.ui.configuration_app import ConfigurationBroker, ConfigurationController, PROTOCOL
 from yadinassi.ui.form_app import PROTOCOL as FORM_PROTOCOL
 from yadinassi.ui.protocol import encode_line, decode_line, encode_value
-from yadinassi.value_lists import BSLValueList
-from yadinassi.values import HostFunction
+from yadinassi.collections.value_lists import BSLValueList
+from yadinassi.types.values import HostFunction
 
 INPUT = 'ShowInputValue(Callback, 1, "Quantity");'
 PREPARE = 'Options=New ValueList; Options.Add("same","First"); InitialItem=Options.Add("same","Second");'
@@ -39,8 +39,8 @@ class InputFixture(HostFixture):
         files = sources() if files is None else files
         database = None
         if business:
-            from yadinassi.configuration_business_profile import import_business_configuration
-            from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+            from yadinassi.configuration.configuration_business_profile import import_business_configuration
+            from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
             temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
             database = Path(temporary.name)/'inputs.sqlite'
             SQLiteCatalogBackend.create_business_application(database, files).close()
@@ -127,7 +127,7 @@ class InputHostTests(InputFixture, unittest.TestCase):
         self.assertEqual(broker.sessions[owner][0].session.form._data['greeting'], 'accepted')
 
     def test_four_scalar_kinds_and_russian_alias(self):
-        from yadinassi.dates import date
+        from yadinassi.temporal.dates import date
         for initial, value in [('"before"','after'), ('False',True), ('1',Decimal('3.50')),
                                ('Date(2024,1,2)',date(Decimal(2024),Decimal(1),Decimal(3)))]:
             with self.subTest(initial=initial):
@@ -310,6 +310,56 @@ class InputHostTests(InputFixture, unittest.TestCase):
             files[OWNER_MODULE] += ('\n&AtServer\nProcedure ServerAsk() '+call+' EndProcedure').encode()
             self.refused(files)
 
+    def test_server_list_choice_denied_before_candidate_callback_is_evaluated(self):
+        files = sources(showing='ServerAsk();', suffix='')
+        files[OWNER_MODULE] += b'''
+&AtServer
+Procedure ServerAsk()
+ Values = New ValueList;
+ Greeting = "before";
+ Try
+  Values.ShowChooseItem(Effect());
+ Except
+  If Greeting = "before" Then Greeting = "refused before effects"; EndIf;
+ EndTry;
+EndProcedure
+&AtServer
+Function Effect()
+ Greeting = "effect ran";
+ Return Undefined;
+EndFunction
+'''
+        _, app, _ = self.host(files)
+        owner = self.open(app)
+        result = self.event(app, owner)
+        self.assertIsNone(result['error'], result)
+        self.assertIsNone(result['form']['result']['error'], result)
+        self.assertEqual(result['inputs'], [])
+        self.assertEqual(self.greeting(app, owner), 'refused before effects')
+
+    def test_value_list_constructor_rejects_arguments_before_client_effects(self):
+        for name in ('ValueList', 'СписокЗначений'):
+            with self.subTest(name=name):
+                files = sources(showing=f'''Greeting="before";
+Try Options=New {name}(Effect());
+Except
+ If Greeting="before" Then Greeting=ErrorDescription(); EndIf;
+EndTry;''', suffix='')
+                files[OWNER_MODULE] += b'''
+&AtClient
+Function Effect()
+ Greeting = "effect ran";
+ Return 1;
+EndFunction
+'''
+                _, app, _ = self.host(files)
+                owner = self.open(app)
+                result = self.event(app, owner)
+                self.assertIsNone(result['error'], result)
+                self.assertIsNone(result['form']['result']['error'], result)
+                self.assertEqual(result['inputs'], [])
+                self.assertIn('ValueList constructor takes no arguments', self.greeting(app, owner))
+
     def test_same_context_common_modules_preserve_callback_and_item_owner(self):
         for choosing in (False, True):
             showing = PREPARE+'Tools.Ask(Options,Callback);' if choosing else 'Tools.Ask(Callback);'
@@ -322,6 +372,38 @@ class InputHostTests(InputFixture, unittest.TestCase):
                 self.assertIsNone(self.answer(app, owner, descriptor, action='choose', choice=descriptor['choices'][1]['choice'])['error'])
                 self.assertIs(app.sessions[owner][0].session.interpreter.variables['seen'], original)
             else: self.assertIsNone(self.answer(app, owner, descriptor)['error'])
+
+    def test_nested_client_common_calls_preserve_only_the_current_form_callback(self):
+        from configuration_runtime_fixture import module_files
+
+        def input_sources(showing):
+            files = sources(showing=showing)
+            extra = module_files([('InputDelegate',
+                'Procedure Ask(Val Completion) Export ShowInputValue(Completion,1,"nested"); EndProcedure', {})])
+            files.update({path: content for path, content in extra.items() if path.startswith('CommonModules/')})
+            files['Configuration.xml'] = files['Configuration.xml'].replace(
+                b'</ChildObjects>', b'<CommonModule>InputDelegate</CommonModule></ChildObjects>')
+            files['CommonModules/Tools/Ext/Module.bsl'] += (
+                b'\nProcedure Ask(Val Completion) Export InputDelegate.Ask(Completion); EndProcedure')
+            return files
+
+        _, active, _, active_owner, descriptor = self.pending(input_sources('Tools.Ask(Callback);'))
+        self.assertEqual(descriptor['text'], 'nested')
+        self.assertIsNone(self.answer(active, active_owner, descriptor)['error'])
+        self.assertEqual(self.extra(active, active_owner).get('Calls'), 1)
+        callback = active.sessions[active_owner][0].session.interpreter.variables['callback']
+
+        _, other, _ = self.host(input_sources('BorrowCallback(); Tools.Ask(Callback);'))
+        other_owner = self.open(other)
+        vm = other.sessions[other_owner][0].session.interpreter
+        def borrow(): vm.variables['callback'] = callback
+        vm.functions['borrowcallback'] = HostFunction('BorrowCallback', borrow, returns_value=False)
+        result = self.event(other, other_owner)
+        self.assertEqual(result['form']['result']['error'], 'event_failed')
+        self.assertFalse(other.inputs)
+        self.assertFalse(other.owner_inputs)
+        self.assertNotIn(other.application._input_call_key, vm._scheduler.active_context.state)
+        self.assertEqual(self.extra(active, active_owner).get('Calls'), 1)
 
     def test_marker_has_no_ambient_or_direct_callable_authority(self):
         source = BSLValueList(); source.add('x')

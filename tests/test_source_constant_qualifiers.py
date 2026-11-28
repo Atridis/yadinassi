@@ -7,11 +7,11 @@ import unittest
 from test_source_defined_type_constants import package as defined_package
 from test_source_session_parameters import declaration
 from test_source_constant_store import configuration
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_constants import source_constant_definitions
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.dates import BSLDate,TICKS_PER_SECOND
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_constants import source_constant_definitions
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.temporal.dates import BSLDate,TICKS_PER_SECOND
 
 
 def string(length,allowed='Variable'):

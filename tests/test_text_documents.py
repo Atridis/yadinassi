@@ -4,13 +4,13 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.text_documents import BSLTextDocument
-from yadinassi.values import BSLArray, BSLType
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.serialization import value_to_string_internal
-from yadinassi.value_checks import value_is_filled
-from yadinassi.xml_values import xml_string
+from yadinassi.streams.text_documents import BSLTextDocument
+from yadinassi.types.values import BSLArray, BSLType
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.formats.storage.serialization import value_to_string_internal
+from yadinassi.types.value_checks import value_is_filled
+from yadinassi.formats.xml.xml_values import xml_string
 
 
 class TextDocumentLocalPolicyTests(unittest.TestCase):
@@ -96,7 +96,7 @@ class TextDocumentLocalPolicyTests(unittest.TestCase):
 
     def test_text_budget_counts_utf16_and_failure_keeps_state(self):
         self.doc.clear()
-        with patch('yadinassi.text_documents._MAX_TEXT_UNITS', 4):
+        with patch('yadinassi.streams.text_documents._MAX_TEXT_UNITS', 4):
             self.doc.set_text('😀😀')
             self.assertEqual(self.doc.get_text(), '😀😀')
             for method, args in ((self.doc.set_text, ('😀😀a',)), (self.doc.add_line, ('',)),
@@ -109,7 +109,7 @@ class TextDocumentLocalPolicyTests(unittest.TestCase):
 
     def test_line_budget_checks_set_and_all_mutations_before_commit(self):
         before = self.snapshot()
-        with patch('yadinassi.text_documents._MAX_LINES', 2):
+        with patch('yadinassi.streams.text_documents._MAX_LINES', 2):
             for method, args in ((self.doc.set_text, ('1\n2\n3',)),
                                  (self.doc.add_line, ('X',)),
                                  (self.doc.insert_line, (D(0), 'X')),
@@ -182,6 +182,18 @@ class TextDocumentLocalPolicyTests(unittest.TestCase):
         self.assertEqual(vm.execute('a.GetText()'), 'changed')
         vm.execute('d.Clear(); d.AddLine("again");')
         self.assertEqual(vm.execute('a.GetLine(1)'), 'again')
+
+    def test_direct_line_indices_do_not_coerce_boolean_or_fraction(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('d=New TextDocument; d.SetText("A");')
+        for index in ('True', '0.5', '-1'):
+            for operation in ('GetLine({})', 'InsertLine({}, "B")',
+                              'ReplaceLine({}, "B")', 'DeleteLine({})'):
+                with self.subTest(index=index, operation=operation), self.assertRaises(BSLError):
+                    vm.execute('d.' + operation.format(index) + ';')
+                self.assertEqual(vm.execute('d.GetText()'), 'A')
+        self.assertEqual(vm.execute('d.GetLine(1)'), 'A')
 
 
 if __name__ == '__main__': unittest.main()

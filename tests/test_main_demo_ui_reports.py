@@ -5,18 +5,21 @@ import tempfile
 import unittest
 from test_main_demo_configuration import source
 from test_main_demo_runtime import SEED
-from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.inventory_application_reports import InventoryReports
-from yadinassi.inventory_host_operations import _source_configuration
-from yadinassi.catalog_backend import BackendError
+from yadinassi.configuration.configuration_main_demo import PROFILE, import_main_demo_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.demos.inventory_application_reports import InventoryReports
+from yadinassi.configuration.demos.inventory_host_operations import _source_configuration
+from yadinassi.db.catalog.catalog_backend import BackendError
 from yadinassi.runtime import Interpreter
+from sqlite_test_templates import copy_main_demo
 
 class MainDemoUIReportsTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
         self.config = import_main_demo_configuration(source(), profile=PROFILE)
-        self.context = SQLiteDBContext.create_main_demo(Path(temporary.name)/'demo.sqlite', self.config)
+        path = Path(temporary.name)/'demo.sqlite'
+        copy_main_demo(path)
+        self.context = SQLiteDBContext(path)
         self.addCleanup(self.context.close)
         self.vm = Interpreter(database_context=self.context)
         self.addCleanup(self.vm.close)

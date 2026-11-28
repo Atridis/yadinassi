@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
 import native_1c_json_family_contract as wire
 import native_1c_json_family_replay as replay
@@ -16,12 +17,9 @@ SOURCE_PATH = ROOT / 'integrational_tests/measurements/json_family.bsl'
 SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
 
 
-def emit(*, missing=False, source=SOURCE):
+def emit(*, source=SOURCE):
     out = []
-    vm = Interpreter(out.append)
-    if missing:
-        for name in ('прочитатьjson', 'readjson', 'записатьjson', 'writejson'):
-            vm.functions.pop(name, None)
+    vm = Interpreter(out.append, allow_extensions=True)
     with replay.temporary_file_helpers(vm):
         vm.execute(source)
     return ('\n'.join(out) + '\n').encode('ascii')
@@ -61,10 +59,32 @@ class JSONFamilyMeasurementTests(unittest.TestCase):
         raw = emit()
         self.assertEqual(len(wire.require_available(raw)), 31)
         self.assertFalse(any(row['status'] == 'observer-error' for row in wire.validate_output(raw)))
-        with self.assertRaises(wire.AvailabilityError): wire.require_available(emit(missing=True))
+
+    def test_missing_local_capability_fails_before_publishing_an_observation(self):
+        # Artificial registry removal is a boundary denial, not a BSL action error.
+        out = []
+        vm = Interpreter(out.append)
+        self.addCleanup(vm.close)
+        vm.functions.pop('прочитатьjson')
+        vm.functions.pop('readjson')
+        vm.functions.pop('записатьjson')
+        vm.functions.pop('writejson')
+        with self.assertRaisesRegex(BoundaryViolation, 'unregistered host service: прочитатьjson'):
+            vm.execute('Target=ПрочитатьJSON(Неопределено); Message("unreachable");')
+        self.assertNotIn('target', vm.variables)
+        self.assertEqual(out, [])
+
+    def test_catchable_action_failure_is_not_available(self):
+        from yadinassi.formats.json.json_processing import BSLJSONReader
+        with mock.patch.object(BSLJSONReader, 'set_string', side_effect=ValueError('injected')):
+            raw = emit()
+        records = wire.validate_output(raw)
+        self.assertTrue(any(row['status'] == 'action-error' for row in records))
+        self.assertFalse(any(row['status'] == 'observer-error' for row in records))
+        with self.assertRaises(wire.AvailabilityError): wire.require_available(raw)
 
     def test_temp_helpers_only_owned_paths_and_cleanup(self):
-        vm = Interpreter(lambda _: None)
+        vm = Interpreter(lambda _: None, allow_extensions=True)
         with tempfile.TemporaryDirectory(prefix='json-unowned-') as tmp:
             outside = Path(tmp) / 'keep'; outside.write_text('keep', encoding='utf-8')
             with replay.temporary_file_helpers(vm) as allocated:

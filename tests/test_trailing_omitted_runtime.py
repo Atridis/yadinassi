@@ -9,8 +9,8 @@ import unittest
 
 from yadinassi import Interpreter
 from yadinassi.syntax import ast
-from yadinassi.async_runtime import Promise
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.application.async_runtime import Promise
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
 
 
@@ -39,7 +39,7 @@ ROUTINES = '''
 class TrailingOmittedArgumentTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def test_empty_call_and_terminal_holes_have_distinct_ast_positions(self):
         cases = (('P()', ()), ('P(,)', (True, True)),
@@ -88,6 +88,18 @@ class TrailingOmittedArgumentTests(unittest.TestCase):
         self.assertEqual(self.vm.execute('bodiesCalled'), Decimal(3))
         self.assertIsNone(self.vm.locals)
         self.assertEqual(self.vm._execute_depth[0], 0)
+
+    def test_mixed_required_and_defaulted_holes_in_direct_and_persisted_calls(self):
+        self.vm.execute("""
+            Function Mix(Required, Val Fallback = 4, Val Tail = 5)
+                If Required = Undefined Then Required = 7; EndIf;
+                Return Required * 100 + Fallback * 10 + Tail;
+            EndFunction
+            Direct = Mix(,,9);
+        """)
+        self.vm.execute('Persisted = 0; Execute("Persisted = Mix(,,9);");')
+        self.assertEqual(self.vm.variables['direct'], Decimal(749))
+        self.assertEqual(self.vm.variables['persisted'], Decimal(749))
 
     def test_arity_rejection_precedes_argument_and_body_effects(self):
         self.vm.execute(ROUTINES)
@@ -142,12 +154,17 @@ class TrailingOmittedArgumentTests(unittest.TestCase):
                            'items.Add(Tick(),)', 'Receiver().Add(Tick(),)',
                            'New Array(Tick(),)', 'New HostType(Tick(),)'):
             with self.subTest(expression=expression):
-                with self.assertRaisesRegex(BSLRuntimeError, 'Пропуск аргументов'):
+                with self.assertRaises(BSLRuntimeError) as raised:
                     self.vm.execute(expression)
                 self.assertEqual(self.vm.execute('argumentsCalled'), Decimal(0))
                 self.assertEqual(self.vm.execute('items.Count()'), Decimal(0))
                 self.assertEqual(host_calls, [])
                 self.assertEqual(self.output, [])
+                # A known Array.Add can reject this syntax as an arity error.
+                diagnostic = (r'Пропуск аргументов|[Кк]оличество аргументов'
+                              if expression.startswith('items.Add(')
+                              else 'Пропуск аргументов')
+                self.assertRegex(str(raised.exception), diagnostic)
 
 
 if __name__ == '__main__':

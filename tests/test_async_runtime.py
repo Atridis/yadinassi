@@ -7,15 +7,15 @@ import unittest
 import weakref
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.async_runtime import Promise, AwaitRequest
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.application.async_runtime import Promise, AwaitRequest
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
 
 
 class AsyncRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
 
     def run_code(self, code):
         return self.vm.execute(code, 'async-test.bsl')
@@ -101,6 +101,87 @@ class AsyncRuntimeTests(unittest.TestCase):
                 self.vm.execute('Try CrashAgain(); Except Message("ordinary BSL error"); EndTry;')
                 self.assertEqual(self.output[-1], 'ordinary BSL error')
 
+    def test_standalone_async_public_ast_and_prepared(self):
+        source = '''
+        Var total;
+        Async Function F(a)
+            total = total + 1;
+            Return Await a + total;
+        EndFunction
+        total = 1;
+        p = F(6);
+        '''
+        for prepared in (False, True):
+            vm = Interpreter()
+            self.addCleanup(vm.close)
+            with self.subTest(prepared=prepared):
+                program = parse(source)
+                if prepared:
+                    plan = vm.prepare_program(program)
+                    # Caller AST edits must not affect the prepared task code.
+                    program[1].body[:] = []
+                    vm.execute_prepared(plan)
+                else:
+                    vm.execute_program(program)
+                self.assertEqual(vm.variables['p'].result, Decimal(8))
+                self.assertEqual(vm.variables['total'], Decimal(2))
+                self.assertEqual(vm.pending_promises, ())
+
+    def test_suspended_task_never_resumes_against_replaced_module_state(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        signal = self.vm._scheduler.new_pending()
+        self.vm.register_function('Signal', lambda: signal)
+        self.run_code('Async Procedure P() Await Signal(); Message("must not run"); EndProcedure P();')
+        self.vm.variables = dict(self.vm.variables)
+        self.vm._scheduler.resolve(signal)
+        with self.assertRaisesRegex(BoundaryViolation, 'activation changed'):
+            self.vm.run_until_idle()
+        self.assertEqual(self.output, [])
+        self.assertEqual(self.vm.pending_promises, ())
+
+    def test_root_async_task_crosses_server_after_await(self):
+        self.run_code("""
+        &AtServer
+        Function OnServer(Val x) Message("server"); Return x; EndFunction
+        &AtClient
+        Function Effect() Message("actual"); Return 4; EndFunction
+        &AtClient
+        Async Function Work()
+            Await 0;
+            Return OnServer(Effect());
+        EndFunction
+        result=Work();
+        """)
+        self.assertEqual(self.output, ['actual', 'server'])
+        promise = self.vm.variables['result']
+        self.assertEqual(promise.state, 'fulfilled')
+        self.assertEqual(promise.result, Decimal(4))
+        self.assertEqual(self.vm._context_stack, ['client'])
+        self.assertEqual(self.vm._module_context_stack, [True])
+
+    def test_imported_async_task_denies_contextful_server_crossing_before_actuals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'Child.bsl').write_text("""
+            &AtServer
+            Function OnServer(Val x) Message("server"); Return x; EndFunction
+            &AtClient
+            Function Effect() Message("actual"); Return 4; EndFunction
+            &AtClient
+            Async Function Work() Export
+                Await 0;
+                Try Return OnServer(Effect()); Except Message("blocked"); EndTry;
+                Return 7;
+            EndFunction
+            """, encoding='utf-8')
+            self.vm.execute('// #Import Child.bsl\nresult=Child.Work();', str(root / 'Main.bsl'))
+        self.assertEqual(self.output, ['blocked'])
+        promise = self.vm.variables['result']
+        self.assertEqual(promise.state, 'fulfilled')
+        self.assertEqual(promise.result, Decimal(7))
+        self.assertEqual(self.vm._context_stack, ['client'])
+        self.assertEqual(self.vm._module_context_stack, [True])
+
     def test_eager_call_and_yield_even_settled(self):
         self.run_code('''
         Async Function Leaf() Message("leaf"); Return 7; EndFunction
@@ -120,7 +201,7 @@ class AsyncRuntimeTests(unittest.TestCase):
         ''')
         self.assertEqual(self.vm.variables['x'], Decimal(5))
         self.assertEqual(self.vm.variables['y'], Decimal(4))
-        self.assertEqual(self.vm.variables['a'].get(Decimal(0)), Decimal(10))
+        self.assertEqual(self.run_code('a[0]'), Decimal(10))
         self.assertEqual(self.vm.variables['p'].result, Decimal(21))
 
     def test_pending_host_signal_preserves_siblings_locals(self):
@@ -397,6 +478,94 @@ class AsyncRuntimeTests(unittest.TestCase):
               a=M.F(10);b=M.F(20);Message(Await a);Message(Await b);Message(M.total);
             EndProcedure Main();''',str(root/'Main.bsl'))
         self.assertEqual(self.output,['11','21','2'])
+
+    def test_sync_root_prepared_import_encounters_async_export_and_owns_pump(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'M.bsl').write_text('''
+            Var total Export;
+            Async Function F(x) Export
+                Await 0; total=total+x; Return total;
+            EndFunction
+            Async Function Private(x) Return x; EndFunction
+            total=1;
+            ''', encoding='utf-8')
+            source = '''// #Import M.bsl
+            Var total;
+            total=10; p=M.F(2);
+            Try M.Private(Effect()); Except Message("private"); EndTry;
+            '''
+            for prepared in (False, True):
+                output = []
+                vm = Interpreter(output.append, allow_extensions=True)
+                self.addCleanup(vm.close)
+                vm.register_function('Effect', lambda: output.append('actual'))
+                with self.subTest(prepared=prepared):
+                    name = str(root/'Main.bsl')
+                    if prepared:
+                        vm.execute_prepared(vm.prepare(source, name))
+                    else:
+                        vm.execute(source, name)
+                    self.assertEqual(vm.variables['total'], Decimal(10))
+                    self.assertEqual(vm.variables['p'].result, Decimal(3))
+                    self.assertEqual(vm.execute('M.total', name), Decimal(3))
+                    self.assertEqual(output, ['private'])
+                    self.assertEqual(vm.pending_promises, ())
+
+    def test_import_task_survives_caller_exit_but_cancel_releases_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'M.bsl').write_text('''
+            Async Function F() Export
+                Return Await Signal();
+            EndFunction
+            ''', encoding='utf-8')
+            signals = []
+            def signal():
+                p = self.vm._scheduler.new_pending()
+                signals.append(p)
+                return p
+            self.vm.register_function('Signal', signal)
+            name = str(root/'Main.bsl')
+            self.vm.execute('// #Import M.bsl\nP=M.F();', name)
+            promise = self.vm.variables['p']
+            self.assertEqual(promise.state, 'pending')
+            self.vm._scheduler.resolve(signals[0], Decimal(7))
+            self.vm.run_until_idle()
+            self.assertEqual(promise.result, Decimal(7))
+            self.vm.execute('P=M.F();', name)
+            cancelled = self.vm.variables['p']
+            self.vm.cancel_pending()
+            self.assertEqual(cancelled.state, 'rejected')
+            self.assertEqual(self.vm.pending_promises, ())
+            self.assertEqual(self.vm._scheduler._tasks, set())
+
+    def test_import_task_cannot_resume_after_owner_publication_is_revoked(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'M.bsl').write_text('''
+            Async Function F() Export
+                Await Signal(); Message("must not resume"); Return 1;
+            EndFunction
+            ''', encoding='utf-8')
+            signals = []
+            def signal():
+                p = self.vm._scheduler.new_pending()
+                signals.append(p)
+                return p
+            self.vm.register_function('Signal', signal)
+            self.vm.execute('// #Import M.bsl\nP=M.F();', str(root/'Main.bsl'))
+            module = self.vm.imports.pop('m')
+            try:
+                self.vm._scheduler.resolve(signals[0])
+                with self.assertRaises(BoundaryViolation):
+                    self.vm.run_until_idle()
+                self.assertEqual(self.vm.variables['p'].state, 'failed')
+                self.assertEqual(self.output, [])
+            finally:
+                self.vm.imports['m'] = module
+            self.assertEqual(self.vm.pending_promises, ())
 
     def test_direct_ast_rejected_before_effects(self):
         program=parse('Message("wrong"); Async Function F() Return Await 1; EndFunction')

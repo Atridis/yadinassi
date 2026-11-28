@@ -199,7 +199,7 @@ class SyntaxPackageTests(unittest.TestCase):
         self.run_python("""
             import sys
             import yadinassi
-            from yadinassi.errors import BSLError, BSLRuntimeError
+            from yadinassi.types.errors import BSLError, BSLRuntimeError
             from yadinassi.runtime import Interpreter
             assert yadinassi.__all__ == ["BSLError", "BSLRuntimeError", "Interpreter"]
             assert yadinassi.Interpreter is Interpreter

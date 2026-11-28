@@ -10,9 +10,9 @@ from pathlib import Path
 import sys
 import webbrowser
 
-from ..configuration_source import load_source_directory, load_source_archive
-from ..configuration_source_runtime import SourceApplication
-from ..errors import BSLError
+from yadinassi.configuration.configuration_source import load_source_directory, load_source_archive
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from ..syntax.preprocessor import COMPILATION_PROFILES, validate_compilation_profile
 from .local_app import LocalUIServer, _Handler
 
@@ -34,7 +34,7 @@ class SourceShell:
         families = sorted(Counter(item.family for item in source.metadata).items())
         self.families = [{'family': key[:128], 'count': count} for key, count in families[:64]]
         self.omitted_families = max(0, len(families) - 64)
-        from ..source_system_info import validate_target
+        from yadinassi.application.source_system_info import validate_target
         self.target = validate_target(compatibility_target)
         if run_startup:
             app = None
@@ -79,7 +79,7 @@ class SourceHandler(_Handler):
     methods = ('source.snapshot', 'source.close')
 
 
-from ..execution_policy import backend_entrypoint, UI_BACKENDS
+from yadinassi.execution.execution_policy import backend_entrypoint, UI_BACKENDS
 
 
 @backend_entrypoint
@@ -116,7 +116,7 @@ def main(argv=None):
             server = LocalUIServer(shell, handler=SourceWorkspaceHandler)
             print('Source workspace: объявленные формы, memory-only; без CRUD и native parity.')
         elif args.source_form:
-            from ..source_forms import SourceFormController
+            from yadinassi.forms.source_forms import SourceFormController
             from .form_app import FormHandler
             application = SourceApplication(source, compatibility_target=args.source_compatibility_target,
                                             compilation_profile=args.preprocessor_profile)

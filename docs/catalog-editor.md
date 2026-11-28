@@ -109,11 +109,11 @@ revision**. List reads are operation-scoped and closed before writes. Save does
 not reload the latest row first and erase a conflict. Conflicts/validation errors
 leave the edit buffer intact; an unchanged repeated Save does not write again.
 
-The object retains the exact operation identity and payload when a commit outcome
-is uncertain. Editing and discard are locked. Resolve save outcome asks the same
-object to reconcile that intent; it does not create a second record. When commit
-is known but refresh failed, the next attempt only refreshes. Dirty clears only
-after confirmed durable save, authoritative refresh and successful scalar-form
+An unknown commit outcome locks the submitted object against editing and
+another Save. Discard that draft through the host and open the current record
+with a fresh object. That read cannot establish the previous outcome. When
+COMMIT is known but refresh failed, the next attempt only refreshes. After Save,
+Dirty clears on confirmed commit, authoritative refresh and successful scalar-form
 patch application. A refresh that cannot enter the bounded form keeps the editor
 locked in refresh-only state; it never adopts a newer row revision early. Handler failures may
 have already changed form state or the database: the reply includes the current
@@ -169,7 +169,7 @@ Preact's complete MIT license is shipped beside the bundle; esbuild's build-tool
 license is retained in the frontend source. No node_modules or database fixture
 is published. Runtime provenance includes every packaged asset and Python file.
 The Python unit tests use authored XML and owned temporary SQLite files; they
-cover real save/reopen, optimistic conflicts, exact uncertain intent, repeated
+cover real save/reopen, optimistic conflicts, unknown outcomes, repeated
 Save, cancel/close, authoritative failure snapshots and loopback security.
 Actual browser QA is a separate gate, not implied by protocol unit tests.
 
@@ -197,7 +197,7 @@ have an explicit read-only summary and are preserved on scalar saves. They are
 not truncated into an editable subset. There is no sorting or row reordering.
 
 Row edits participate in dirty-close/discard, pending-save locks, authoritative
-refresh, conflict detection and exact uncertain-write recovery. The browser
+refresh, conflict detection and readback after an unknown write. The browser
 flushes scalar and row inputs before structural actions or Save; Discard does
 not flush or write. Opaque row identity, rather than a shifting index, prevents a
 stale row event from accidentally targeting the following row.

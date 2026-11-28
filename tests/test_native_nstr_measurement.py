@@ -86,7 +86,7 @@ def quote(text):
 class NStrInstrumentationTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         self.vm.execute(fragments()[0])
 
     def observe(self, label, expression):

@@ -2,8 +2,8 @@
 from pathlib import Path
 import tempfile,unittest
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from sqlite_catalog_fixture import configuration_files
 
 class CatalogScenarioTests(unittest.TestCase):
@@ -34,6 +34,86 @@ Message(M.FindByDescription("Second",True)=M.FindByCode("20"));Message(M.FindByC
         vm=Interpreter()
         vm.execute('If False Then S=Catalogs.Products.Select();EndIf;Type("String");')
         with self.assertRaisesRegex(BSLRuntimeError,'db required'):vm.execute('Catalogs.Products;')
+    def test_db_root_names_resolve_lazily_without_reserving_bindings(self):
+        vm=Interpreter()
+        self.addCleanup(vm.close)
+        aliases=('Catalogs','Справочники','Documents','Документы',
+                 'InformationRegisters','РегистрыСведений')
+        for name in aliases:
+            with self.subTest(name=name):
+                vm.execute(f'If False Then Result={name}.Unknown; EndIf;')
+                with self.assertRaisesRegex(BSLRuntimeError,'db required'):
+                    vm.execute(f'{name}.Unknown;')
+                self.assertEqual(vm.execute(
+                    f'Function Read(Val {name}) Return {name}; EndFunction Read(17);'),17)
+        for fragment in ('Eval("Documents.Unknown")','Execute("Documents.Unknown;")'):
+            with self.subTest(fragment=fragment),self.assertRaisesRegex(BSLRuntimeError,'db required'):
+                vm.execute(fragment)
+        vm.execute('Documents=19;')
+        self.assertEqual(vm.execute('Documents;'),19)
+        self.assertIs(vm.execute('Metadata;'), vm.execute('Метаданные;'))
+        with self.assertRaisesRegex(BSLRuntimeError, 'db required'):
+            vm.execute('Metadata.Documents.Count();')
+        self.assertEqual(vm.execute(
+            'Function Read(Val Metadata) Return Metadata; EndFunction Read(17);'),17)
+        vm.execute('Metadata=23;')
+        self.assertEqual(vm.execute('Metadata;'),23)
+        self.assertEqual(vm.execute('Eval("Metadata");'),23)
+        explicit = Interpreter(allow_extensions=True)
+        self.addCleanup(explicit.close)
+        explicit.register_function('Metadata', lambda: 'host')
+        self.assertEqual(explicit.execute('Metadata()'), 'host')
+        for name in ('Enums','UnknownName'):
+            with self.subTest(name=name),self.assertRaises(BSLRuntimeError) as raised:
+                vm.execute(name+';')
+            self.assertNotIn('db required',str(raised.exception))
+
+    def test_standalone_database_roots_use_normal_python_lookup(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('If False Then R=Catalogs.Products; EndIf;')
+        plan = vm.prepare('R=Справочники.Products;')
+        source = plan._plan.generated_source
+        self.assertIn("справочники, 'Products'", source)
+        self.assertNotIn('external_get', source)
+        with self.assertRaisesRegex(BSLRuntimeError, 'db required'):
+            vm.execute_prepared(plan)
+        vm.execute('Справочники=New Structure("Products", 23);')
+        vm.execute_prepared(plan)
+        self.assertEqual(vm.variables['r'], 23)
+        with self.assertRaisesRegex(BSLRuntimeError, 'UnknownName'):
+            vm.execute('UnknownName.Products;')
+
+    def test_standalone_metadata_shadow_is_live_on_prepared_reads(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        read = vm.prepare('R=Metadata;')
+        vm.execute_prepared(read)
+        original = vm.variables['r']
+        self.assertIs(original, vm.execute('Метаданные;'))
+        vm.execute_prepared(vm.prepare('Metadata=23;'))
+        vm.execute_prepared(read)
+        self.assertEqual(vm.variables['r'], 23)
+        self.assertEqual(vm.execute('Вычислить("Metadata");'), 23)
+        self.assertIs(original, vm.execute('Метаданные;'))
+
+    def test_fragments_resolve_only_unbound_database_namespace_reads(self):
+        for (expr, expected) in (
+            ('Eval("Metadata.Catalogs.Count()");', 2),
+            ('R=0; Execute("R=Метаданные.Справочники.Количество();"); R;', 2),
+            ('Eval("TypeOf(Catalogs.Products.EmptyRef())=Type(""CatalogRef.Products"")");', True),
+            ('Function Read(Val Metadata) Return Eval("Metadata"); EndFunction Read(17);', 17),
+            ('Function Update(Val Metadata) Execute("Metadata=23;"); Return Metadata; EndFunction Update(17);', 23),
+        ):
+            with self.subTest(expr=expr):
+                self.assertEqual(self.vm.execute(expr), expected)
+
+        standalone=Interpreter()
+        self.addCleanup(standalone.close)
+        standalone.execute('Execute("If False Then X=Documents.Unknown; EndIf;");')
+        with self.assertRaisesRegex(BSLRuntimeError,'db required'):
+            standalone.execute('Eval("Documents.Unknown");')
+
     def test_foreign_database_reference_rejected(self):
         other=SQLiteDBContext.create(Path(self.temp.name)/'other.sqlite',import_configuration(configuration_files()))
         self.addCleanup(other.close)

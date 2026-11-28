@@ -19,7 +19,7 @@ SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
 
 def emit(*, missing=False, source=SOURCE):
     out = []
-    vm = Interpreter(out.append)
+    vm = Interpreter(out.append, allow_extensions=True)
     if missing:
         vm.register_function('СтрПодобнаПоРегулярномуВыражению', lambda *args: (_ for _ in ()).throw(ValueError('missing')), 'StrLikeByRegularExpression')
     vm.execute(source)

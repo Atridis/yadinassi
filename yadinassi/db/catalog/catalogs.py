@@ -1,0 +1,624 @@
+"""Catalog managers and editable objects over the logical application backend.
+
+No native file format adapter is reachable here. Backend keys/revisions remain
+opaque implementation identities, never native physical DataVersion claims.
+"""
+from decimal import Decimal
+from datetime import datetime
+from uuid import UUID, uuid4
+from yadinassi.temporal.dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
+from yadinassi.db.manager_selection import PAGE_SIZE, SelectionRows, current_selection_row
+from .catalog_types import BSLCatalogReference, BSLCatalogType
+from .catalog_backend import CatalogKey, CatalogDraft, CatalogSelection, CatalogScanRequest, CatalogComparison, Revision, BackendError, CatalogValuePage, CatalogValueRow, CatalogWriteOutcome
+from .catalog_sections import BSLCatalogSection, _MAX_ROWS as _MAX_SECTION_ROWS, _MAX_BUFFER_BYTES, _changed_sections
+from .catalog_backend import TabularSectionRows
+from .catalog_qualifiers import normalize_field, normalize_string, validate_string
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.types.values import BSLObject, HostFunction
+
+_OMITTED=object()
+_ZERO=UUID(int=0)
+_ALIASES={'код':'code','наименование':'description','ссылка':'ref','пометкаудаления':'deletionmark'}
+
+
+def _field(fields,name):
+    if type(name) is not str:raise TypeError('catalog field name requires String')
+    key=_ALIASES.get(name.casefold(),name.casefold())
+    if 'parent' in fields: key={'родитель':'parent','этогруппа':'isfolder'}.get(key,key)
+    if key not in fields:raise ValueError('catalog field not found: '+name)
+    return fields[key]
+
+
+class BSLCatalogs(BSLObject):
+    def __init__(self,metadata,context):
+        self._metadata,self._context=metadata,context
+        self._managers={}
+    def get_member(self,name):return self.get_index(name)
+    def get_index(self,name):
+        if type(name) is not str:raise TypeError('catalog name requires String')
+        item=self._metadata._snapshot().get(name.casefold())
+        if item is None:raise ValueError('catalog name not found')
+        key=item._name.casefold()
+        if key not in self._managers:self._managers[key]=BSLCatalogManager(self,item)
+        return self._managers[key]
+    def _manager_by_metadata_uuid(self,identity):
+        matches=[item for item in self._metadata._snapshot().values() if UUID(item._metadata_uuid)==identity]
+        if len(matches)!=1:raise ValueError('catalog target identity not found')
+        return self.get_index(matches[0]._name)
+    def set_index(self,name,value):raise ValueError('catalog managers are read-only')
+    def type_by_name(self,name):
+        from yadinassi.types.type_values import type_by_name
+        if type(name) is str:
+            prefix,separator,catalog=name.partition('.')
+            families={'catalogref':'_value_type','справочникссылка':'_value_type',
+                      'catalogmanager':'_manager_type','справочникменеджер':'_manager_type',
+                      'catalogselection':'_selection_type','справочниквыборка':'_selection_type',
+                      'catalogobject':'_object_type','справочникобъект':'_object_type'}
+            if separator and prefix.casefold() in families:return getattr(self.get_index(catalog),families[prefix.casefold()])
+        return type_by_name(name)
+    def __str__(self):return 'Справочники менеджер'
+
+
+class BSLCatalogManager(BSLObject):
+    def __init__(self,catalogs,metadata):
+        self._catalogs,self._metadata=catalogs,metadata
+        self._schema=metadata._schema
+        for attr,family in (('_value_type','ref'),('_manager_type','manager'),('_selection_type','selection'),('_object_type','object')):
+            setattr(self,attr,BSLCatalogType(self._schema.identity,self._schema.name,catalogs._metadata,family))
+    @property
+    def _backend(self):return self._catalogs._context.backend
+    def _runtime_data_backend(self):
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.execution.direct.python_direct_transactions import _Owner, _ROOT_OWNER
+        backend = self._backend
+        owner = _ROOT_OWNER.get()
+        if (type(backend) is SQLiteCatalogBackend and backend.format_version == 16
+                and type(owner) is _Owner and owner.token is None
+                and owner.catalogs is self._catalogs and owner.catalog_metadata is self._catalogs._metadata):
+            owner.check(backend)
+            return backend
+        return None
+
+    def _view(self, *, data_backend=_OMITTED):
+        from yadinassi.db.database_transactions import forbid_transfer
+        forbid_transfer(self._backend)
+        if data_backend is _OMITTED:
+            data_backend = self._runtime_data_backend()
+        view = (self._backend.begin_read() if data_backend is None
+                else data_backend._begin_catalog_data(self._schema.identity))
+        try:
+            if (view.database_id!=self._catalogs._metadata._database_id
+                    or view.configuration_generation!=self._catalogs._metadata._generation
+                    or view.catalog_schema(self._schema.identity)!=self._schema):raise BackendError('schema_changed')
+        except BaseException:
+            view.close();raise
+        return view
+    def _key(self,record):return CatalogKey(self._catalogs._metadata._database_id,self._schema.identity,record)
+    def _ref(self,record):return BSLCatalogReference(self._value_type,record,self._metadata,self._read_member,self._get_object)
+    def empty_ref(self):return self._ref(_ZERO)
+    def get_ref(self,uuid=_OMITTED):
+        if uuid is _OMITTED or uuid is None:uuid=BSLUUID()
+        if type(uuid) is not BSLUUID:raise TypeError('GetRef requires UUID')
+        return self._ref(UUID(uuid.text))
+    def _logical(self,field,value):
+        if field.kind=='enum_ref':
+            from yadinassi.configuration.demos.inventory_enum_runtime import binding
+            return binding(self._catalogs._metadata._root).value(value,field.target_enum_id)
+        if field.kind=='datetime':
+            if type(value) is not datetime or value.tzinfo is not None or value.microsecond:raise ValueError('invalid backend date')
+            return _date_from_datetime(value)
+        if field.kind=='catalog_ref':
+            if (type(value) is not CatalogKey or value.database_id!=self._key(_ZERO).database_id
+                    or value.catalog_id!=field.target_catalog_id):raise ValueError('invalid backend reference')
+            return self._catalogs._manager_by_metadata_uuid(value.catalog_id)._ref(value.record_id)
+        expected={'string':str,'number':Decimal,'boolean':bool}.get(field.kind)
+        if type(value) is not expected:raise TypeError('invalid backend scalar')
+        return value
+    def _stored(self,field,value):
+        if field.kind=='enum_ref':
+            from yadinassi.configuration.demos.inventory_enum_runtime import binding
+            return binding(self._catalogs._metadata._root,detached=True).key(value,field.target_enum_id,detached=True)
+        if field.kind=='datetime':
+            if type(value) is not BSLDate:raise TypeError('Date field requires Date')
+            value.require_known()
+            if value.ticks%TICKS_PER_SECOND:raise ValueError('subsecond field value unsupported')
+            return _parts(value)
+        if field.kind=='catalog_ref':
+            if (type(value) is not BSLCatalogReference or value.value_type.snapshot is not self._catalogs._metadata
+                    or value.value_type.metadata_uuid!=field.target_catalog_id):raise TypeError('reference field requires same database target')
+            return CatalogKey(self._key(_ZERO).database_id,field.target_catalog_id,value.reference_uuid)
+        expected={'string':str,'number':Decimal,'boolean':bool}.get(field.kind)
+        if type(value) is not expected:raise TypeError('catalog field type mismatch')
+        if field.kind=='number' and not value.is_finite():raise ValueError('finite Number required')
+        return value
+    def _field_default(self,field):
+        if field.kind=='enum_ref':
+            from yadinassi.configuration.demos.inventory_enum_runtime import binding
+            bridge=binding(self._catalogs._metadata._root,detached=True)
+            return bridge.detached_empty(field.target_enum_id)
+        if field.kind=='catalog_ref':return self._catalogs._manager_by_metadata_uuid(field.target_catalog_id).empty_ref()
+        if field.kind=='datetime':return BSLDate(0)
+        return {'string':'','number':Decimal(0),'boolean':False}[field.kind]
+    def _assigned(self,field,value):
+        if field.kind=='enum_ref':
+            from yadinassi.configuration.demos.inventory_enum_runtime import binding
+            return binding(self._catalogs._metadata._root,detached=True).assigned(value,field.target_enum_id,detached=True)
+        if field.kind=='number' and type(value) is int:value=Decimal(value)
+        self._stored(field,value)
+        return normalize_field(value,field)
+    def _defaults(self,ref=None):
+        values={'code':'','description':'','deletionmark':False,'ref':ref}
+        if self._schema.hierarchy != 'none': values.update(parent=self.empty_ref(),isfolder=False)
+        values.update((f.name.casefold(),self._field_default(f)) for f in self._schema.fields)
+        return values
+    def _fields(self,card):
+        if card.key.database_id!=self._key(_ZERO).database_id or card.key.catalog_id!=self._schema.identity or len(card.values)!=len(self._schema.fields):raise BackendError('integrity')
+        values={'code':card.code,'description':card.description,'deletionmark':card.deletion_mark,'ref':self._ref(card.key.record_id)}
+        if self._schema.hierarchy != 'none':
+            if type(card.is_folder) is not bool or (card.parent is not None and (type(card.parent) is not CatalogKey or card.parent.database_id!=card.key.database_id or card.parent.catalog_id!=card.key.catalog_id)):
+                raise BackendError('integrity')
+            values.update(parent=self._ref(_ZERO if card.parent is None else card.parent.record_id),isfolder=card.is_folder)
+        values.update((f.name.casefold(),self._logical(f,v)) for f,v in zip(self._schema.fields,card.values))
+        return values
+    def _read(self,record):
+        from yadinassi.db.database_transactions import forbid_transfer
+        from yadinassi.db.sqlite.sqlite_catalog import _single_catalog_scalar_schema
+        key = self._key(record)
+        data_backend = self._runtime_data_backend()
+        if data_backend is not None and _single_catalog_scalar_schema(self._schema):
+            forbid_transfer(data_backend)
+            return data_backend._read_catalog_scalar(self._schema, key, self._catalogs._metadata._generation)
+        view=self._view(data_backend=data_backend)
+        try:return view.read_catalog(key)
+        finally:view.close()
+    def _read_member(self,ref,name):
+        from yadinassi.db.sqlite.sqlite_catalog import _View, _single_catalog_scalar_schema
+        from yadinassi.configuration.demos.inventory_enum_runtime import read_snapshot
+        key = _ALIASES.get(name.casefold(),name.casefold()) if type(name) is str else None
+        standard = {'code':'code','description':'description','deletionmark':'deletion_mark','ref':'ref'}
+        index, definition = next(((i, field) for i, field in enumerate(self._schema.fields)
+                                  if field.name.casefold()==key), (None, None))
+        data_backend = self._runtime_data_backend()
+        if (data_backend is not None and _single_catalog_scalar_schema(self._schema)
+                and (key in standard or definition is not None and definition.kind != 'enum_ref')):
+            from yadinassi.db.database_transactions import forbid_transfer
+            forbid_transfer(data_backend)
+            card = data_backend._read_catalog_scalar(self._schema, self._key(ref.reference_uuid),
+                                                     self._catalogs._metadata._generation)
+            if card is None: return _field(self._defaults(ref),name)
+            if definition is not None: return self._logical(definition,card.values[index])
+            if key == 'ref': return self._ref(card.key.record_id)
+            return getattr(card,standard[key])
+        view = self._view(data_backend=data_backend)
+        try:
+            if (type(view) is _View and view._operation_id is None
+                    and self._catalogs._metadata._root is not None
+                    and view._backend.storage_version >= 2 and self._schema.hierarchy == 'none'
+                    and (key in standard or definition is not None)):
+                # The lexical enum witness accepts exact admitted read views,
+                # not transaction Lease subclasses or standalone metadata
+                # collections without an enum owner. Keep their legacy fallback.
+                with read_snapshot(self._catalogs._metadata._root,view):
+                    field = standard[key] if key in standard else definition.identity
+                    row = view.read_catalog_values(self._key(ref.reference_uuid),(field,))
+                    if row is None: return _field(self._defaults(ref),name)
+                    value = row.values[0]
+                    if definition is not None: return self._logical(definition,value)
+                    if key == 'ref': return self._ref(value.record_id)
+                    return value
+            card = view.read_catalog(self._key(ref.reference_uuid))
+        finally: view.close()
+        return _field(self._defaults(ref) if card is None else self._fields(card),name)
+    def _get_object(self,ref):
+        card=self._read(ref.reference_uuid)
+        return None if card is None else BSLCatalogObject(self,card)
+    def create_item(self):
+        if not self._backend.capabilities().catalog_create:raise BackendError('unsupported')
+        return BSLCatalogObject(self)
+    def create_folder(self):
+        if self._schema.hierarchy != "groups_v1": raise BackendError("unsupported")
+        result=self.create_item();result._values["isfolder"]=True
+        return result
+    def select(self):
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        # Hierarchical groups currently validate one complete parent graph.
+        # Repeating that graph admission for every unopened page would be
+        # more expensive than the existing detached operation.
+        backend, schema = self._backend, self._schema
+        if type(backend) is SQLiteCatalogBackend and schema.hierarchy == 'none':
+            origin = (backend,schema)
+            page = BSLCatalogManager._selection_page(self,origin,None)
+            return BSLCatalogSelection(self, page=page, origin=origin)
+        view=self._view()
+        try:rows=view.select_catalog(self._schema.identity,CatalogSelection())
+        finally:view.close()
+        return BSLCatalogSelection(self,rows)
+    def _selection_page(self, origin, after, size=PAGE_SIZE):
+        if (type(origin) is not tuple or len(origin)!=2
+                or self._backend is not origin[0] or self._schema is not origin[1]):
+            raise BackendError('schema_changed')
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+        view = BSLCatalogManager._view(self)
+        try:
+            if type(view) is not _View: raise BackendError('unsupported')
+            return _View._catalog_selection_page(view,origin[1].identity,after,size)
+        finally: view.close()
+    def _point_find_backend(self):
+        from types import MethodType
+        from yadinassi.db.sqlite.sqlite_catalog import _CATALOG_DATA_OPEN_ABI
+        from yadinassi.execution.direct.python_direct_transactions import _Owner, _ROOT_OWNER
+
+        owner = _ROOT_OWNER.get()
+        if (type(owner) is not _Owner or owner.vm.allow_extensions is not False
+                or owner.vm._configuration_runtime is not None):
+            return None
+        backend = self._runtime_data_backend()
+        if backend is not None:
+            opener = backend._begin_catalog_data
+            if (type(opener) is MethodType and opener.__self__ is backend
+                    and opener.__func__ is _CATALOG_DATA_OPEN_ABI):
+                return backend
+        return None
+
+    def _find(self,field,value):
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.configuration.configuration_main_demo import MainDemoConfiguration
+        from yadinassi.configuration.configuration_inventory_enum_application import InventoryEnumApplicationConfiguration
+        from yadinassi.configuration.configuration_inventory_enums import InventoryEnumConfiguration
+        from yadinassi.db.database_transactions import query_view
+        backend=self._backend
+        # Retain the format16 transactional Code observer, including its
+        # existing lightweight query port outside a transaction.
+        borrowed_code = (field=='code' and type(backend) is SQLiteCatalogBackend
+            and backend.format_version==16 and type(backend.accumulation_configuration) in (
+                InventoryEnumConfiguration,InventoryEnumApplicationConfiguration,MainDemoConfiguration))
+        if type(backend) is SQLiteCatalogBackend:
+            if (field=='description' and type(self) is BSLCatalogManager
+                    and self._schema.hierarchy=='none' and self._point_find_backend() is backend):
+                meta = self._catalogs._metadata
+                matches = backend._find_catalog_scalar(
+                    self._schema,meta._database_id,meta._generation,field,value)
+                return self._exact_find_result(matches,meta._database_id)
+            from yadinassi.db.sqlite.sqlite_catalog import _View
+            from yadinassi.db.sqlite.sqlite_documents import DocumentView
+            view = query_view(self) if borrowed_code else self._view()
+            try:
+                owned = view._view if type(view) is DocumentView else view
+                if type(owned) is _View:
+                    if owned._backend is not backend: raise BackendError('unsupported')
+                else:
+                    from yadinassi.db.database_transactions import require_registered_query_lease
+                    require_registered_query_lease(backend,owned)
+                matches = _View._find_catalog_ref_exact(owned,self._schema.identity,field,value)
+                return self._exact_find_result(matches,owned.database_id)
+            finally:
+                view.close()
+        view=self._view()
+        try:
+            page=view.scan_catalog_values(self._schema.identity,CatalogScanRequest(
+                predicate=CatalogComparison(field,'eq',value),page_size=2),('ref',))
+            if (type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows)>2
+                    or (page.continuation is not None and (type(page.continuation) is not str or len(page.continuation)!=32))):
+                raise BackendError('integrity')
+            matches=page.rows
+            for row in matches:
+                if (type(row) is not CatalogValueRow or type(row.key) is not CatalogKey
+                        or any(type(item) is not UUID for item in (row.key.database_id,row.key.catalog_id,row.key.record_id))
+                        or row.key.database_id!=view.database_id or row.key.catalog_id!=self._schema.identity
+                        or type(row.key.record_id) is not UUID or not row.key.record_id.int
+                        or type(row.values) is not tuple or len(row.values)!=1 or type(row.values[0]) is not CatalogKey
+                        or any(type(item) is not UUID for item in (row.values[0].database_id,row.values[0].catalog_id,row.values[0].record_id))
+                        or row.values[0]!=row.key):
+                    raise BackendError('integrity')
+            if page.continuation is not None:raise ValueError('ambiguous exact catalog lookup')
+        finally:view.close()
+        if len(matches)>1:raise ValueError('ambiguous exact catalog lookup')
+        return self._ref(matches[0].key.record_id) if matches else self.empty_ref()
+    def _exact_find_result(self,matches,database):
+        if type(matches) is not tuple or len(matches)>2:
+            raise BackendError('integrity')
+        for key in matches:
+            if (type(key) is not CatalogKey or any(
+                    type(component) is not UUID or type(getattr(component,'int',None)) is not int
+                    for component in (key.database_id,key.catalog_id,key.record_id))
+                    or key.database_id!=database or key.catalog_id!=self._schema.identity
+                    or not 0<key.record_id.int<2**128):
+                raise BackendError('integrity')
+        if len(matches)>1: raise ValueError('ambiguous exact catalog lookup')
+        return self._ref(matches[0].record_id) if matches else self.empty_ref()
+
+    def find_by_code(self,code):
+        if type(code) is not str:raise TypeError('String Code required')
+        return self._find('code',code)
+    def find_by_description(self,description,exact=_OMITTED):
+        if type(description) is not str or exact is not True:raise ValueError('explicit exact String description lookup required')
+        return self._find('description',description)
+    def get_member(self,name):
+        methods={'emptyref':self.empty_ref,'пустаяссылка':self.empty_ref,'getref':self.get_ref,'получитьссылку':self.get_ref,
+                 'select':self.select,'выбрать':self.select,'findbycode':self.find_by_code,'найтипокоду':self.find_by_code,
+                 'findbydescription':self.find_by_description,'найтипонаименованию':self.find_by_description,
+                 'createitem':self.create_item,'создатьэлемент':self.create_item,
+                 'createfolder':self.create_folder,'создатьгруппу':self.create_folder}
+        method=methods.get(name.casefold())
+        return HostFunction(name,method) if method else super().get_member(name)
+    def __str__(self):return str(self._manager_type)
+
+
+class BSLCatalogObject(BSLObject):
+    """Detached edit buffer: only successful backend commit changes IsNew/revision."""
+    def __init__(self,manager,card=None):
+        self._manager=manager;self._object_type=manager._object_type
+        if manager._schema.tabular_sections and not manager._backend.capabilities().catalog_tabular_sections:
+            raise BackendError('unsupported')
+        self._key=manager._key(uuid4()) if card is None else card.key
+        self._revision=None if card is None else card.revision
+        self._values=manager._defaults(manager.empty_ref()) if card is None else manager._fields(card)
+        self._operation_id=uuid4()
+        self._pending_write=None
+        self._uncertain_write=False
+        self._sections={}
+        if card is not None and (type(card.tabular_sections) is not tuple
+                or any(type(s) is not TabularSectionRows for s in card.tabular_sections)):
+            raise BackendError('integrity')
+        contents={} if card is None else {s.section_id:s for s in card.tabular_sections}
+        if card is not None and (len(contents)!=len(card.tabular_sections)
+                or set(contents)!={s.identity for s in manager._schema.tabular_sections}):
+            raise BackendError('integrity')
+        reserved=set(self._values)|{'write','записать','isnew','этоновый','setnewobjectref',
+            'установитьссылкунового','metadata','метаданные'}|set(_ALIASES)
+        for schema in manager._schema.tabular_sections:
+            name=schema.name.casefold()
+            if name in reserved or name in self._sections:raise BackendError('unsupported')
+            self._sections[name]=BSLCatalogSection(self,schema,() if card is None else contents[schema.identity].rows)
+        if self._section_row_count()>_MAX_SECTION_ROWS or self._section_buffer_bytes()>_MAX_BUFFER_BYTES:
+            raise BackendError('unsupported')
+    def _section_row_count(self):return sum(len(section._rows) for section in self._sections.values())
+    def _section_buffer_bytes(self):return sum(section._bytes for section in self._sections.values())
+    def _section_draft(self):
+        sections=self._sections.values()
+        if not any(section._dirty for section in sections):return None
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        if not self.is_new() and type(self._manager._backend) is SQLiteCatalogBackend:
+            return _changed_sections(sections)
+        return tuple(section._stored_rows() for section in sections)
+    def is_new(self):return self._revision is None
+    def set_new_object_ref(self,ref):
+        if self._uncertain_write or self._pending_write is not None:raise BackendError('uncertain_commit')
+        if not self.is_new():raise ValueError('object already persisted')
+        if type(ref) is not BSLCatalogReference or ref.value_type!=self._manager._value_type or ref.is_empty():raise TypeError('new nonempty same-catalog reference required')
+        self._key=self._manager._key(ref.reference_uuid)
+    def _accept_revision(self,revision,code=None):
+        m=self._manager
+        if (type(revision) is not Revision or
+                (revision.database_id,revision.configuration_generation,revision.catalog_id,revision.record_id) !=
+                (self._key.database_id,m._catalogs._metadata._generation,self._key.catalog_id,self._key.record_id)):
+            raise BackendError('uncertain_commit')
+        ref=m._ref(self._key.record_id);next_operation=uuid4()
+        values=dict(self._values);values['ref']=ref
+        if code is not None:values['code']=code
+        self._revision=revision
+        self._values=values
+        self._operation_id=next_operation
+        # Keep the exact intent locked until every section has accepted it.
+        for section in self._sections.values():section._dirty=False
+        self._pending_write=None
+        self._uncertain_write=False
+
+    def _accept_outcome(self,outcome,*,draft=None):
+        if type(outcome) is not CatalogWriteOutcome:
+            raise BackendError('uncertain_commit')
+        if draft is None:
+            if self._pending_write is None:raise BackendError('uncertain_commit')
+            draft=self._pending_write[0]
+        try:validate_string(outcome.code,self._manager._schema.code_length)
+        except (TypeError,ValueError):raise BackendError('uncertain_commit') from None
+        if draft.auto_number:
+            if (len(outcome.code)!=self._manager._schema.code_length or not outcome.code.isascii()
+                    or not outcome.code.isdecimal() or int(outcome.code)==0):
+                raise BackendError('uncertain_commit')
+        elif outcome.code!=draft.code:raise BackendError('uncertain_commit')
+        self._accept_revision(outcome.revision,outcome.code)
+
+    def write(self):
+        self._write()
+        return None
+
+    def _write_draft(self):
+        m=self._manager
+        sections=self._section_draft()
+        return CatalogDraft(self._key,self._values['code'],self._values['description'],self._values['deletionmark'],
+                            tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),sections,
+                            auto_number=self.is_new() and m._schema.numbering=='decimal_v1' and self._values['code']=='',
+                            parent=(None if m._schema.hierarchy=='none' or self._values['parent'].is_empty() else m._key(self._values['parent'].reference_uuid)),
+                            is_folder=self._values['isfolder'] if m._schema.hierarchy!='none' else False)
+
+    def _write(self, *, preparation=None):
+        """Shared host writer. Preparation is never an exposed BSL argument."""
+        if self._uncertain_write:
+            raise BackendError('uncertain_commit')
+        m=self._manager
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+        sqlite_backend = type(m._backend) is SQLiteCatalogBackend
+        from yadinassi.execution.direct.python_direct_transactions import check_current_root_if_present
+        check_current_root_if_present(m._backend)
+        caps=m._backend.capabilities()
+        from yadinassi.db.database_transactions import current
+        active = current(m._backend)
+        if self._pending_write is not None:
+            raise BackendError('unsupported' if active is not None else 'uncertain_commit')
+        if m._schema.tabular_sections and not caps.catalog_tabular_sections:raise BackendError('unsupported')
+        if not caps.atomic_transactions or not (caps.catalog_create if self.is_new() else caps.catalog_update):raise BackendError('unsupported')
+        outcomes=caps.catalog_write_outcomes
+        if m._schema.numbering!='explicit' and not outcomes:raise BackendError('unsupported')
+        policy = getattr(m._backend, 'catalog_write_preparation', None)
+        source_candidate = (m._backend._main_demo_write_candidate(m._schema.identity, policy)
+                            if sqlite_backend and active is None and preparation is None else None)
+        deferred_source = source_candidate is not None
+        selected_source = policy(m._schema.identity) if policy is not None and not deferred_source else None
+        if selected_source is not None:
+            if preparation is not None and preparation[0] != selected_source:
+                raise BackendError('schema_changed')
+            preparation = (selected_source, preparation[1] if preparation is not None else False)
+        draft=self._write_draft()
+        expected=self._revision
+        operation=self._operation_id
+        from yadinassi.db.database_transactions import current
+        transaction = current(m._backend)
+        if transaction is not None:
+            if deferred_source:
+                # A late owner cannot consume the ordinary standalone choice.
+                # Explicit execution must still use its registered lease.
+                selected_source = policy(m._schema.identity)
+                if selected_source is not None:
+                    preparation = (selected_source, False)
+            if preparation is not None:
+                from yadinassi.execution.direct.python_direct_transaction_preparation import stage_selected_source
+                return stage_selected_source(self,preparation,selected_source)
+            transaction.stage(self, 'catalog_create' if expected is None else 'catalog_update',
+                              draft, expected, (draft,expected,operation))
+            return ()
+        prepared_validator=None
+        if preparation is not None or deferred_source:
+            from yadinassi.execution.direct.python_direct_catalog_preparation import prepared_validator as prepare_validator
+            source = source_candidate if deferred_source else preparation[0]
+            prepared_validator=prepare_validator(m,source)
+        data_backend = m._runtime_data_backend() if preparation is None and not deferred_source else None
+        if data_backend is not None and expected is not None and outcomes:
+            from yadinassi.db.sqlite.sqlite_catalog import _single_catalog_scalar_schema
+            if _single_catalog_scalar_schema(m._schema):
+                from yadinassi.db.database_transactions import forbid_transfer
+                forbid_transfer(data_backend)
+                def pending(value): self._uncertain_write = value
+                def accept(outcome, validated): self._accept_outcome(outcome, draft=validated)
+                data_backend._update_catalog_scalar(
+                    draft, expected, m._schema, m._catalogs._metadata._generation,
+                    operation, pending=pending, accept=accept)
+                return ()
+        tx = (m._backend.begin_write(operation) if data_backend is None else
+              data_backend._begin_catalog_data(m._schema.identity, operation))
+        committing=False
+        messages=()
+        try:
+            if tx.database_id!=self._key.database_id or tx.configuration_generation!=m._catalogs._metadata._generation or tx.catalog_schema(m._schema.identity)!=m._schema:raise BackendError('schema_changed')
+            if deferred_source:
+                preparation = (m._backend._main_demo_write_source_on_owner(m._schema.identity, tx, operation), False)
+            if preparation is not None:
+                from .catalog_object_preparation import _prepare_catalog_object, CatalogWriteRefused
+                cancel,messages=_prepare_catalog_object(preparation[0],self,
+                    cancel=preparation[1],write_view=tx,prepared=prepared_validator)
+                if cancel:raise CatalogWriteRefused(messages)
+                # BeforeWrite can inspect every loaded row without editing
+                # it. Only actual buffer mutations require section writes.
+                draft=self._write_draft()
+            if expected is None:tx.create(draft)
+            else:tx.update(draft,expected)
+            # A failed COMMIT response cannot be retried on this edit
+            # buffer. A fresh object must read persisted state.
+            self._uncertain_write=True
+            committing=True
+            if sqlite_backend:
+                revisions=tx.commit_outcomes(_close=False) if outcomes else tx.commit(_close=False)
+            else:
+                revisions=tx.commit_outcomes() if outcomes else tx.commit()
+            if len(revisions)!=1:raise BackendError('uncertain_commit')
+            # A confirmed SQLite commit cannot become ambiguous because a
+            # later physical cleanup reported failure.
+            committing=False
+            if outcomes:self._accept_outcome(revisions[0],draft=draft)
+            else:self._accept_revision(revisions[0])
+            tx.close()
+        except BaseException as error:
+            for cleanup in (tx.rollback,tx.close):
+                try:cleanup()
+                except BaseException as cleanup_error:
+                    if ((not isinstance(cleanup_error,Exception) or isinstance(cleanup_error,MemoryError)) and
+                            isinstance(error,Exception) and not isinstance(error,MemoryError)):
+                        error=cleanup_error
+            if committing and isinstance(error,Exception) and not isinstance(error,MemoryError):
+                raise BackendError('uncertain_commit') from None
+            raise error
+        return messages
+    def get_member(self,name):
+        key=name.casefold()
+        methods={'write':self.write,'записать':self.write,'isnew':self.is_new,'этоновый':self.is_new,
+            'setnewobjectref':self.set_new_object_ref,'установитьссылкунового':self.set_new_object_ref,
+            'metadata':lambda:self._manager._metadata,'метаданные':lambda:self._manager._metadata}
+        if key in methods:return HostFunction(name,methods[key])
+        if key in self._sections:return self._sections[key]
+        if key in ('ref','ссылка') and self._revision is None and self._pending_write is not None:
+            from yadinassi.configuration.configuration_accumulation_references import InventoryConfiguration
+            from yadinassi.configuration.configuration_inventory_application import InventoryApplicationConfiguration
+            backend = self._manager._backend
+            if type(getattr(backend, 'accumulation_configuration', None)) in (InventoryConfiguration, InventoryApplicationConfiguration):
+                from yadinassi.db.database_transactions import current
+                transaction = current(backend)
+                if transaction is None or transaction.unit.state != 'open':
+                    raise BackendError('uncertain_commit')
+                matches = [index for participant, attr, index in transaction.participants
+                           if participant is self and attr == '_pending_write']
+                if len(matches) != 1:
+                    raise BackendError('unsupported')
+                request = transaction.unit.requests[matches[0]]
+                if (request.kind != 'catalog_create' or request.expected is not None
+                        or request.draft != self._pending_write[0] or request.draft.key != self._key):
+                    raise BackendError('unsupported')
+                # Native inventory12: a new item can be referenced and joined
+                # after staging, before outer commit. Do not accept its revision
+                # or mutate the detached buffer; rollback removes this visibility.
+                return self._manager._ref(self._key.record_id)
+        return _field(self._values,name)
+    def set_member(self,name,value):
+        if self._uncertain_write or self._pending_write is not None:raise BackendError('uncertain_commit')
+        key=_ALIASES.get(name.casefold(),name.casefold())
+        if self._manager._schema.hierarchy!='none': key={'родитель':'parent','этогруппа':'isfolder'}.get(key,key)
+        if key in self._sections:raise ValueError('tabular section replacement is unsupported')
+        if key=='ref' or (key=='isfolder' and self._manager._schema.hierarchy!='none'):raise ValueError('Ref and IsFolder are read-only')
+        if key not in self._values:raise ValueError('catalog field not found')
+        if key in ('code','description'):
+            length=self._manager._schema.code_length if key=='code' else self._manager._schema.description_length
+            value=normalize_string(value,length)
+        elif key=='parent' and self._manager._schema.hierarchy!='none':
+            if type(value) is not BSLCatalogReference or value.value_type!=self._manager._value_type: raise TypeError('Parent requires same-catalog reference')
+        elif key=='deletionmark':
+            if type(value) is not bool:raise TypeError('DeletionMark requires Boolean')
+        else:
+            f=next(f for f in self._manager._schema.fields if f.name.casefold()==key)
+            value=self._manager._assigned(f,value)
+        self._values[key]=value
+    def __str__(self):return self._values['description']
+
+
+class BSLCatalogSelection(BSLObject):
+    def __init__(self,manager,rows=(),*,page=None,origin=None):
+        self._manager=manager;self._selection_type=manager._selection_type
+        self._selection=SelectionRows((tuple(rows),None) if page is None else page,restart=True)
+        self._selection_origin=origin
+    def next(self):
+        state = self._selection
+        if type(state) is not SelectionRows: raise BackendError('integrity')
+        after = SelectionRows.continuation(state)
+        if after is not None:
+            size = SelectionRows.next_catalog_page_size(state)
+            page = BSLCatalogManager._selection_page(self._manager,self._selection_origin,after,size)
+            SelectionRows.install(state,page,requested_size=size)
+        return SelectionRows.next(state)
+    def get_method(self,name):
+        if name.casefold() in ('next','следующий'):return HostFunction(name,self.next)
+        if name.casefold() in ('getobject','получитьобъект'):
+            def get_object():
+                card = current_selection_row(self._selection)
+                return None if card is None else self._manager._get_object(self._manager._ref(card.key.record_id))
+            return HostFunction(name,get_object)
+        return super().get_method(name)
+    def get_member(self,name):
+        card = current_selection_row(self._selection)
+        if card is None:_field(self._manager._defaults(),name);return None
+        return _field(self._manager._fields(card),name)
+    def __str__(self):return str(self._selection_type)
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (BSLCatalogs,BSLCatalogManager,) for base in receiver.__mro__))
+
+# Definition-time family identity/raw storage for direct transaction ingress.
+_DIRECT_CATALOG_FAMILY_ABI=(BSLCatalogs,next(vars(cls)["__dict__"] for cls in BSLCatalogs.__mro__ if "__dict__" in vars(cls)))

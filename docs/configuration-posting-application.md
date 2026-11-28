@@ -4,7 +4,7 @@
 typed headers/sections and nonperiodic recorder-owned information registers.
 It retains every original source byte, including forms, handlers and the host
 manifest. Canonical reimport checks the complete grant before storage access.
-Physical format 13 keeps the same DDL and immutable receipt encoding, with a
+Physical format 13 uses the posting data schema, with a
 separate exact marker. Old posting and non-posting source grants are unchanged.
 There is no migration, catalog-reference support, CommonModule authority or
 application-module activation in this profile.
@@ -35,36 +35,32 @@ recorder semantics, not these authored form command extensions.
 
 ## Retained buffers and recovery
 
-The host binds a stable UUID to the immutable full draft, expected revision,
-mode, source/profile and database identity. The browser never receives UUIDs,
-expected revisions, SQL requests, source code or handler names. It receives
-existing opaque record/form capabilities and a random, form-local receipt token.
-A duplicate stale click cannot become a second root operation.
+The browser receives opaque record/form handles, never operation IDs,
+expected revisions, SQL requests, source code or handler names. A duplicate
+stale click cannot become a second root operation.
 
 `Object.Posted` is an authoritative label-only field. A successful write
-refreshes the whole saved image and the bounded record list, without replacing
-a sibling draft. A dirty form refuses Close until it is saved. Unknown outcomes
-lock editing and ordinary Write/Post/Undo commands. **Resolve saved operation**
-uses the retained exact expanded requests and outcome; it never reruns handlers.
-A committed write whose display refresh failed is shown separately and retries
-only authoritative refresh. Receipt capability checks prevent recovery from
-being attached to another form after navigation or a late response.
+refreshes the saved image and the bounded record list without replacing a
+sibling draft. A dirty form normally refuses Close until it is saved. If the
+host knows the write committed but the form refresh failed, **Refresh saved
+record** only reads the current record; it never reruns handlers or repeats the
+write.
 
-Recovery is **host-lifetime only**. The current database journal does not store
-the complete request envelope needed to reconstruct this adapter after process
-loss. Restart recovery is unavailable; no blind replay is offered. Closing the
-last browser tab is not discard, rollback or successful recovery. Keep the
-owned application alive while a receipt is unresolved. A broken transport
-locks the application rather than guessing whether the request ran.
+An unknown write outcome locks editing and further commands on that draft.
+**Discard draft** closes the form without calling form or posting handlers.
+You can then read the current list and reopen the record if present. That read
+shows current state, not proof of what the previous write did. Neither the form
+nor the browser resolves unknown outcomes from a saved receipt or retries the
+write. A broken transport still leaves the outcome unknown.
 
 ## Run the authored example
 
 Create a new database explicitly from `examples/configuration-posting-application`:
 
 ```python
-from yadinassi.configuration_import import read_configuration_directory
-from yadinassi.configuration_posting_application import import_posting_application, PROFILE
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 source = read_configuration_directory('examples/configuration-posting-application')
 configuration = import_posting_application(source, posting_runtime=PROFILE)
 SQLiteCatalogBackend.create_posting('posting.sqlite', configuration).close()

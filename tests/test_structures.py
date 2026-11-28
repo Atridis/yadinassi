@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 
 
 class StructureTests(unittest.TestCase):
@@ -414,6 +414,19 @@ class StructureTests(unittest.TestCase):
         ''')
         self.assertEqual(self.output, ['Да', 'RKT', 'RKT', '0'])
 
+    def test_property_wrong_arity_is_catchable_with_prepared_code(self):
+        for constructor in ('Structure', 'FixedStructure'):
+            with self.subTest(constructor=constructor):
+                source=f"""
+                    S = New {constructor}("Value", 42); Output = 7;
+                    Try S.Свойство(); Except Message("missing"); EndTry;
+                    Try S.Property("Value", Output, 3); Except Message("extra"); EndTry;
+                    Message(Output); Message(S.Value);
+                """
+                self.output.clear()
+                self.vm.execute_prepared(self.vm.prepare(source))
+                self.assertEqual(self.output, ['missing', 'extra', '7', '42'])
+
     def test_property_failure_does_not_overwrite_output_and_error_is_catchable(self):
         self.vm.execute('''
             s = New Structure("Value", 42); result = 99;
@@ -533,6 +546,8 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(self.output, ['2'])
 
     def test_ordinary_host_functions_receive_values_not_reference_wrappers(self):
+        self.vm.close()
+        self.vm = Interpreter(output=self.output.append, allow_extensions=True)
         received = []
         self.vm.register_function('Observe', lambda *values: received.append(values))
         self.vm.execute('''

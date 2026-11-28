@@ -188,24 +188,25 @@ export function validateApplicationReply(reply, request, previous) {
     if (!Array.isArray(state.posting) || state.posting.length > 8) throw new FormError('transport');
     const owners = new Set();
     for (const item of state.posting) {
-      if (!keys(item,['session','receipt','state','error','posted']) || !sessions.has(item.session) || owners.has(item.session) ||
-          !(item.receipt === null || opaque(item.receipt)) || !['new','unchanged','saved','committed','uncertain','rejected'].includes(item.state) ||
+      if (!keys(item,['session','state','error','posted']) || !sessions.has(item.session) || owners.has(item.session) ||
+          !['new','unchanged','saved','committed','uncertain','rejected'].includes(item.state) ||
           ![null,'refresh_required','outcome_unknown','operation_refused'].includes(item.error) || (['uncertain','committed'].includes(item.state) ? item.posted !== null : typeof item.posted !== 'boolean')) throw new FormError('transport');
       owners.add(item.session);
     }
   }
-  if (['application.form','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
+  if (['application.form','application.reference','application.refreshPosting','application.discardPosting','application.answerDialog','application.answerInput'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.openRecord','application.openRecorder','application.hello','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.openRecorder','application.hello','application.reference','application.refreshPosting','application.answerDialog','application.answerInput'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
-        ['application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && nested.id !== 1 ||
+        ['application.reference','application.refreshPosting','application.answerDialog','application.answerInput'].includes(request.method) && nested.id !== 1 ||
         !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
         !(nested.result.error === null || ['invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused'].includes(nested.result.error))) throw new FormError('transport');
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
-  } else if (['application.form','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && result.error === null) throw new FormError('transport');
+  } else if (['application.form','application.reference','application.refreshPosting','application.answerDialog','application.answerInput'].includes(request.method) && result.error === null) throw new FormError('transport');
+  if (request.method === 'application.discardPosting' && result.error === null && sessions.has(result.session)) throw new FormError('transport');
   if (['application.open','application.openRecord','application.openRecorder'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
@@ -240,12 +241,12 @@ export class ApplicationClient {
       }
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
-      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.openRecorder','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
+      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.openRecorder','application.close','application.reference','application.refreshPosting','application.discardPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.length ? 'input_pending' : 'dialog_pending'); error.preDispatch = true; throw error;
       }
       if (this.state?.sessions.some(value => value.id === params?.session && value.blocked) &&
-          (method === 'application.reference' || method === 'application.recoverPosting' ||
+          (method === 'application.reference' || method === 'application.refreshPosting' || method === 'application.discardPosting' ||
            method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.some(d => d.owner === params.session) ? 'input_pending' : this.dialogs.some(d => d.owner === params.session) ? 'dialog_pending' : 'owned_child_open'); error.preDispatch = true; throw error;
       }
@@ -268,8 +269,9 @@ export class ApplicationClient {
           !referenceAction(params.action,this.state,params.session))) {
         const error = new FormError('reference_refused'); error.preDispatch = true; throw error;
       }
-      if (method === 'application.recoverPosting' && (!keys(params,['session','receipt']) || !opaque(params.receipt) ||
-          !this.state?.posting?.some(item => item.session === params.session && item.receipt === params.receipt && ['uncertain','committed'].includes(item.state)))) {
+      if (['application.refreshPosting','application.discardPosting'].includes(method) && (!keys(params,['session']) ||
+          !this.state?.posting?.some(item => item.session === params.session && item.state ===
+            (method === 'application.refreshPosting' ? 'committed' : 'uncertain')))) {
         const error = new FormError('unavailable'); error.preDispatch = true; throw error;
       }
       if (method === 'application.answerDialog' && (!keys(params,['session','ticket','answer']) ||

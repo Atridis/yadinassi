@@ -6,10 +6,10 @@ import sqlite3
 import unittest
 from test_source_constant_store import configuration
 from test_source_constants_runtime import package
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.source_constants_runtime import SourceConstants, SourceConstantSet, ConstantSetCall
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.db.metadata.source_constants_runtime import SourceConstants, SourceConstantSet, ConstantSetCall
+from yadinassi.types.errors import BSLError
 
 
 class SourceConstantSetTests(unittest.TestCase):
@@ -18,11 +18,11 @@ class SourceConstantSetTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.path = Path(directory.name) / 'scratch.sqlite'
 
-    def app(self, body, extra=None, simple=False):
+    def app(self, body, extra=None, simple=False, *, allow_extensions=False):
         source = package(body) if simple else configuration({
             'Ext/SessionModule.bsl': ('Procedure SessionParametersSetting(Names) ' + body + ' EndProcedure').encode(),
             **(extra or {})})
-        app = SourceApplication(source, scratch_database=self.path)
+        app = SourceApplication(source, scratch_database=self.path, allow_extensions=allow_extensions)
         self.addCleanup(app.close)
         return app
 
@@ -103,7 +103,7 @@ class SourceConstantSetTests(unittest.TestCase):
                 finally: app.close()
 
     def test_closed_and_client_captured_set_methods_denied(self):
-        app = self.app(''); app.start()
+        app = self.app('', allow_extensions=True); app.start()
         receiver = SourceConstantSet(SourceConstants(app), ('Flag',))
         marker = ConstantSetCall(receiver, 'read')
         app.interpreter.register_function('CapturedRead', marker.descriptor(), returns_value=False)
@@ -146,7 +146,7 @@ class SourceConstantSetTests(unittest.TestCase):
         with self.assertRaisesRegex(BSLError, 'owning synchronous server'): app.interpreter.execute('X=SavedSet.Flag;')
 
     def test_createset_name_conflict_refused_for_direct_call(self):
-        from yadinassi.configuration_source import import_source
+        from yadinassi.configuration.configuration_source import import_source
         original = package('S=Constants.CreateSet("CreateSet");')
         files = {item.path.replace('Flag', 'CreateSet'): item.content.replace(b'Flag', b'CreateSet') for item in original.files}
         app = SourceApplication(import_source(files), scratch_database=self.path)

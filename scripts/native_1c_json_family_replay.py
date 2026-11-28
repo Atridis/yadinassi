@@ -34,7 +34,8 @@ def temporary_file_helpers(interpreter):
 
 def execution_script(base):
     marker = 'interpreter.execute(source_text, str(source))'
-    if base.count(marker) != 1:
+    constructor = 'Interpreter(output=emit, **options)'
+    if base.count(marker) != 1 or base.count(constructor) != 1:
         raise ValueError('json_fixture_script_invalid')
     replacement = '''
 helper_path = Path(sys.argv[1]) / "scripts/native_1c_json_family_replay.py"
@@ -44,4 +45,4 @@ helper_spec.loader.exec_module(helper)
 with helper.temporary_file_helpers(interpreter):
     interpreter.execute(source_text, str(source))
 '''
-    return base.replace(marker, replacement)
+    return base.replace(constructor, 'Interpreter(output=emit, allow_extensions=True, **options)').replace(marker, replacement)

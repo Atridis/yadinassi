@@ -1,5 +1,8 @@
 # Native fixture evidence and replay
 
+> Historical measurements below that name `compiled-strict` describe a retired
+> backend. Current builds use only the direct BSL-to-Python generator.
+
 The six environment fields are recorded in
 [integrational_tests/meta.md](../integrational_tests/meta.md). Checkpoint evidence,
 coverage maps and timezone replay details are kept here separately. The dated
@@ -587,13 +590,16 @@ The supplement resolves the preceding questions for the bounded fixtures:
 The five records use concrete IDs, names, counts and independently guarded
 mutation snapshots; no repeated codec streams or performance timings were added.
 These observations do not establish every optimizer choice, partial-key lookup,
-or mutation during active iteration. Divergent duplicate-field lookup ordering
-remains explicitly unsupported rather than inferred from metadata alone.
+or mutation during active iteration. They also do not establish divergent
+duplicate-field lookup ordering, non-append Insert on an indexed table, indexed
+Copy with an explicitly empty column string, or omitted/empty-column Find
+where index and table order could select different rows.
 
-Additional unprobed combinations are guarded explicitly: non-append Insert on
-an indexed table, indexed Copy with an explicitly empty column string, and
-omitted/empty-column Find where index versus table scan could select different
-rows. These restrictions preserve the confirmed scope without guessing behavior.
+The earlier implementation rejected these unprobed combinations. That is
+historical implementation behavior, not an observed native rejection. The
+current direct runtime uses its
+[local lazy-index rules](plain-table-runtime-contract.md#exact-index-lookup-order)
+for those cases; the archive does not certify native parity for them.
 
 ## Pending ValueList core checkpoint (2026-10-20)
 

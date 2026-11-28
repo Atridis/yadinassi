@@ -4,12 +4,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_evolution import canonical
-from yadinassi.configuration_application_profile import import_application_configuration
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi import sqlite_migration_plan as migration
-from yadinassi import sqlite_configuration_update as update
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_evolution import canonical
+from yadinassi.configuration.configuration_application_profile import import_application_configuration
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite import sqlite_migration_plan as migration
+from yadinassi.db.sqlite import sqlite_configuration_update as update
 from test_configuration_application_profile import application_sources
 
 
@@ -34,7 +34,7 @@ class AdditiveApplicationProfileBoundaryTests(unittest.TestCase):
 
     def test_application_target_refused_before_storage_or_ddl(self):
         configuration = import_application_configuration(application_sources())
-        with patch('yadinassi.sqlite_catalog.SQLiteCatalogBackend', side_effect=AssertionError('storage must not open')):
+        with patch('yadinassi.db.sqlite.sqlite_catalog.SQLiteCatalogBackend', side_effect=AssertionError('storage must not open')):
             with self.assertRaises(BackendError) as caught:
                 update.prepare('unopened.sqlite', configuration, maintenance=True)
         self.assertEqual(caught.exception.code, 'unsupported')

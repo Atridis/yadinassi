@@ -1,29 +1,24 @@
-"""Source-only resource bridge: exact native resource replay, no storage grant."""
+"""Source-only resource bridge: nested calls, ownership and no storage grant."""
 import json
 import unittest
-from pathlib import Path
-from test_common_templates_recovery import files, ASSETS, FIXTURE
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from test_common_templates_recovery import files, FIXTURE
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 from yadinassi.runtime import Interpreter
-from yadinassi.common_templates import SourceTemplateCall
+from yadinassi.configuration.common_templates import SourceTemplateCall
 
 class SourceTemplateTests(unittest.TestCase):
-    def app(self, changes=None):
+    def app(self, changes=None, *, allow_extensions=False):
         content=files("Procedure OnStart()\nEndProcedure")
         if changes: changes(content)
-        app=SourceApplication(import_source(content),output=lambda _:None)
+        app=SourceApplication(import_source(content),output=lambda _:None, allow_extensions=allow_extensions)
         self.addCleanup(app.close);app.start();return app
 
-    def test_native_resource_observations(self):
-        app=self.app()
-        source=(ASSETS/'observe.bsl').read_text(encoding='utf-8').split('For CaseNo = 1 To 12 Do')[0]
-        app.interpreter.execute(source)
-        expected=json.loads(FIXTURE.read_bytes())['observations']
-        for n,value in enumerate(expected,1):
-            with self.subTest(case=n):self.assertEqual(app.interpreter.execute(f'ObserveCase({n}, "")'),value)
-
+    def test_owned_nested_client_and_server_calls(self):
+        # NativeReplay owns the unchanged 12-case BSL replay. This test
+        # separately exercises resource resolution from admitted modules.
+        expected=json.loads(FIXTURE.read_bytes())['observations'][1]
         from test_source_server_call import module
         for flags in ({'client': True, 'server': False, 'server_call': False}, {}):
             def add_module(content):
@@ -33,7 +28,7 @@ class SourceTemplateTests(unittest.TestCase):
                 content.update(extra)
             nested=self.app(add_module)
             with self.subTest(flags=flags):
-                self.assertEqual(nested.interpreter.execute('ResourceAPI.Read()'),expected[1])
+                self.assertEqual(nested.interpreter.execute('ResourceAPI.Read()'),expected)
 
     def test_unknown_and_wrong_arguments(self):
         app=self.app()
@@ -54,11 +49,17 @@ class SourceTemplateTests(unittest.TestCase):
         with self.assertRaises(ValueError):owner.get(app.interpreter,'OwnedText')
 
     def test_foreign_call_refused_before_argument_side_effect(self):
-        app=self.app();vm=Interpreter(lambda _:None)
+        app=self.app();vm=Interpreter(lambda _:None, allow_extensions=True)
         vm.register_function('GetCommonTemplate',SourceTemplateCall(app.common_templates))
         vm.execute('Count=0; Function Touch()\nCount=Count+1; Return "OwnedText"; EndFunction')
         with self.assertRaises(BSLError):vm.execute('GetCommonTemplate(Touch())')
         self.assertEqual(vm.execute('Count'),0)
+
+    def test_binary_return_is_fresh(self):
+        app=self.app()
+        first=app.interpreter.execute('GetCommonTemplate("OwnedBinary")')
+        second=app.interpreter.execute('GetCommonTemplate("OwnedBinary")')
+        self.assertIsNot(first,second)
 
     def test_unsupported_unused_resource_preserved(self):
         def change(content):content['CommonTemplates/OwnedBinary.xml']=content['CommonTemplates/OwnedBinary.xml'].replace(b'BinaryData',b'SpreadsheetDocument')

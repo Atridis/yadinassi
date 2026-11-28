@@ -3,9 +3,9 @@
 from dataclasses import fields
 
 from . import ast
-from ..errors import BSLError, IncompleteInput
+from yadinassi.types.errors import BSLError, IncompleteInput
 from .lexer import Lexer, Token
-from ..values import NULL
+from yadinassi.types.values import NULL
 
 
 PRECEDENCE = {
@@ -14,6 +14,33 @@ PRECEDENCE = {
     "+": 4, "-": 4,
     "*": 5, "/": 5, "%": 5,
 }
+
+
+def reject_loop_local_var(token: Token) -> None:
+    """Report an invalid procedural declaration at its Var token."""
+    raise BSLError("Объявление переменной внутри цикла подпрограммы недопустимо",
+                   token.source, token.line, token.column)
+
+
+def validate_supplied_loop_declarations(statements: list[ast.Node]) -> None:
+    """Apply the source rule to routine bodies provided as ASTs."""
+    stack = [(node.body, False) for node in reversed(statements) if type(node) is ast.Routine]
+    while stack:
+        value, in_loop = stack.pop()
+        kind = type(value)
+        if kind in (list, tuple):
+            stack.extend((item, in_loop) for item in reversed(value))
+        elif kind in (ast.For, ast.ForEach, ast.While):
+            stack.append((value.body, True))
+        elif kind is ast.If:
+            stack.append((value.otherwise, in_loop))
+            stack.extend((body, in_loop) for _, body in reversed(value.branches))
+        elif kind is ast.Try:
+            stack.extend(((value.handler, in_loop), (value.body, in_loop)))
+        elif kind is ast.Var and in_loop:
+            reject_loop_local_var(value.token)
+
+
 class Parser:
     def __init__(self, tokens: list[Token], compilation_context: str | None = None):
         self.compilation_context = compilation_context
@@ -316,6 +343,8 @@ class Parser:
             self.pos += 1
             return ast.Break(token) if token.kind == "BREAK" else ast.Continue(token)
         if self.accept("VAR"):
+            if self.routine_kind is not None and self.loop_depth:
+                reject_loop_local_var(token)
             if self.compilation_context == "server" and self.routine_kind is None and self.block_depth:
                 self.fail("Объявления внутри серверного инициализатора не поддерживаются")
             names = []

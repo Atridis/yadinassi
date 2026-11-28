@@ -20,10 +20,11 @@ from pathlib import Path
 import unittest
 
 from tests.native_observations import extract_payload, read_observation
-from yadinassi import BSLError, Interpreter, serialization
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray
+from yadinassi import BSLError, Interpreter
+from yadinassi.formats.storage import serialization
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SHA256 = "f8a5be47e937e39500c51a2b9c8fdaaf4becd68aa908cf7e99abe068a6c8cd4a"
@@ -291,15 +292,21 @@ class NativeValueListReferenceTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(source_bytes.replace(b'\r\n', b'\n')).hexdigest(),
                          SOURCE_SHA256)
         source = source_bytes.decode('utf-8-sig')
-        vm = Interpreter(native_target='linux-8.3.27.1508')
-        vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
         self.assertEqual(NATIVE_RECORDS.count('table.list.reference.'), len(CASES))
-        for name in CASES:
-            with self.subTest(case=name):
-                expected = plain(read_observation(extract_payload(
-                    NATIVE_RECORDS, 'table.list.reference.' + name), compact=True))
-                actual = plain(vm.execute('ПробаСсылкиСписка("' + name + '")'))
-                self.assertEqual(actual, expected)
+        for backend in ('python-direct',):
+            vm = Interpreter(native_target='linux-8.3.27.1508', execution_backend=backend)
+            self.addCleanup(vm.close)
+            vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
+            for name in CASES:
+                with self.subTest(backend=backend, case=name):
+                    expected = serialization.value_to_string_internal(read_observation(
+                        extract_payload(NATIVE_RECORDS, 'table.list.reference.' + name),
+                        compact=True))
+                    # Compare the full BSL-observable value, not either backend's
+                    # private Python storage layout. This retains field spelling,
+                    # order, types and every nested value from the native record.
+                    actual = vm.execute('ValueToStringInternal(ПробаСсылкиСписка("' + name + '"))')
+                    self.assertEqual(actual, expected)
 
 
 class ValueListReferenceRuntimeTests(unittest.TestCase):
@@ -308,6 +315,21 @@ class ValueListReferenceRuntimeTests(unittest.TestCase):
         self.vm = Interpreter(self.output.append)
         self.vm.execute('owner = New ValueList; item = owner.Add(10, "old", False); '
                         'other = owner.Add(20, "second", False);')
+
+    def test_plain_prepared_reference_keeps_the_same_item_with_shared_weak_owner(self):
+        from yadinassi.collections.plain_value_list import PlainValueListItem
+
+        item = self.vm.variables['item']
+        self.assertIs(type(item), PlainValueListItem)
+        self.assertIs(item._membership.owner(), self.vm.variables['owner'])
+        self.assertIs(item._membership, self.vm.variables['other']._membership)
+        self.assertFalse(hasattr(item, '__dict__'))
+        self.vm.execute_prepared(self.vm.prepare(
+            'Procedure Update(x, y) x = 83; Message(y); EndProcedure '
+            'Update(owner.Get(0).Value, item.Значение);'))
+        self.assertIs(self.vm.variables['item'], item)
+        self.assertEqual(self.output, ['83'])
+        self.assertEqual(self.vm.execute('owner[0].Value'), D(83))
 
     def test_bilingual_fields_and_val_isolation(self):
         self.vm.execute('Procedure SetField(x, Val n) x = n; EndProcedure '
@@ -365,6 +387,53 @@ class ValueListReferenceRuntimeTests(unittest.TestCase):
         self.assertEqual(self.output, ['Да', '123', 'Да', 'Да', 'Да', 'Нет', 'caught'])
         self.assertEqual(self.vm.execute('item.Presentation'), 'committed')
         self.assertIs(self.vm.execute('item.Check'), False)
+
+    def test_field_writes_create_and_fill_share_value_list_conversion(self):
+        source = """
+            V = New ValueList;
+            A = V.Add(10, 7, 1);
+            B = V.Insert(0, 20, Undefined, 0);
+            Message(A.Presentation + ":" + String(A.Check));
+            Message(B.Presentation + ":" + String(B.Check));
+            A.Представление = 1.5;
+            A.Пометка = 0;
+            Try A.Presentation = New Array; Except Message("bad presentation"); EndTry;
+            Try V.Add(30, "", "bad"); Except Message("bad add"); EndTry;
+            Message(V.Count());
+            Message(A.Presentation + ":" + String(A.Check));
+            V.FillChecks(1);
+            Try V.FillChecks(Undefined); Except Message("bad fill"); EndTry;
+            Message(A.Check And B.Check);
+        """
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                self.output.clear()
+                if prepared:
+                    self.vm.execute_prepared(self.vm.prepare(source))
+                else:
+                    self.vm.execute(source)
+                self.assertEqual(self.output, ['7:Да', ':Нет', 'bad presentation',
+                                                'bad add', '2', '1,5:Нет', 'bad fill', 'Да'])
+
+    def test_imported_field_and_reference_share_conversion(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / 'Side.bsl').write_text(
+                'Var Entry Export; Var Owner; '
+                'Owner = New ValueList; Entry = Owner.Add(10);',
+                encoding='utf-8')
+            self.vm.execute('// #Import Side.bsl\n', str(path / 'Main.bsl'))
+            self.vm.execute_prepared(self.vm.prepare("""
+                Procedure SetField(Field, Val InputValue) Field = InputValue; EndProcedure
+                Side.Entry.Presentation = 123;
+                Message(Side.Entry.Presentation);
+                SetField(Side.Entry.Пометка, 1);
+                Try SetField(Side.Entry.Check, "bad"); Except Message("bad"); EndTry;
+                Message(Side.Entry.Check);
+            """, str(path / 'Main.bsl')))
+            self.assertEqual(self.output, ['123', 'bad', 'Да'])
 
     def test_receiver_and_index_are_bound_once_before_routine_entry(self):
         self.vm.execute('''
@@ -453,7 +522,7 @@ class ValueListReferenceBoundaryTests(unittest.TestCase):
         for operation in ('Message(x);', 'x = 99;'):
             with self.subTest(operation=operation):
                 output = []
-                vm = Interpreter(output.append)
+                vm = Interpreter(output.append, allow_extensions=True)
                 vm.execute('owner = New ValueList; item = owner.Add(10);')
                 item = vm.variables['item']
 
@@ -467,8 +536,8 @@ class ValueListReferenceBoundaryTests(unittest.TestCase):
                 with self.assertRaises(BSLError):
                     vm.execute('Change(item.Value);')
                 self.assertEqual(output, ['entered'])
-                self.assertIsNone(item._owner_ref())
-                self.assertEqual(item.value, D(10))
+                self.assertIsNone(item._membership.owner())
+                self.assertEqual(vm.execute("item.Value"), D(10))
                 self.assertIsNone(vm.locals)
 
     def test_arbitrary_host_objects_and_item_subclasses_cannot_supply_member_hooks(self):

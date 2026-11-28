@@ -5,11 +5,11 @@ from pathlib import Path
 from hashlib import sha256
 import json
 import sys
-from yadinassi.configuration_import import read_configuration_directory
-from yadinassi.configuration_document import DocumentObjectSession
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.document_backend import DocumentSelection
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_import import read_configuration_directory
+from yadinassi.configuration.configuration_document import DocumentObjectSession
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.document.document_backend import DocumentSelection
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 
 SOURCE=Path(__file__).resolve().parents[2]/'examples/configuration-document-forms'
 

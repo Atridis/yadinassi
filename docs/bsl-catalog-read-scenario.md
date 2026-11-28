@@ -19,9 +19,9 @@ last-row behavior are covered by logical regression tests.
 
 Editing or discarding an object does not persist it. Successful Write atomically
 creates/updates one record; optimistic revisions reject stale edits. Validation
-and duplicate-code failures retain the edit buffer. An uncertain commit keeps
-its exact operation identity and submitted intent; retry resolves the durable
-receipt before another write, and edits are blocked until resolved. References
+and duplicate-code failures retain the edit buffer. An unknown commit outcome
+locks the submitted object against edits and another write. Read current state
+into a fresh object. References
 are checked against the owning database, target catalog and interpreter schema.
 
 Inactive imported configurations can be archived/exported separately from

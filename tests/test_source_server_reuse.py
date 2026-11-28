@@ -4,9 +4,9 @@ import unittest
 from unittest.mock import patch
 from test_source_server_call import configuration
 from test_server_module_reuse_native_replay import application_files, NATIVE
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 TOKEN='Function Token(Val Key) Export Return String(New UUID); EndFunction'
 
@@ -39,7 +39,8 @@ class SourceServerReuseTests(unittest.TestCase):
         self.addCleanup(app.close);app.start()
         expected=json.loads(NATIVE.read_bytes())['observations']
         first=self.execute(app,'Results=New Array;For I=1 To 15 Do Results.Add(Observe(I));EndDo;Results')
-        self.assertEqual(first.items,expected[:15])
+        # Direct execution uses its native list representation; observations stay identical.
+        self.assertEqual(first if type(first) is list else first.items,expected[:15])
         last=self.execute(app,'Bit(ClientToken=CachedServerCall.Token("lifetime"))+":"+Bit(SessionToken=ServerInspector.SessionToken("lifetime"))+":"+Bit(RequestToken=ServerInspector.RequestToken("lifetime"))')
         self.assertEqual(last,expected[15])
 
@@ -84,7 +85,7 @@ class SourceServerReuseTests(unittest.TestCase):
 
     def test_warm_cache_cannot_bypass_transaction_transfer_guard(self):
         app=self.app();self.execute(app,'ServerAPI.Token("warm")')
-        with patch('yadinassi.database_transactions.forbid_transfer',side_effect=ValueError('denied')) as guard:
+        with patch('yadinassi.db.database_transactions.forbid_transfer',side_effect=ValueError('denied')) as guard:
             with self.assertRaises(BSLError):self.execute(app,'ServerAPI.Token("warm")')
             guard.assert_called_once()
 

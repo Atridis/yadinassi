@@ -9,10 +9,10 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.errors import BSLRuntimeError
+from yadinassi.types.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse, parse_expression, parse_fragment
-from yadinassi.type_qualifiers import BSLDateFractions
-from yadinassi.values import BSLArray
+from yadinassi.types.type_qualifiers import BSLDateFractions
+from yadinassi.types.values import BSLArray
 
 
 # Every built-in constructor, with a valid instance and useful member read.
@@ -90,7 +90,7 @@ class ConstructorMemberSyntaxTests(unittest.TestCase):
             self.assertEqual(vm.execute('saved'), Decimal(0))
 
     def test_constructor_and_argument_are_not_evaluated_on_syntax_error(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         calls = []
         vm.register_function('Argument', lambda: calls.append('argument'))
         vm.register_type('Probe', lambda argument: calls.append('constructor'))
@@ -130,7 +130,7 @@ class ConstructorMemberSyntaxTests(unittest.TestCase):
                         self.assertEqual(vm.execute(f'{receiver}.{member}'), expected)
 
     def test_factory_function_results_keep_member_access(self):
-        vm = Interpreter()
+        vm = Interpreter(allow_extensions=True)
         vm.execute('''
             Function Make() Return New Array; EndFunction
             Function Identity(value) Return value; EndFunction

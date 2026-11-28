@@ -13,9 +13,9 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter
-from yadinassi.configuration_import import load_configuration_directory
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.form_replication import ReplicatedFormServer
+from yadinassi.configuration.configuration_import import load_configuration_directory
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.forms.form_replication import ReplicatedFormServer
 from yadinassi.ui.form_app import (FormController, FormHandler, FormProcess,
     PROTOCOL, main, serve_runtime)
 from yadinassi.ui.form_package import load_client, load_server
@@ -33,9 +33,10 @@ def request(method='hello', **params):
             'params': {'protocol': PROTOCOL} if method == 'hello' else params}
 
 
-def pair(directory=EXAMPLE):
+def pair(directory=EXAMPLE, *, server_source=None):
     package = load_server(directory)
-    server = ReplicatedFormServer(package.source, package.endpoints, handlers=package.handlers,
+    server = ReplicatedFormServer(package.source if server_source is None else server_source,
+        package.endpoints, handlers=package.handlers,
         attributes=package.attributes, initial_values=package.initial_values, bindings=package.lifecycle)
     return FormController(load_client(directory), server.exchange), server
 
@@ -186,17 +187,40 @@ class FormControllerTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
     def test_server_error_keeps_authoritative_state_and_finite_reason(self):
+        source = load_server(EXAMPLE).source
+        run = 'Procedure Run()\n'
+        self.assertEqual(source.count(run), 1)
+        source = source.replace(run, run + '''
+    If ThisObject.Status <> "partial" Then
+        ThisObject.Status = "partial";
+        Raise "private";
+    EndIf;
+''')
+        self.controller, self.server = pair(server_source=source)
         state(self.controller)
-        original = self.server._routines[1]
-        from yadinassi.syntax.parser import parse
-        self.server._routines[1] = parse('&AtServer\nProcedure Run() ThisObject.Status="partial"; Raise "private"; EndProcedure')[0]
         result = event(self.controller)
         self.assertEqual(result['error'], 'event_failed')
         self.assertFalse(result['state']['uncertain'])
         self.assertIn({'type':'String','value':'partial'}, [x['value'] for x in result['state']['items']])
         self.assertNotIn(b'private', encode_line(result))
-        self.server._routines[1] = original
         self.assertIsNone(event(self.controller)['error'])
+
+    def test_edited_rpc_endpoint_cannot_execute_or_report_success(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        from yadinassi.syntax.parser import parse
+
+        state(self.controller)
+        original = self.server._routines[1]
+        before = self.server.session.snapshot().attributes
+        try:
+            self.server._routines[1] = parse(
+                '&AtServer\nProcedure Run() ThisObject.Status="foreign"; EndProcedure')[0]
+            with self.assertRaisesRegex(BoundaryViolation, 'binding changed'):
+                event(self.controller)
+            self.assertEqual(self.server.session.snapshot().attributes, before)
+            self.assertTrue(self.controller.session.uncertain)
+        finally:
+            self.server._routines[1] = original
 
     def test_failed_open_is_not_retried_on_reattach(self):
         calls=[]
@@ -246,6 +270,10 @@ class FormProcessTests(unittest.TestCase):
             controller=FormController(load_client(PRODUCT),process.exchange); state(controller)
             for field,value in [('Code',{'type':'String','value':'P001'}),('Description',{'type':'String','value':'Owned product'}),('Amount',{'type':'Number','value':'12.75'})]:
                 self.assertIsNone(event(controller,'change','Field'+field,value=value)['error'])
+            with SQLiteDBContext(path) as reader:
+                probe=Interpreter(database_context=reader)
+                try:self.assertTrue(probe.execute('Catalogs.Products.FindByCode("P001").IsEmpty()'))
+                finally:probe.close()
             result=event(controller); self.assertIsNone(result['error'])
             self.assertFalse(next(x for x in result['state']['items'] if x['name']=='RunButton')['enabled'])
             self.assertIsNone(controller.session.interpreter.database_context)
@@ -255,6 +283,78 @@ class FormProcessTests(unittest.TestCase):
                 vm=Interpreter(database_context=context)
                 self.assertEqual(vm.execute('Catalogs.Products.FindByCode("P001").Amount'),Decimal('12.75'))
             finally: context.close()
+
+    def test_owned_package_catalogs_do_not_grant_query_or_unenrolled_form_writes(self):
+        from dataclasses import replace
+        from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+        from yadinassi.ui.form_app import create_server
+        package = load_server(PRODUCT)
+        config = load_configuration_directory(PRODUCT/'configuration')
+        with tempfile.TemporaryDirectory() as directory:
+            with SQLiteDBContext.create(Path(directory)/'owned.sqlite',config) as context:
+                unenrolled = ReplicatedFormServer(package.source,package.endpoints,
+                    handlers=package.handlers,attributes=package.attributes,
+                    initial_values=package.initial_values,bindings=package.lifecycle,database_context=context)
+                source = package.source.replace('P = Catalogs', 'Q = New Query; P = Catalogs')
+                with self.assertRaisesRegex(PythonDirectUnsupported,'constructor Query'):
+                    create_server(replace(package,source=source),context)
+                source = package.source + '\n&AtServerNoContext\nFunction Detached() Return 1; EndFunction'
+                with self.assertRaisesRegex(ValueError,'synchronous module-context routines'):
+                    create_server(replace(package,source=source),context)
+                controller = FormController(load_client(PRODUCT),unenrolled.exchange)
+                self.assertIsNone(state(controller)['error'])
+                for field,value in (('Code','P001'),('Description','Not saved')):
+                    self.assertIsNone(event(controller,'change','Field'+field,
+                                            value={'type':'String','value':value})['error'])
+                self.assertEqual(event(controller)['error'],'event_failed')
+                self.assertFalse(controller.session.uncertain)
+                event(controller,'close')
+                vm = Interpreter(database_context=context)
+                try:self.assertTrue(vm.execute('Catalogs.Products.FindByCode("P001").IsEmpty()'))
+                finally:vm.close()
+
+    def test_owned_package_catalog_indexing_cannot_spell_private_method(self):
+        from dataclasses import replace
+        from yadinassi.ui.form_app import create_server
+        package = load_server(PRODUCT)
+        config = load_configuration_directory(PRODUCT/'configuration')
+        with tempfile.TemporaryDirectory() as directory:
+            with SQLiteDBContext.create(Path(directory)/'owned.sqlite',config) as context:
+                for expression,error in (('Catalogs.__getitem__("Products")','event_failed'),
+                                         ('Catalogs["Products"]',None)):
+                    with self.subTest(expression=expression):
+                        source = package.source.replace('Catalogs.Products',expression)
+                        runtime = create_server(replace(package,source=source),context)
+                        controller = FormController(load_client(PRODUCT),runtime.exchange)
+                        self.assertIsNone(state(controller)['error'])
+                        for field,value in (('Code','P001'),('Description','Product')):
+                            self.assertIsNone(event(controller,'change','Field'+field,
+                                                    value={'type':'String','value':value})['error'])
+                        self.assertEqual(event(controller)['error'],error)
+                        self.assertFalse(controller.session.uncertain)
+                        event(controller,'close')
+
+    def test_owned_package_catalogs_denied_if_selected_database_is_replaced(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        from yadinassi.ui.form_app import create_server
+        config = load_configuration_directory(PRODUCT/'configuration')
+        with tempfile.TemporaryDirectory() as directory:
+            with SQLiteDBContext.create(Path(directory)/'owned.sqlite',config) as context, \
+                 SQLiteDBContext.create(Path(directory)/'other.sqlite',config) as other:
+                server = create_server(load_server(PRODUCT),context)
+                controller = FormController(load_client(PRODUCT),server.exchange)
+                self.assertIsNone(state(controller)['error'])
+                for field,value in (('Code','P001'),('Description','Not saved')):
+                    self.assertIsNone(event(controller,'change','Field'+field,
+                                            value={'type':'String','value':value})['error'])
+                with mock.patch.object(server.session.interpreter,'_database_context',other):
+                    with self.assertRaisesRegex(BoundaryViolation,'package server database owner changed'):
+                        event(controller)
+                self.assertTrue(controller.session.uncertain)
+                for database in (context,other):
+                    vm = Interpreter(database_context=database)
+                    try:self.assertTrue(vm.execute('Catalogs.Products.FindByCode("P001").IsEmpty()'))
+                    finally:vm.close()
 
     def test_missing_database_is_not_created_or_disclosed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -292,7 +392,7 @@ class FormProcessTests(unittest.TestCase):
         self.assertEqual(serve_runtime(EXAMPLE,input_stream=io.BytesIO(),output_stream=io.BytesIO()),0)
 
     def test_frozen_route_and_process_selection_are_explicit(self):
-        with mock.patch.object(entrypoint.form_app,'main',return_value=6) as app, mock.patch.object(entrypoint,'cli_main',return_value=9):
+        with mock.patch('yadinassi.ui.form_app.main',return_value=6) as app, mock.patch.object(entrypoint,'cli_main',return_value=9):
             self.assertEqual(entrypoint.main(['--form-ui','owned']),6)
             app.assert_called_with(['owned'])
             self.assertEqual(entrypoint.main(['--form-ui-runtime','owned']),6)
@@ -343,7 +443,10 @@ class FormHTTPTests(unittest.TestCase):
 
     def test_wrong_origin_token_host_and_other_protocol_reject(self):
         for headers in ({'Host':'other.invalid'},{'Origin':'https://evil.invalid'},{'X-Yadinassi-Session':'b'*43}):
-            self.assertEqual(self.http(headers=headers)[0],403)
+            with self.subTest(header=next(iter(headers))):
+                # Header admission deliberately closes without consuming a body.
+                self.assertEqual(self.http(headers=headers,body=b'')[0],403)
+        self.assertEqual(self.http(body=b'')[0],413)  # Valid headers reach the body limit.
         bad=request();bad['method']='editor.hello'
         self.assertEqual(self.http(body=encode_line(bad))[0],400)
         self.assertFalse(self.controller._opened)

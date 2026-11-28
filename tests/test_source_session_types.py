@@ -3,10 +3,10 @@ import unittest
 from decimal import Decimal
 from test_source_session_parameters import declaration, package
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source import import_source
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.configuration_source_session import source_session_definitions
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_source_session import source_session_definitions
+from yadinassi.types.errors import BSLError
 
 
 class SourceSessionTypesTests(unittest.TestCase):
@@ -30,7 +30,9 @@ class SourceSessionTypesTests(unittest.TestCase):
     def test_value_storage_snapshot_isolation(self):
         app=self.run_source('M=New Map; M.Insert("key",1); SessionParameters.State=New ValueStorage(M); M.Insert("key",2);','<v8:Type>v8:ValueStorage</v8:Type>')
         stored=app.session_parameters._values['state']
-        first=stored.get();first.insert('key',Decimal(3))
+        first=stored.get()
+        first['key']=Decimal(3)
+        self.assertEqual(first['key'],Decimal(3))
         self.assertEqual(stored.get().get('key'),Decimal(1))
 
     def test_type_description(self):
@@ -95,7 +97,7 @@ class SourceSessionTypesTests(unittest.TestCase):
         mapping['Ext/SessionModule.bsl']=b'Procedure SessionParametersSetting() SessionParameters.State=New UUID; EndProcedure'
         app=SourceApplication(import_source(mapping),output=lambda text:None)
         self.addCleanup(app.close);app.start()
-        from yadinassi.session_parameters import _UNSET
+        from yadinassi.application.session_parameters import _UNSET
         app.session_parameters._values['state']=_UNSET
         app._session_owner.execute('&AtServer\nProcedure Read() Message(SessionParameters.State); EndProcedure\nRead();')
         self.assertIsNot(app.session_parameters._values['state'],_UNSET)
@@ -105,8 +107,8 @@ class SourceSessionTypesTests(unittest.TestCase):
         self.assertIn('state',app.session_parameters._unsupported)
 
     def test_graph_bounds_and_cycles(self):
-        from yadinassi.source_session_values import validate_session_value
-        from yadinassi.values import BSLFixedArray,BSLArray
+        from yadinassi.application.source_session_values import validate_session_value
+        from yadinassi.types.values import BSLFixedArray,BSLArray
         bad=BSLFixedArray(BSLArray());bad.items=(bad,)
         with self.assertRaisesRegex(ValueError,'cycle'):validate_session_value(bad)
         big=BSLFixedArray(BSLArray());big.items=(None,)*10001
@@ -147,7 +149,7 @@ class SourceStartupBindingTests(unittest.TestCase):
             self.run_app('Procedure BeforeStart() Raise "failure"; EndProcedure')
 
     def test_strict_host_keeps_required_session_argument(self):
-        from yadinassi.configuration_modules import compile_session_module
+        from yadinassi.configuration.configuration_modules import compile_session_module
         with self.assertRaisesRegex(ValueError,'signature'):
             compile_session_module(b'Procedure SessionParametersSetting() EndProcedure')
         program,handler=compile_session_module(b'Procedure SessionParametersSetting() EndProcedure',allow_omitted_parameters=True)
@@ -155,10 +157,10 @@ class SourceStartupBindingTests(unittest.TestCase):
 
     def test_value_storage_aggregate_budget(self):
         from unittest.mock import patch
-        from yadinassi.source_session_values import validate_session_value
-        from yadinassi.value_storage import BSLValueStorage
-        from yadinassi.values import BSLArray,BSLFixedArray
+        from yadinassi.application.source_session_values import validate_session_value
+        from yadinassi.formats.storage.value_storage import BSLValueStorage
+        from yadinassi.types.values import BSLArray,BSLFixedArray
         a=BSLArray();a.items.extend([BSLValueStorage('x'*100),BSLValueStorage('y'*100)])
-        with patch('yadinassi.source_session_values.MAX_UNITS',1000):
+        with patch('yadinassi.application.source_session_values.MAX_UNITS',1000):
             with self.assertRaisesRegex(ValueError,'resource limit'):
                 validate_session_value(BSLFixedArray(a))

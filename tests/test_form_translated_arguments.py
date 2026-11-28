@@ -1,17 +1,15 @@
 """Form references keep their authority rules under generated operand evaluation."""
 import unittest
-from unittest.mock import patch
-from yadinassi.compiled_backend import Engine
-from yadinassi.execution_policy import execution_backend_policy
-from yadinassi.form_runtime import FormSession
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.execution.execution_policy import execution_backend_policy
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.types.type_descriptions import BSLTypeDescription
 import test_configuration_app as config_tests
 
 class TranslatedFormArgumentsTests(unittest.TestCase):
     def modes(self):
-        return (('interpreter',False),('compiled-strict',False),('compiled-strict',True))
-    def open_form(self, body, *, backend, force):
+        return ('python-direct',)
+    def open_form(self, body, *, backend):
         source='''&AtClient
 Procedure Change(Value)
  Value = "changed";
@@ -19,37 +17,34 @@ EndProcedure
 &AtClient
 Procedure Open(Cancel)
 '''+body+'\nEndProcedure'
-        with execution_backend_policy(backend),patch.object(Engine,'FORCE_PYTHON_TRANSLATION',force):
+        with execution_backend_policy(backend):
             session=FormSession(source,attributes=(BSLFormAttribute('Name',BSLTypeDescription('String')),),bindings={'OnOpen':'Open'})
             result=session.open()
             self.addCleanup(lambda: session.dispatch('close',revision=session.revision) if not session.closed else None)
-            if force:
-                stats=session.interpreter.compiled_backend_stats
-                self.assertGreater(stats.get('python_translated_blocks',0),0)
-                self.assertEqual(stats.get('interpreter_fallbacks',0),0)
+            self.assertEqual(session.interpreter.execution_backend, 'python-direct')
             return session,result
     def test_local_scalar_reference(self):
-        for backend,force in self.modes():
-            with self.subTest(backend=backend,force=force):
-                session,result=self.open_form('Local="before";Change(Local);ThisObject.Name=Local;',backend=backend,force=force)
+        for backend in self.modes():
+            with self.subTest(backend=backend):
+                session,result=self.open_form('Local="before";Change(Local);ThisObject.Name=Local;',backend=backend)
                 self.assertEqual(session.form._data['name'],'changed')
     def test_local_shadow_keeps_form_attribute_unchanged(self):
-        for backend,force in self.modes():
-            with self.subTest(backend=backend,force=force):
-                session,result=self.open_form('Var Name;Name="local";Change(Name);',backend=backend,force=force)
+        for backend in self.modes():
+            with self.subTest(backend=backend):
+                session,result=self.open_form('Var Name;Name="local";Change(Name);',backend=backend)
                 self.assertEqual(session.form._data['name'],'')
     def test_explicit_form_attribute_reference(self):
-        for backend,force in self.modes():
-            with self.subTest(backend=backend,force=force):
-                session,result=self.open_form('Change(ThisObject.Name);',backend=backend,force=force)
+        for backend in self.modes():
+            with self.subTest(backend=backend):
+                session,result=self.open_form('Change(ThisObject.Name);',backend=backend)
                 self.assertEqual(session.form._data['name'],'changed')
     def test_implicit_form_attribute_byref_still_rejected(self):
-        for backend,force in self.modes():
-            with self.subTest(backend=backend,force=force):
+        for backend in self.modes():
+            with self.subTest(backend=backend):
                 with self.assertRaisesRegex(Exception,'передача реквизита без Знач'):
-                    self.open_form('Change(Name);',backend=backend,force=force)
-    def test_configuration_context_nocontext_sequence_force(self):
-        with execution_backend_policy('compiled-strict'),patch.object(Engine,'FORCE_PYTHON_TRANSLATION',True):
+                    self.open_form('Change(Name);',backend=backend)
+    def test_configuration_context_nocontext_sequence_direct(self):
+        with execution_backend_policy('python-direct'):
             test=config_tests.ConfigurationApplicationTests('test_client_and_context_nocontext_sequences_are_independent')
             result=unittest.TestResult();test.run(result)
             self.assertEqual(result.testsRun,1)

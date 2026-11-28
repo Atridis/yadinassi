@@ -4,14 +4,14 @@ from decimal import Decimal, ROUND_DOWN, localcontext
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.maps import BSLFixedMap, BSLMap
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.numeric.round_modes import BSLRoundMode, BSLRoundModes, ROUND_MODES
-from yadinassi.serialization import (
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal, value_to_string_internal,
 )
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.values import BSLArray, BSLFixedArray, BSLType, equal, to_string
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLType, equal, to_string
 
 
 MODE_ID = '32c82ccd-fef3-4070-beb5-b9c52afc781d'

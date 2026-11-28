@@ -7,11 +7,11 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import test_catalog_queries as fixtures
-from yadinassi.catalog_backend import BackendError
-from yadinassi.queries import BSLQuery
-from yadinassi.relational_queries import _Plan
-from yadinassi.sqlite_catalog import _View
-from yadinassi.sqlite_catalog_layout import quote_identifier
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.query.relational_queries import _Plan
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.db.sqlite.sqlite_catalog_layout import quote_identifier
 
 
 class InnerPredicatePushdownTests(unittest.TestCase):
@@ -73,6 +73,50 @@ class InnerPredicatePushdownTests(unittest.TestCase):
             self.execute('SELECT P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '
                 'JOIN Catalog.Products AS Q ON P.Amount/0=Q.Amount WHERE P.Code="absent"')
 
+    def test_neutral_on_terms_keep_hash_join_for_every_join_kind(self):
+        for kind in ('INNER', 'LEFT', 'RIGHT', 'FULL'):
+            with self.subTest(kind=kind):
+                source = ('SELECT P.Code AS A, Q.Code AS B FROM Catalog.Products AS P '
+                          f'{kind} JOIN Catalog.Products AS Q ON ')
+                baseline = self.execute(source+'P.Code=Q.Code AND Q.Amount>=20 ORDER BY A,B')
+                with patch('yadinassi.db.query.relational_queries.MAX_JOIN_PAIRS', 3):
+                    self.assertEqual(self.execute(source+
+                        'NOT (1=1) OR (P.Code=Q.Code AND (NULL IS NULL AND Q.Amount>=20)) '
+                        'ORDER BY A,B'), baseline)
+
+    def test_repeated_total_join_terms_keep_linear_candidate_budget(self):
+        source = ('SELECT P.Code AS A, Q.Code AS B FROM Catalog.Products AS P '
+                  '{kind} JOIN Catalog.Products AS Q ON {condition} ORDER BY A,B')
+        for kind in ('INNER', 'LEFT', 'RIGHT', 'FULL'):
+            with self.subTest(kind=kind), patch('yadinassi.db.query.relational_queries.MAX_JOIN_PAIRS', 3):
+                plain = self.execute(source.format(kind=kind, condition='P.Code=Q.Code'))
+                self.assertEqual(self.execute(source.format(kind=kind,
+                    condition='P.Code=Q.Code OR (Q.Код=P.Код OR P.Code=Q.Code)')), plain)
+
+    def test_normalized_join_preserves_unknown_and_reached_errors(self):
+        from yadinassi.types.values import NULL
+        prefix = ('SELECT P.Code AS A, R.Code AS B FROM Catalog.Products AS P '
+                  'LEFT JOIN Catalog.Products AS Q ON P.Code=Q.Code AND Q.Amount>30 '
+                  'LEFT JOIN Catalog.Products AS R ON ')
+        self.assertEqual(self.execute(prefix+'Q.Code=R.Code OR R.Code=Q.Code ORDER BY A'),
+                         (('1', NULL), ('2', NULL), ('3', NULL)))
+        source = ('SELECT COUNT(*) AS N FROM Catalog.Products AS P '
+                  'JOIN Catalog.Products AS Q ON ')
+        for terms in ('P.Code=Q.Code OR Q.Code=P.Code OR P.Amount/0=Q.Amount',
+                      'P.Amount/0=Q.Amount OR P.Code=Q.Code OR Q.Code=P.Code'):
+            with self.subTest(terms=terms), self.assertRaisesRegex(ValueError, 'division by zero'):
+                self.execute(source+terms)
+
+    def test_non_neutral_on_terms_do_not_enable_hash_pruning(self):
+        source = ('SELECT COUNT(*) AS N FROM Catalog.Products AS P '
+                  'JOIN Catalog.Products AS Q ON ')
+        self.assertEqual(self.execute(source+'P.Code=Q.Code OR Q.Amount=20'), ((Decimal(5),),))
+        self.assertEqual(self.execute(source+'P.Code=Q.Code OR NULL=NULL'), ((Decimal(3),),))
+        # The mismatching pair can raise before checking equality.
+        with self.assertRaisesRegex(ValueError, 'division by zero'):
+            self.execute(source+'(P.Code=Q.Code AND 1=0) OR '
+                         '(P.Amount/(Q.Amount-P.Amount+10)=0 AND (P.Code=Q.Code OR 1=0))')
+
     def test_earlier_residual_error_must_not_be_hidden_by_later_conjunct(self):
         with self.assertRaisesRegex(ValueError, 'division by zero'):
             self.execute('SELECT P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '
@@ -96,7 +140,7 @@ class InnerPredicatePushdownTests(unittest.TestCase):
                 self.assertTrue(all(predicate is None for predicate, _ in scans))
 
     def test_unfiltered_join_still_obeys_intermediate_limit(self):
-        with patch('yadinassi.relational_queries.MAX_INTERMEDIATE_ROWS', 2):
+        with patch('yadinassi.db.query.relational_queries.MAX_INTERMEDIATE_ROWS', 2):
             with self.assertRaisesRegex(ValueError, 'intermediate'):
                 self.execute('SELECT TOP 1 P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '
                              'JOIN Catalog.Products AS Q ON P.Text=Q.Text')
@@ -106,11 +150,21 @@ class InnerPredicatePushdownTests(unittest.TestCase):
         table = quote_identifier(backend._layout.table_name(schema.identity))
         field = next(f for f in schema.fields if f.name == 'Amount')
         column = quote_identifier(backend._layout.field_name(schema.identity, field.identity))
+        query = ('SELECT P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '
+                 'JOIN Catalog.Products AS Q ON P.Text=Q.Text WHERE P.Code="1"')
+        rows, scans = self.scans(query)
+        self.assertEqual(sorted(rows), [('1', '1'), ('1', '2'), ('1', '3')])
+        self.assertIsNotNone(scans[0][0])
+        statement = 'UPDATE '+table+' SET '+column+'=? WHERE code=?'
+        invalid = ('invalid', '3')
         with closing(sqlite3.connect(self.context.path)) as connection, connection:
-            connection.execute('UPDATE '+table+' SET '+column+'=? WHERE code=?', ('invalid', '3'))
+            with self.assertRaisesRegex(sqlite3.IntegrityError, 'CHECK constraint failed'):
+                connection.execute(statement, invalid)
+            # Bypass the CHECK only on this disposable fixture connection.
+            connection.execute('PRAGMA ignore_check_constraints=ON')
+            connection.execute(statement, invalid)
         with self.assertRaisesRegex(BackendError, 'integrity'):
-            self.execute('SELECT P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '
-                         'JOIN Catalog.Products AS Q ON P.Text=Q.Text WHERE P.Code="1"')
+            self.execute(query)
 
     def test_many_conjuncts_use_bounded_subset_not_new_storage_refusal(self):
         result, scans=self.scans('SELECT P.Code AS A,Q.Code AS B FROM Catalog.Products AS P '
@@ -154,7 +208,7 @@ class DocumentPredicateBoundaryTests(unittest.TestCase):
     query=_Fixture.query
 
     def test_subsecond_date_is_not_truncated_in_single_or_join_pushdown(self):
-        from yadinassi.dates import BSLDate
+        from yadinassi.temporal.dates import BSLDate
         self.seed()
         base=self.vm.execute('Date(2026,11,1,12,30,5)')
         for source in ('Document.Orders AS D',

@@ -6,22 +6,24 @@ import os
 import json
 import random
 import unittest
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.json_processing import (
+from yadinassi.execution.codegen.direct_structure import new_structure
+from yadinassi.execution.direct.python_direct_plain_map import PlainMap, PlainFixedMap
+from yadinassi.formats.json.json_processing import (
     BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, BSLJSONLineBreak,
     BSLJSONValueType as T, read_json, write_json,
 )
-from yadinassi.values import BSLArray, BSLFixedArray, NULL
-from yadinassi.structures import BSLStructure, BSLFixedStructure
-from yadinassi.maps import BSLMap, BSLFixedMap
+from yadinassi.types.values import BSLArray, BSLFixedArray, NULL
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
 
 
 class JSONFamilyTests(unittest.TestCase):
     def setUp(self):
-        self.vm = Interpreter(lambda _: None)
+        self.vm = Interpreter(lambda _: None, allow_extensions=True)
 
     def read(self, text, mapping=False):
         r = BSLJSONReader(); r.set_string(text)
@@ -75,6 +77,41 @@ class JSONFamilyTests(unittest.TestCase):
             self.assertEqual(self.write(self.read(self.write(value), True)), self.write(value))
         mapping.insert(D(3), 'invalid')
         with self.assertRaises(TypeError): self.write(mapping)
+
+    def test_direct_fixed_map_writes_detached_snapshot_with_string_keys(self):
+        self.vm.execute('''M=New Map; M.Insert("Name", "ёж"); M.Insert("name", 7);
+            F=New FixedMap(M); M.Clear();
+            W=New JSONWriter; W.SetString(New JSONWriterSettings(JSONLineBreak.None));
+            WriteJSON(W,F); S=W.Close();''')
+        self.assertEqual(self.vm.variables['s'], '{"Name":"ёж","name":7}')
+        for key in (D(0), False):
+            with self.subTest(key=key):
+                mapping = PlainMap()
+                mapping[key] = 'not a string property'
+                writer = BSLJSONWriter()
+                writer.set_string()
+                with self.assertRaisesRegex(TypeError, 'ожидается Строка'):
+                    write_json(writer, PlainFixedMap(mapping))
+                write_json(writer, D(3))
+                self.assertEqual(writer.close(), '3')
+
+    def test_direct_fixed_map_codec_uses_native_slots_not_foreign_mappings(self):
+        class ForeignMapping:
+            def __getitem__(self, key): raise AssertionError('getitem hook')
+            def __iter__(self): raise AssertionError('iterator hook')
+            def __len__(self): raise AssertionError('length hook')
+            def items(self): raise AssertionError('items hook')
+
+        mapping = PlainMap()
+        mapping['a'] = D(1)
+        fixed = PlainFixedMap(mapping)
+        fixed._items = MappingProxyType(ForeignMapping())
+        with patch.object(PlainFixedMap, '__iter__', ForeignMapping.__iter__), \
+             patch.object(PlainFixedMap, '__getattribute__', ForeignMapping.__getitem__):
+            self.assertEqual(self.write(fixed), '{"a":1}')
+        fixed._snapshot = MappingProxyType(ForeignMapping())
+        with self.assertRaisesRegex(TypeError, 'недопустимый снимок'):
+            self.write(fixed)
 
     def test_nested_document_roundtrips(self):
         rng = random.Random(20261031)
@@ -169,7 +206,52 @@ class JSONFamilyTests(unittest.TestCase):
                             'r=New JSONReader;r.OpenFile("' + path + '",);x=ReadJSON(r);r.Close();')
             self.assertEqual(self.vm.execute('s'), '')
             self.assertEqual(self.vm.execute('x.name'), 'Привет')
-            self.assertTrue(Path(tmp, 'данные.json').read_bytes().startswith(b'\xef\xbb\xbf'))
+            self.assertEqual(Path(tmp, 'данные.json').read_bytes(),
+                             b'\xef\xbb\xbf' + '{"name":"Привет"}'.encode())
+
+    def test_direct_structure_write_keeps_original_names_and_order(self):
+        inner = new_structure('MixedCase', 'Привет')
+        inner['MIXEDCASE'] = 'Новое'
+        structure = new_structure('Nested,Second', inner, 'text')
+        self.assertEqual(self.write(structure), '{"Nested":{"MixedCase":"Новое"},"Second":"text"}')
+
+    def test_direct_structure_write_rejects_cycles(self):
+        structure = new_structure('Self')
+        structure['self'] = structure
+        with self.assertRaisesRegex(ValueError, 'циклическая коллекция'):
+            self.write(structure)
+
+    def test_callback_free_file_omissions_use_canonical_json_defaults(self):
+        for writer, reader, settings, open_file, write, read, close in (
+            ('JSONWriter','JSONReader','JSONWriterSettings','OpenFile','WriteJSON','ReadJSON','Close'),
+            ('ЗаписьJSON','ЧтениеJSON','ПараметрыЗаписиJSON','ОткрытьФайл','ЗаписатьJSON','ПрочитатьJSON','Закрыть'),
+        ):
+            with self.subTest(writer=writer), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'test.json'
+                name = str(path).replace('"','""')
+                self.vm.execute(
+                    f's=New {settings}(, "  "); w=New {writer}; w.{open_file}("{name}",,True,s);'
+                    f'{write}(w,"Привет"); w.{close}();'
+                    f'r=New {reader}; r.{open_file}("{name}",); result={read}(r); r.{close}();'
+                )
+                self.assertEqual(path.read_bytes(), b'\xef\xbb\xbf' + '"Привет"'.encode())
+                self.assertEqual(self.vm.variables['result'], 'Привет')
+                opts = self.vm.variables['s']
+                self.assertIs(opts.new_lines, BSLJSONLineBreak.AUTO)
+                self.assertEqual(opts.padding_symbols, '  ')
+
+    def test_json_file_omission_rejects_missing_path_and_arity_before_actual_effects(self):
+        self.vm.execute('Function Tick() Raise "unexpected argument effect"; Return "utf-8"; EndFunction')
+        self.vm.execute('r=New JSONReader; w=New JSONWriter;')
+        for source, regex in (
+            ('r.OpenFile(,Tick());','обязательного аргумента'),
+            ('w.OpenFile(,Tick());','обязательного аргумента'),
+            ('r.OpenFile(Tick(),,);','количество аргументов'),
+            ('w.OpenFile(Tick(),,,,);','количество аргументов'),
+            ('s=New JSONWriterSettings(Tick(),,);','от 0 до 2 аргументов'),
+        ):
+            with self.subTest(source=source), self.assertRaisesRegex(BSLError,regex):
+                self.vm.execute(source)
 
     def test_explicit_internal_codec_refusal(self):
         for expression in ('New JSONReader', 'New JSONWriter', 'New JSONWriterSettings',
@@ -205,7 +287,7 @@ class JSONFamilyTests(unittest.TestCase):
         class Hostile:
             def __str__(self): raise AssertionError('host hook')
         with self.assertRaises(TypeError): self.write(Hostile())
-        with patch('yadinassi.json_processing.MAX_TEXT', 100):
+        with patch('yadinassi.formats.json.json_processing.MAX_TEXT', 100):
             a = BSLArray(); a.add('x' * 80); a.add('x' * 80)
             with self.assertRaises(ValueError): self.write(a)
             with self.assertRaises(ValueError): BSLJSONReader().set_string(' ' * 101)
@@ -222,7 +304,7 @@ class JSONFamilyTests(unittest.TestCase):
     def test_auto_layout_preserves_host_separator_and_quoted_newlines(self):
         import os
         from unittest import mock
-        import yadinassi.json_processing as json_processing
+        import yadinassi.formats.json.json_processing as json_processing
         for separator in ('\n', '\r\n'):
             with self.subTest(separator=repr(separator)):
                 host_os = SimpleNamespace(**vars(os))

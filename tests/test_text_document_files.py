@@ -8,8 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import BSLError, Interpreter
-from yadinassi import file_io
-from yadinassi.text_documents import BSLTextDocument
+from yadinassi.streams import file_io
+from yadinassi.streams.text_documents import BSLTextDocument
 
 
 class TextDocumentFileTests(unittest.TestCase):
@@ -20,7 +20,7 @@ class TextDocumentFileTests(unittest.TestCase):
         self.path = self.root / "текст.txt"
         self.doc = BSLTextDocument()
         self.doc.set_text("old\r\nstate")
-        self.vm = Interpreter(lambda _: None)
+        self.vm = Interpreter(lambda _: None, allow_extensions=True)
         self.vm.variables["d"] = self.doc
         self.vm.variables["p"] = str(self.path)
 
@@ -133,7 +133,7 @@ class TextDocumentFileTests(unittest.TestCase):
     def test_read_text_budget_is_utf16_and_atomic(self):
         before = self.snapshot()
         self.path.write_bytes("😀😀x".encode())
-        with patch("yadinassi.text_documents._MAX_TEXT_UNITS", 4):
+        with patch("yadinassi.streams.text_documents._MAX_TEXT_UNITS", 4):
             with self.assertRaises(ValueError): self.doc.read(str(self.path))
             self.assertEqual(self.snapshot(), before)
             self.path.write_bytes("😀😀".encode())
@@ -143,7 +143,7 @@ class TextDocumentFileTests(unittest.TestCase):
     def test_read_line_budget_is_checked_after_separator_conversion(self):
         before = self.snapshot()
         self.path.write_bytes(b"a\rb\rc")
-        with patch("yadinassi.text_documents._MAX_LINES", 2):
+        with patch("yadinassi.streams.text_documents._MAX_LINES", 2):
             with self.assertRaises(ValueError): self.doc.read(str(self.path), None, "\r")
         self.assertEqual(self.snapshot(), before)
 

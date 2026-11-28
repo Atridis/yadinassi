@@ -3,8 +3,8 @@ from contextlib import closing
 from uuid import uuid4
 import unittest
 import test_configuration_inventory_app as helpers
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.catalog_backend import CatalogDraft,CatalogKey
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import CatalogDraft,CatalogKey
 
 class ConfigurationRecordPagesTests(unittest.TestCase):
     setUp=helpers.InventoryApplicationTests.setUp
@@ -61,7 +61,7 @@ class ConfigurationRecordPagesTests(unittest.TestCase):
         self.assertEqual(answer,{'error':'catalog_unavailable'})
     def test_document_pages_search_and_open_use_current_storage(self):
         from datetime import datetime
-        from yadinassi.document_backend import DocumentDraft,DocumentKey
+        from yadinassi.db.document.document_backend import DocumentDraft,DocumentKey
         from uuid import UUID
         with closing(SQLiteDBContext(self.path)) as context:
             schema=next(s for s in self.config.documents if s.name=='Receipt')
@@ -111,14 +111,14 @@ class ConfigurationRecordPagesTests(unittest.TestCase):
 
     def test_external_delete_before_open_is_safe_refusal(self):
         import sqlite3
-        from yadinassi.sqlite_catalog import quote_identifier
+        from yadinassi.db.sqlite.sqlite_catalog import quote_identifier
         self.seed(1);listing=self.listing()
         row=next(r for r in listing['rows'] if r['code']=='X0000')
         with closing(SQLiteDBContext(self.path)) as context:
             schema=next(s for s in self.config.catalogs if s.name=='Warehouses')
             table=quote_identifier(context.backend._layout.table_name(schema.identity))
         # A separate writer edits only this test's freshly generated database.
-        from yadinassi.sqlite_query_indexes import register_query_collations
+        from yadinassi.db.sqlite.sqlite_query_indexes import register_query_collations
         with closing(sqlite3.connect(self.path)) as writer, writer:
             register_query_collations(writer)
             writer.execute('DELETE FROM '+table+' WHERE code=?',('X0000',))
@@ -137,10 +137,12 @@ class ConfigurationRecordPagesTests(unittest.TestCase):
         server=LocalUIServer(self.app,handler=ConfigurationHandler)
         thread=Thread(target=server.serve_forever,kwargs={'poll_interval':.01},daemon=True);thread.start()
         try:
-            def call(method,params,*,origin=None,status=200):
+            def call(method,params,*,origin=None,status=200,body=None):
                 connection=HTTPConnection(*server.server_address,timeout=10)
                 try:
-                    connection.request('POST','/rpc',encode_line({'jsonrpc':'2.0','id':1,'method':'application.'+method,'params':params}),
+                    if body is None:
+                        body=encode_line({'jsonrpc':'2.0','id':1,'method':'application.'+method,'params':params})
+                    connection.request('POST','/rpc',body,
                         {'Origin':origin or server.origin,'Content-Type':'application/x-ndjson','X-Yadinassi-Session':server.token})
                     response=connection.getresponse();raw=response.read();self.assertEqual(response.status,status)
                     return decode_line(raw)['result'] if status==200 else None
@@ -148,7 +150,7 @@ class ConfigurationRecordPagesTests(unittest.TestCase):
             entry=self.app.names['catalog.warehouses.form.card']
             first=call('catalog',{'entry':entry})['state']['catalog'];nav=first['navigation']
             page_params={'entry':entry,'snapshot':nav['snapshot'],'cursor':nav['next']}
-            call('catalogPage',page_params,origin='https://untrusted.invalid',status=403)
+            call('catalogPage',page_params,origin='https://untrusted.invalid',status=403,body=b'')
             call('catalogUnknown',page_params,status=400)
             page=call('catalogPage',page_params)['state']['catalog'];self.assertEqual(page['navigation']['page'],2)
             filtered=call('catalogFilter',{'entry':entry,'snapshot':page['navigation']['snapshot'],'query':'X0049','order':'code'})

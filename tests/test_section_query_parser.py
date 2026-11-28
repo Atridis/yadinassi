@@ -1,6 +1,6 @@
 """Authored section Query grammar contract; not native 1C evidence."""
 import unittest
-from yadinassi.query_parser import Parameter, parse_query
+from yadinassi.db.query.query_parser import Parameter, parse_query
 
 
 class SectionQueryParserTests(unittest.TestCase):
@@ -24,8 +24,8 @@ class SectionQueryParserTests(unittest.TestCase):
     def test_source_is_one_optional_section_not_arbitrary_traversal(self):
         for text in (
             'SELECT Text FROM Catalog.Products.Lines.More',
-            'SELECT L.Ref.Code FROM Catalog.Products.Lines AS L',
-            'SELECT L.Category.Description FROM Catalog.Products.Lines AS L',
+            'SELECT L.Ref.Code FROM Catalog.Products.Lines.More AS L',
+            'SELECT L.Ref.Category.Description FROM Catalog.Products.Lines AS L',
             'SELECT Text FROM Catalog.Products.Lines, Catalog.Products.Notes',
             'SELECT * FROM Catalog.Products.Lines',
             'SELECT Text FROM Catalog.Products.Lines; DELETE FROM Catalog.Products',
@@ -33,8 +33,15 @@ class SectionQueryParserTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 parse_query(text)
 
+    def test_section_projection_allows_one_explicit_reference_step(self):
+        query = parse_query('SELECT L.Ref.Code AS OwnerCode, L.Category.Description AS Caption '
+                            'FROM Catalog.Products.Lines AS L')
+        self.assertEqual((query.catalog, query.section, query.source_alias), ('Products', 'Lines', 'L'))
+        self.assertEqual(tuple(p.field.parts for p in query.projections),
+                         (('L', 'Ref', 'Code'), ('L', 'Category', 'Description')))
+
     def test_section_sources_can_join_and_aggregate_without_owner_dereference(self):
-        from yadinassi.query_parser import Aggregate
+        from yadinassi.db.query.query_parser import Aggregate
         joined = parse_query('SELECT L.Text FROM Catalog.Products.Lines AS L JOIN Catalog.Categories AS C ON L.Category=C.Ref')
         self.assertEqual((joined.catalog, joined.section), ('Products', 'Lines'))
         self.assertEqual(joined.joins[0].source.catalog, 'Categories')

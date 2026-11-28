@@ -1,24 +1,23 @@
-from compiled_contract_fixture import mutable_compiled_contract
-"""Generic compiled For slot guards, not an arithmetic benchmark special case."""
+"""Live behavior migrated from retired compiled-engine tests.
+
+No legacy oracle or fallback. Unsupported live behavior must fail normally.
+Engine flags, registry layouts, tier counters and old node-visitor ABI are retired.
+"""
 from decimal import Decimal
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
-from yadinassi import Interpreter
-from yadinassi.compiled_backend import Engine
+from yadinassi import BSLError, Interpreter
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
-from yadinassi.values import Reference
-from yadinassi.errors import BSLRuntimeError
-
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.types.values import Reference
 
 class CompiledForSlotTests(unittest.TestCase):
-    def setUp(self):
-        for name in ('INLINE', 'FAST_INLINE'):
-            flag = patch.object(Engine, name, True)
-            flag.start(); self.addCleanup(flag.stop)
-
     def test_bounds_once_and_live_counter_mutation(self):
         trace = []
-        vm = Interpreter(execution_backend='compiled-strict')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         vm.register_function('StartBound', lambda: trace.append('start') or Decimal(1))
         vm.register_function('EndBound', lambda: trace.append('end') or Decimal(6))
         vm.execute('total=0;For i=StartBound() To EndBound() Do i=i+1;total=total+i;EndDo;')
@@ -27,38 +26,42 @@ class CompiledForSlotTests(unittest.TestCase):
         self.assertEqual(vm.variables['i'], 7)
 
     def test_reference_counter_keeps_get_and_set_authority(self):
-        for mode in ('interpreter', 'compiled-strict'):
+        for mode in ('python-direct',):
             value = [Decimal(0)]; writes = []; reads = []
             def get():
                 reads.append(value[0]); return value[0]
             def set_value(new):
                 writes.append(new); value[0] = new
-            vm = Interpreter(execution_backend=mode)
-            vm.locals = {'i': Reference(get, set_value)}
-            vm.visit(parse('For i=1 To 3 Do EndDo;')[0])
+            vm = Interpreter(execution_backend=mode, allow_extensions=True)
+            self.addCleanup(vm.close)
+            # Exercise the live host reference via a separately compiled BSL
+            # by-reference routine, not the retired visitor's vm.locals.
+            vm.variables['actual'] = Reference(get, set_value)
+            vm.execute('Procedure CountThrough(i) For i=1 To 3 Do EndDo; EndProcedure')
+            vm.execute('CountThrough(actual);')
             self.assertEqual(writes, list(map(Decimal, (1, 2, 3, 4))))
             self.assertEqual(len(reads), 7)
             self.assertEqual(value[0], 4)
 
     def test_host_installed_reference_invalidates_plain_local_slot(self):
-        vm = Interpreter(execution_backend='compiled-strict')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         current = [Decimal(1)]; writes = []
         reference = Reference(lambda: current[0], lambda value: (writes.append(value), current.__setitem__(0, value)))
         vm.locals = {'i': Decimal(0)}
         vm.register_function('Install', lambda: vm.locals.__setitem__('i', reference))
-        vm.visit(parse('For i=1 To 2 Do Install();EndDo;')[0])
+        vm.execute('For i=1 To 2 Do Install();EndDo;')
         self.assertEqual(writes, [Decimal(2), Decimal(3)])
         self.assertIs(vm.locals['i'], reference)
 
     def test_host_installed_import_invalidates_counter_write(self):
-        vm = Interpreter(execution_backend='compiled-strict')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         vm.register_function('Install', lambda: vm.imports.__setitem__('i', object()))
-        with self.assertRaises(BSLRuntimeError):
+        with self.assertRaisesRegex(BoundaryViolation, 'foreign import binding'):
             vm.execute('For i=1 To 2 Do Install();EndDo;')
         self.assertEqual(vm.variables['i'], 1)
 
     def test_host_installed_configuration_check_assignment_is_authoritative(self):
-        vm = Interpreter(execution_backend='compiled-strict')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         calls = []
         class Configuration:
             def check_assignment(self, name, owner):
@@ -72,48 +75,66 @@ class CompiledForSlotTests(unittest.TestCase):
         self.assertEqual(vm.variables['i'], 1)
 
     def test_host_removed_readonly_name_does_not_recreate_plain_slot(self):
-        vm = Interpreter(execution_backend='compiled-strict')
+        vm = Interpreter(execution_backend='python-direct', allow_extensions=True)
         vm.variables['thisobject'] = Decimal(0)
         vm.register_function('Install', lambda: vm.variables.pop('thisobject'))
         with self.assertRaises(BSLRuntimeError):
             vm.execute('For ThisObject=1 To 2 Do Install();EndDo;')
         self.assertNotIn('thisobject', vm.variables)
 
-    def test_var_shadowing_invalidates_module_counter_slot(self):
-        source = 'Var i;Procedure F() For i=1 To 2 Do Var i;i=10;EndDo;EndProcedure F();'
-        values = []
-        for mode in ('interpreter', 'compiled-strict'):
-            vm = Interpreter(execution_backend=mode);vm.execute(source)
-            values.append(vm.variables['i'])
-        self.assertEqual(values, [Decimal(1), Decimal(1)])
+    def test_lexical_var_shadows_module_counter_slot(self):
+        # Both ordinary prefixes were observed on Linux 1C 8.3.27.1508:
+        # a routine-local counter leaves the outer value intact; without the
+        # declaration, the same loop mutates that outer value.
+        for var, outer in (('Var i;', 42), ('', 11)):
+            source = ('Var i;Procedure F() ' + var +
+                      'For i=1 To 2 Do i=10;EndDo;EndProcedure i=42;F();')
+            for entry in ('execute', 'prepare'):
+                with self.subTest(var=var, entry=entry):
+                    vm = Interpreter()
+                    self.addCleanup(vm.close)
+                    if entry == 'prepare':
+                        vm.execute_prepared(vm.prepare(source))
+                    else:
+                        vm.execute(source)
+                    self.assertEqual(vm.variables['i'], Decimal(outer))
 
+    def test_supplied_ast_rejects_declaration_moved_into_routine_loop(self):
+        for entry in ('execute_program', 'prepare_program'):
+            with self.subTest(entry=entry):
+                source = 'Procedure F()\nVar i;For i=1 To 2 Do i=10;EndDo;EndProcedure F();'
+                program = parse(source, 'moved-declaration.bsl')
+                body = program[0].body
+                declaration = body.pop(0)
+                body[0].body.insert(0, declaration)
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                with self.assertRaisesRegex(BSLError, 'внутри цикла подпрограммы') as caught:
+                    getattr(vm, entry)(program)
+                error = caught.exception
+                self.assertEqual((error.source, error.line, error.column),
+                                 ('moved-declaration.bsl', 2, 1))
+                self.assertFalse(vm.variables)
 
-if __name__ == '__main__': unittest.main()
-
-class MetadataContainerGuards(unittest.TestCase):
-    @mutable_compiled_contract
-    def test_custom_scope_membership_is_opaque_in_all_fast_paths(self):
-        from yadinassi.compiled_backend import CompiledUnsupported
-        vm = Interpreter(execution_backend='compiled-strict')
-        program = parse('For i=1 To 1 Do x=1;EndDo;')
-        class Names(set):
-            def __contains__(self, key):
-                if key == 'i':
-                    program[0].body[0].value.value = Decimal(9)
-                return super().__contains__(key)
-        vm.locals = {}
-        vm.variables['i'] = Decimal(0)
-        vm.module_names = Names(['i'])
-        with self.assertRaises(CompiledUnsupported):
-            vm.visit(program[0])
-        self.assertNotIn('x', vm.locals)
-        self.assertFalse(vm._compiled().fast_available(refresh=True))
-
-    def test_custom_scope_key_disables_fast_admission_without_calling_equality(self):
-        vm = Interpreter(execution_backend='compiled-strict')
-        class Key(str):
-            def __eq__(self, other):
-                raise AssertionError('admission called custom key equality')
-            __hash__ = str.__hash__
-        vm.module_names = {Key('i')}
-        self.assertFalse(vm._compiled().fast_available(refresh=True))
+    def test_loop_var_rule_applies_to_nested_blocks_but_not_module_loops(self):
+        for beginning in ('For i=1 To 2 Do', 'For Each i In A Do', 'While True Do'):
+            source = ('R=1;Procedure F()\nVar local;\n' + beginning +
+                      ' If True Then Try Except EndTry; EndIf; EndDo; EndProcedure')
+            for entry in ('execute_program', 'prepare_program'):
+                with self.subTest(loop=beginning, entry=entry):
+                    program = parse(source, 'nested-var.bsl')
+                    routine = program[1]
+                    declaration = routine.body.pop(0)
+                    routine.body[0].body[0].branches[0][1][0].handler.append(declaration)
+                    vm = Interpreter()
+                    self.addCleanup(vm.close)
+                    with self.assertRaises(BSLError) as caught:
+                        getattr(vm, entry)(program)
+                    self.assertEqual((caught.exception.source, caught.exception.line,
+                                      caught.exception.column), ('nested-var.bsl', 2, 1))
+                    self.assertFalse(vm.variables)
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        program = parse('For i=1 To 1 Do Var value; value=7; EndDo;')
+        vm.execute_prepared(vm.prepare_program(program))
+        self.assertEqual(vm.variables['value'], Decimal(7))

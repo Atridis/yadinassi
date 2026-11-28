@@ -7,17 +7,17 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi.runtime import Interpreter
-from yadinassi.serialization import value_to_string_internal
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.value_storage import BSLValueStorage, Snapshot, SnapshotError, capture
-from yadinassi.values import BSLArray, BSLType, NULL
-from yadinassi.file_io import BSLBinaryData
-from yadinassi.dates import BSLDate
-from yadinassi.unique_identifiers import BSLUUID
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.values import BSLFixedArray
-from yadinassi.structures import BSLStructure, BSLFixedStructure
-from yadinassi.maps import BSLMap, BSLFixedMap
+from yadinassi.formats.storage.serialization import value_to_string_internal
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.formats.storage.value_storage import BSLValueStorage, Snapshot, SnapshotError, capture
+from yadinassi.types.values import BSLArray, BSLType, NULL
+from yadinassi.streams.file_io import BSLBinaryData
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.types.unique_identifiers import BSLUUID
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.types.values import BSLFixedArray
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
+from yadinassi.collections.maps import BSLMap, BSLFixedMap
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "value_storage"
@@ -59,10 +59,10 @@ class ValueStorageRuntimeTests(unittest.TestCase):
 
     def test_04_nested_storage_counts_budget(self):
         inner = BSLValueStorage(array(None, None, None))
-        with patch('yadinassi.value_storage.MAX_NODES', 4):
+        with patch('yadinassi.formats.storage.value_storage.MAX_NODES', 4):
             with self.assertRaises(SnapshotError):
                 BSLValueStorage(inner)
-        with patch('yadinassi.value_storage.MAX_DEPTH', 1):
+        with patch('yadinassi.formats.storage.value_storage.MAX_DEPTH', 1):
             with self.assertRaises(SnapshotError):
                 BSLValueStorage(inner)
 
@@ -89,10 +89,10 @@ class ValueStorageRuntimeTests(unittest.TestCase):
     def test_07_shared_dag_is_charged_per_occurrence(self):
         child = array(None, None)
         root = array(child, child)
-        with patch('yadinassi.value_storage.MAX_NODES', 6):
+        with patch('yadinassi.formats.storage.value_storage.MAX_NODES', 6):
             with self.assertRaises(SnapshotError):
                 BSLValueStorage(root)
-        with patch('yadinassi.value_storage.MAX_NODES', 7):
+        with patch('yadinassi.formats.storage.value_storage.MAX_NODES', 7):
             result = BSLValueStorage(root).get()
         self.assertIsNot(result.items[0], result.items[1])
 
@@ -111,7 +111,7 @@ class ValueStorageRuntimeTests(unittest.TestCase):
         vm.execute('X = New ValueStorage(New ValueTable);')
         table = vm.variables['x'].get()
         self.assertIs(type(table), BSLValueTable)
-        self.assertEqual((table.columns.items, table.rows, table.indexes.items), ([], [], []))
+        self.assertEqual((table.columns.items, table.rows, table.indexes.items), ((), [], []))
         with self.assertRaises(SnapshotError):
             BSLValueStorage(1)
 
@@ -140,6 +140,46 @@ class ValueStorageRuntimeTests(unittest.TestCase):
         vm = Interpreter(output.append)
         vm.execute(source.decode('utf-8'))
         self.assertEqual(output, lines)
+
+    def test_direct_fixed_map_snapshot_keeps_key_domains_and_independent_children(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('M=New Map; A=New Array; A.Add("original"); M.Insert(True,A); '
+                   'M.Insert(1,"number"); M.Insert(Undefined,"undefined"); '
+                   'F=New FixedMap(M); S=New ValueStorage(F); A[0]="source changed"; '
+                   'R=S.Get(); R[True][0]="first changed"; Q=S.Get();')
+        self.assertIs(type_of(vm.variables['q']), BSLType.FIXED_MAP)
+        self.assertEqual(vm.execute('R[True][0]'), 'first changed')
+        self.assertEqual(vm.execute('Q[True][0]'), 'original')
+        self.assertEqual(vm.execute('Q[1]'), 'number')
+        self.assertEqual(vm.execute('Q[Undefined]'), 'undefined')
+        self.assertEqual(vm.execute('Q.Count()'), 3)
+
+    def test_direct_fixed_map_snapshot_keeps_budgets_and_rejects_identity_keys(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute('M=New Map; M.Insert(True,"value"); F=New FixedMap(M);')
+        with patch('yadinassi.formats.storage.value_storage.MAX_NODES', 2):
+            with self.assertRaisesRegex(SnapshotError, 'invalid or oversized map'):
+                capture(vm.variables['f'], _source_direct=True)
+        with patch('yadinassi.formats.storage.value_storage.MAX_NODES', 3):
+            capture(vm.variables['f'], _source_direct=True)
+        vm.execute('A=New Array; M.Insert(A,"key"); F=New FixedMap(M);')
+        with self.assertRaisesRegex(SnapshotError, 'invalid native map key'):
+            capture(vm.variables['f'], _source_direct=True)
+        vm.execute('M.Clear(); M.Insert("cycle",A); F=New FixedMap(M); A.Add(F);')
+        with self.assertRaisesRegex(SnapshotError, 'cyclic values'):
+            capture(vm.variables['f'], _source_direct=True)
+
+    def test_boxed_fixed_map_snapshot_still_uses_existing_logical_tags(self):
+        source = BSLMap()
+        source.insert(True, 'boolean')
+        source.insert(Decimal(1), 'number')
+        box = BSLFixedMap(source)
+        restored = BSLValueStorage(box).get()
+        self.assertIs(type(restored), BSLFixedMap)
+        self.assertEqual(restored.get(True), 'boolean')
+        self.assertEqual(restored.get(Decimal(1)), 'number')
 
     def test_12_methods_arity_and_unmeasured_presentation(self):
         holder = BSLValueStorage(Decimal(1))

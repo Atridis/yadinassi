@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from test_source_session_parameters import declaration
 from test_configuration_source_runtime import source
-from yadinassi.configuration_source import import_source
-from yadinassi.source_constant_store import SourceConstantStore
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
 
 
 def package(count):

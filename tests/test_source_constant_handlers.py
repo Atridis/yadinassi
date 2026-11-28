@@ -5,11 +5,10 @@ import sqlite3
 import tempfile
 import unittest
 from test_source_constant_store import configuration
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.source_constant_managers import SourceConstantValueManager, ValueManagerCall
-from yadinassi.source_constants_runtime import SourceConstants
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_managers import SourceConstantValueManager
+from yadinassi.db.metadata.source_constants_runtime import SourceConstants
+from yadinassi.types.errors import BSLError
 
 
 class SourceConstantHandlerTests(unittest.TestCase):
@@ -148,26 +147,26 @@ class SourceConstantHandlerTests(unittest.TestCase):
 
     def test_pending_tasks_refuse_manager_creation_before_effects(self):
         from unittest.mock import patch, PropertyMock
-        from yadinassi.source_constant_managers import create_manager
+        from yadinassi.db.metadata.source_constant_managers import create_manager
         app=self.app('','Procedure BeforeWrite(Cancel) EndProcedure');app.start()
         caller=app._session_owner; caller._context_stack.append('server')
         try:
             with patch.object(type(caller._scheduler), 'pending', new_callable=PropertyMock, return_value=True):
                 with self.assertRaisesRegex(ValueError,'pending'):
-                    next(create_manager(caller, SourceConstants(app), 'Text'))
+                    create_manager(caller, SourceConstants(app), 'Text')
         finally:caller._context_stack.pop()
         self.assertEqual(self.count(),0)
 
     def test_pending_tasks_refuse_saved_manager_write_before_commit(self):
         from unittest.mock import patch, PropertyMock
-        from yadinassi.source_constant_managers import write_managers
+        from yadinassi.db.metadata.source_constant_managers import write_managers
         app=self.app('');app.start()
         caller=app._session_owner;caller._context_stack.append('server')
         owner=SourceConstants(app);manager=SourceConstantValueManager(owner,'Text');manager.value='saved'
         try:
             with patch.object(type(caller._scheduler), 'pending', new_callable=PropertyMock, return_value=True):
                 with self.assertRaisesRegex(ValueError,'pending'):
-                    next(write_managers(caller,owner,[manager]))
+                    write_managers(caller,owner,[manager])
         finally:caller._context_stack.pop()
         self.assertEqual(self.count(),0)
 

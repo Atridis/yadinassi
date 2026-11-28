@@ -3,13 +3,13 @@ import gc
 import types
 import unittest
 import weakref
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from decimal import Decimal
 
 from yadinassi import Interpreter
-from yadinassi import runtime_dependencies as dependencies
-from yadinassi.values import InterpreterCall, BSLArray
-from yadinassi import translated_access
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution import runtime_dependencies as dependencies
+from yadinassi.types.values import InterpreterCall, BSLArray
 
 
 class DependencyHandleTests(unittest.TestCase):
@@ -20,18 +20,18 @@ class DependencyHandleTests(unittest.TestCase):
     def test_lazy_failure_retries_and_closed_cache_is_bounded(self):
         original = dependencies.import_module
         calls = []
-        def load(name, package):
+        def load(name):
             calls.append(name)
             if len(calls) == 1:
                 raise ImportError('unavailable')
-            return original(name, package)
+            return original(name)
         with patch.object(dependencies, 'import_module', side_effect=load):
             with self.assertRaises(ImportError):
                 dependencies.runtime_module('runtime')
             self.assertEqual(dependencies._load_module.cache_info().currsize, 0)
             first = dependencies.runtime_module('runtime')
             self.assertIs(first, dependencies.runtime_module('runtime'))
-        self.assertEqual(calls, ['.runtime', '.runtime'])
+        self.assertEqual(calls, ['yadinassi.runtime', 'yadinassi.runtime'])
         for name in dependencies._MODULE_NAMES:
             self.assertIs(type(dependencies.runtime_module(name)), types.ModuleType)
         info = dependencies._load_module.cache_info()
@@ -61,41 +61,9 @@ class DependencyHandleTests(unittest.TestCase):
             self.assertIs(dependencies.runtime_module('runtime'), complete)
             self.assertIs(dependencies.runtime_module('runtime'), complete)
 
-    def test_symbols_rebind_after_receiver_but_not_after_actual_arguments(self):
-        from yadinassi.values import HostFunction
-        module = dependencies.runtime_module('source_catalog_runtime')
-        for backend in ('interpreter', 'compiled-strict'):
-            events = []; vm = Interpreter(execution_backend=backend)
-            def target(label):
-                return lambda caller, receiver, name: HostFunction(name, lambda x: events.append(label) or x)
-            def receiver():
-                events.append('receiver'); module.reference_call = target('new'); return BSLArray()
-            def argument():
-                events.append('argument'); module.reference_call = target('later'); return Decimal(4)
-            vm.register_function('Receiver', receiver); vm.register_function('Argument', argument)
-            vm.variables['stored'] = BSLArray()
-            try:
-                with patch.object(module, 'reference_call', target('old')):
-                    vm.execute('x=Receiver().Probe(Argument());y=stored.Probe(5);')
-                self.assertEqual(events, ['receiver', 'argument', 'new', 'later'])
-                self.assertEqual((vm.variables['x'],vm.variables['y']), (4,5))
-            finally: vm.close()
-
-    def test_warm_module_attributes_remain_live_at_access_boundary(self):
-        module = dependencies.runtime_module('source_document_runtime')
-        vm = Interpreter(execution_backend='compiled-strict')
-        self.addCleanup(vm.close)
-        value = object()
-        for result in (Decimal(7), Decimal(9)):
-            with patch.object(module, 'is_source_reference', lambda v: v is value), \
-                 patch.object(module, 'reference_member', lambda caller, v, name: result):
-                call = translated_access.read_attribute(vm, value, 'Name')
-                with self.assertRaises(StopIteration) as end: next(call)
-                self.assertEqual(end.exception.value, result)
-        with self.assertRaises(TypeError): next(translated_access.read_attribute(vm, value, 'Name'))
 
     def test_warm_cache_retains_no_vm_or_call_argument(self):
-        vm = Interpreter(); argument = BSLArray(); seen = []
+        vm = Interpreter(allow_extensions=True); argument = BSLArray(); seen = []
         vm.register_function('Host', lambda value: seen.append(weakref.ref(value)))
         vm.variables['value'] = argument
         vm.execute('Host(value);')
@@ -104,45 +72,27 @@ class DependencyHandleTests(unittest.TestCase):
         gc.collect()
         self.assertIsNone(vm_ref()); self.assertIsNone(argument_ref()); self.assertIsNone(seen[0]())
 
-    def test_cold_and_warm_caches_do_not_bypass_reauthorization(self):
-        for warm in (False, True):
-            for backend in ('interpreter', 'compiled-strict'):
-                with self.subTest(warm=warm, backend=backend):
-                    dependencies._load_module.cache_clear()
-                    if warm:
-                        for name in dependencies._MODULE_NAMES: dependencies.runtime_module(name)
-                    active = [True]; events = []
-                    vm = Interpreter(execution_backend=backend)
-                    def authorize(caller):
-                        events.append(('authorize', active[0]))
-                        if not active[0]: raise PermissionError('revoked')
-                    def dispatch(caller, values):
-                        events.append('dispatch')
-                        if False: yield
-                        return values[0]
-                    def revoke():
-                        events.append('argument'); active[0] = False; return Decimal(1)
-                    vm.register_function('Host', InterpreterCall(1, 1, authorize, dispatch))
-                    vm.register_function('Revoke', revoke)
-                    try:
-                        with self.assertRaisesRegex(PermissionError, 'revoked'):
-                            vm.execute('Try Host(Revoke()); Except Message("caught"); EndTry;')
-                        self.assertEqual(events, [('authorize', True), 'argument', ('authorize', False)])
-                    finally: vm.close()
-
-    def test_preargument_denial_precedes_later_lazy_dependencies(self):
-        from yadinassi import runtime
-        vm = Interpreter(); self.addCleanup(vm.close)
-        def deny(caller): raise PermissionError('denied')
-        def dispatch(caller, values):
-            if False: yield
-        vm.register_function('Denied', InterpreterCall(1, 1, deny, dispatch))
-        vm.register_function('Effect', lambda: self.fail('argument executed'))
-        original = runtime._runtime_module
-        def dependency(name):
-            if name in ('reusable_values', 'common_templates', 'temporary_storage'):
-                self.fail('dependency reached before denial')
-            return original(name)
-        with patch.object(runtime, '_runtime_module', dependency):
-            with self.assertRaisesRegex(PermissionError, 'denied'):
-                vm.execute('Denied(Effect());')
+    def test_direct_unsupported_descriptor_has_no_authorization_effect_or_lazy_work(self):
+        forbidden=('reusable_values','common_templates','temporary_storage')
+        for warm in (False,True):
+            with self.subTest(warm=warm):
+                dependencies._load_module.cache_clear()
+                if warm:
+                    for name in forbidden:dependencies.runtime_module(name)
+                vm=Interpreter(execution_backend='python-direct', allow_extensions=True);self.addCleanup(vm.close)
+                authorize=Mock(side_effect=AssertionError('authorization must not run'))
+                dispatch=Mock(side_effect=AssertionError('dispatch must not run'))
+                effect=Mock(side_effect=AssertionError('argument must not run'))
+                vm.register_function('Denied',InterpreterCall(1,1,authorize,dispatch))
+                vm.register_function('Effect',effect)
+                original=dependencies.runtime_module;reached=[]
+                def dependency(name):
+                    reached.append(name)
+                    if name in forbidden:self.fail('dependency reached before unsupported refusal')
+                    return original(name)
+                with patch.object(dependencies,'runtime_module',dependency):
+                    with self.assertRaisesRegex(BSLRuntimeError,'explicit interpreter dispatch') as caught:
+                        vm.execute('Denied(Effect());')
+                self.assertIs(type(caught.exception),BSLRuntimeError)
+                authorize.assert_not_called();dispatch.assert_not_called();effect.assert_not_called()
+                self.assertFalse(set(forbidden).intersection(reached))

@@ -12,13 +12,14 @@ import re
 import unittest
 from unittest.mock import patch
 
-from yadinassi.serialization import value_from_string_internal as read
-from yadinassi.serialization import value_to_string_internal as write
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers
-from yadinassi.type_values import type_of
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.values import BSLArray
+from yadinassi import Interpreter
+from yadinassi.formats.storage.serialization import value_from_string_internal as read
+from yadinassi.formats.storage.serialization import value_to_string_internal as write
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers
+from yadinassi.types.type_values import type_of
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.types.values import BSLArray
 
 
 OUTPUT = Path(__file__).resolve().parents[1] / 'tests/fixtures/native_windows/collections.out'
@@ -32,12 +33,12 @@ def array(*items):
 
 def sample():
     table = BSLValueTable()
-    name = table.columns.add('Имя')
-    number = table.columns.add('Число', BSLTypeDescription('Number'))
+    table.columns.add('Имя')
+    table.columns.add('Число', BSLTypeDescription('Number'))
     for index in range(1, 4):
         row = table.add()
-        row.cells[name] = 'row' + str(index)
-        row.cells[number] = Decimal(index)
+        row.set(0, 'row' + str(index))
+        row.set(1, Decimal(index))
     return table
 
 
@@ -63,6 +64,15 @@ class ValueTableNativeCodecTests(unittest.TestCase):
                 if label in ('columns', 'column', 'row'):
                     self.assertIsNone(restored)
 
+    def test_bsl_table_columns_use_native_text_regardless_of_contents(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        expected = self.native('table.codec.columns').get('Text')
+        vm.execute('T=New ValueTable; C=T.Columns; Empty=String(C); '
+                   'C.Add("Number"); Populated=Строка(T.Columns); C.Clear(); EmptyAgain=String(C);')
+        self.assertEqual((vm.variables['empty'], vm.variables['populated'], vm.variables['emptyagain']),
+                         (expected, expected, expected))
+
     def test_inverse_table_has_fresh_owned_rows_and_columns(self):
         table = sample()
         restored = read(self.native('table.codec.table').get('Write'))
@@ -75,7 +85,7 @@ class ValueTableNativeCodecTests(unittest.TestCase):
             self.assertEqual(row.cells[restored.columns.items[1]], Decimal(index))
         for column in restored.columns.items:
             self.assertIs(column.table, restored)
-        restored.rows[0].cells[restored.columns.items[0]] = 'changed'
+        restored.rows[0].set(0, 'changed')
         self.assertEqual(table.rows[0].cells[table.columns.items[0]], 'row1')
 
     def test_native_object_graph_drops_standalone_children(self):
@@ -126,15 +136,15 @@ class ValueTableDefensiveCodecTests(unittest.TestCase):
         for description, value, original, invalid in cases:
             with self.subTest(description=description):
                 table = BSLValueTable()
-                column = table.columns.add('Value', description)
+                table.columns.add('Value', description)
                 row = table.add()
-                row.cells[column] = value
+                row.set(0, value)
                 stream = write(table)
                 malformed = stream.replace(original, invalid, 1)
                 self.assertNotEqual(malformed, stream)
                 with self.assertRaisesRegex(ValueError, 'Ошибка формата потока'):
                     read(malformed)
-                row.cells[column] = Decimal('1.23') if type(value) is Decimal else 'abc'
+                list.__setitem__(row, 0, Decimal('1.23') if type(value) is Decimal else 'abc')
                 with self.assertRaisesRegex(ValueError, 'не соответствует'):
                     write(table)
 
@@ -166,12 +176,12 @@ class ValueTableDefensiveCodecTests(unittest.TestCase):
 
     def test_cycles_and_resource_budgets(self):
         table = sample()
-        table.rows[0].cells[table.columns.items[0]] = table
+        table.rows[0].set(0, table)
         with self.assertRaisesRegex(ValueError, 'циклические'):
             write(table)
         table = sample()
         stream = write(table)
-        with patch('yadinassi.serialization._MAX_NODES', 4):
+        with patch('yadinassi.formats.storage.serialization._MAX_NODES', 4):
             with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
                 write(table)
             with self.assertRaisesRegex(ValueError, 'предел ресурсов'):
@@ -203,7 +213,7 @@ class ValueTableDefensiveCodecTests(unittest.TestCase):
 
     def test_nested_scalar_collections_are_independent_snapshots(self):
         table = sample()
-        table.rows[0].cells[table.columns.items[0]] = array('nested', Decimal(7))
+        table.rows[0].set(0, array('nested', Decimal(7)))
         restored = read(write(table))
         cell = restored.rows[0].cells[restored.columns.items[0]]
         self.assertEqual(cell.items, ['nested', Decimal(7)])

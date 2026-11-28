@@ -2,12 +2,14 @@ from dataclasses import replace
 from decimal import Decimal
 import unittest
 from configuration_xdto_fixture import files
-from yadinassi.configuration_runtime import ConfigurationApplication
-from yadinassi.configuration_modules import MODULE_RUNTIME
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.xdto_io import BSLXDTOFactory,XS
-from yadinassi.xml_writer import BSLXMLWriter
-from yadinassi.json_processing import BSLJSONWriter
+from yadinassi.configuration.configuration_runtime import ConfigurationApplication
+from yadinassi.configuration.configuration_source import import_source
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.formats.xml.xdto_io import BSLXDTOFactory,XS
+from yadinassi.formats.xml.xml_writer import BSLXMLWriter
+from yadinassi.formats.json.json_processing import BSLJSONWriter
 
 RESOURCE='XDTOPackages/OwnedRecords/Ext/Package.bin'
 
@@ -61,7 +63,13 @@ class PackageTests(unittest.TestCase):
         self.assertIsNot(a,b)
         with self.assertRaises(TypeError):a.create(b.type(XS,'string'),'x')
     def test_common_module_factory_identity(self):
-        app=self.app();out=[];app._output=out.append;app.start();app.execute('T=XDTOFactory.Type("urn:owned:envelope","Envelope"); V=OwnedXDTOBridge.MakeRecord(T);Message(OwnedXDTOBridge.FactoryMatches(V));')
+        out = []
+        source = files(linked=True)
+        source.setdefault('Ext/ManagedApplicationModule.bsl', b'')
+        app = SourceApplication(import_source(source), output=out.append)
+        self.addCleanup(app.close)
+        self.assertTrue(app.start())
+        app.interpreter.execute('T=XDTOFactory.Type("urn:owned:envelope","Envelope"); V=OwnedXDTOBridge.MakeRecord(T);Message(OwnedXDTOBridge.FactoryMatches(V));')
         self.assertEqual(out,['Да'])
     def test_alias_assignment_base_retains_alias(self):
         f=self.app()._xdto_factory;o=f.create(f.type('urn:owned:envelope','Envelope'));a=f.create(f.type('urn:owned:records','Code'),'x');o.set('BaseText',a)

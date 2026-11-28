@@ -10,12 +10,12 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_inventory_enums import PROFILE
-from yadinassi.configuration_profile_import import create_prepared, prepare_directory
-from yadinassi.enum_storage_binding import EnumStorageBinding
-from yadinassi.query_enum_reporting import _EnumReportScope, _EnumDescriptor
-from yadinassi.values import BSLArray, NULL
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_inventory_enums import PROFILE
+from yadinassi.configuration.configuration_profile_import import create_prepared, prepare_directory
+from yadinassi.db.metadata.enum_storage_binding import EnumStorageBinding
+from yadinassi.db.query.query_enum_reporting import _EnumReportScope, _EnumDescriptor
+from yadinassi.types.values import BSLArray, NULL
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'scripts/inventory_enum_relational_behavior'
@@ -31,8 +31,8 @@ def array(*values):
 class EnumRelationalEvidenceTests(unittest.TestCase):
     def test_fresh_example_combines_posted_and_pending_receipts(self):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as temp:
-            from yadinassi.database_context import SQLiteDBContext
-            from yadinassi.configuration_main_demo import import_main_demo_configuration
+            from yadinassi.db.database_context import SQLiteDBContext
+            from yadinassi.configuration.configuration_main_demo import import_main_demo_configuration
             from test_main_demo_configuration import source
             with closing(SQLiteDBContext.create_main_demo(Path(temp) / 'stock.sqlite',
                     import_main_demo_configuration(source(), profile='main-demo-v1'))) as context:
@@ -71,7 +71,7 @@ class EnumRelationalEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as temp:
             with closing(create_prepared(Path(temp) / 'stock.sqlite',
                     prepare_directory(SOURCE / 'runtime_source', profile=PROFILE))) as context:
-                with closing(Interpreter(database_context=context, output=lambda text: None)) as vm:
+                with closing(Interpreter(database_context=context, output=lambda text: None, allow_extensions=True)) as vm:
                     observed, diagnostics = [], []
                     vm.register_function('ПодробноеПредставлениеОшибки', lambda info: info.get_member('Description'))
                     vm.register_function('AccumulationEmit', lambda n,v: observed.append((int(n),v)), returns_value=False)
@@ -167,8 +167,8 @@ class EnumRelationalGuardTests(unittest.TestCase):
             'SELECT Unit FROM Catalog.Products WHERE Code="absent" UNION ALL SELECT &State AS Unit FROM Catalog.Products WHERE Code="absent"'):
             q = self.vm.execute('New Query'); q.set_member('Text',text)
             q.set_parameter('State',self.vm.execute('Enums.States.Draft'))
-            from yadinassi.sqlite_catalog import _View
-            from yadinassi.query_packages import BSLTempTablesManager
+            from yadinassi.db.sqlite.sqlite_catalog import _View
+            from yadinassi.db.query.query_packages import BSLTempTablesManager
             manager = BSLTempTablesManager()
             q.set_member('TempTablesManager', manager)
             with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('source scan')):
@@ -188,9 +188,9 @@ class EnumRelationalGuardTests(unittest.TestCase):
 
     def test_array_snapshot_once_even_if_mutated_when_read_opens(self):
         values=array(self.piece); original=self.context.backend.begin_query_read
-        def open_view():
+        def open_view(**kwargs):
             values.items[:]=[self.pack]
-            return original()
+            return original(**kwargs)
         with patch.object(self.context.backend,'begin_query_read',side_effect=open_view):
             rows=self.query('SELECT Code FROM Catalog.Products WHERE Unit IN (&V)',V=values)._rows
         self.assertEqual(rows,(('P',),))
@@ -229,8 +229,8 @@ class EnumRelationalGuardTests(unittest.TestCase):
         scope=_EnumReportScope(self.catalogs)
         manager=scope.binding._namespace._managers['units'];old=manager._values
         original=self.context.backend.begin_query_read
-        def open_view():
-            view=original();manager._values=tuple(list(old));return view
+        def open_view(**kwargs):
+            view=original(**kwargs);manager._values=tuple(list(old));return view
         try:
             with patch.object(self.context.backend,'begin_query_read',side_effect=open_view):
                 with self.assertRaises(BackendError):
@@ -257,16 +257,16 @@ class EnumRelationalGuardTests(unittest.TestCase):
         with self.assertRaises(BackendError):scope.value_descriptor(self.piece)
 
     def test_close_failure_never_returns_result_and_retires_lexical_scope(self):
-        from yadinassi import query_parser
-        from yadinassi.relational_queries import _Plan
-        from yadinassi.sqlite_documents import DocumentView
-        from yadinassi.inventory_enum_runtime import _POINT_READ
+        from yadinassi.db.query import query_parser
+        from yadinassi.db.query.relational_queries import _Plan
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        from yadinassi.configuration.demos.inventory_enum_runtime import _POINT_READ
         scope=_EnumReportScope(self.catalogs)
         plan=_Plan(query_parser.parse_package('SELECT Unit FROM Catalog.Products')[0],
                    self.catalogs,{},enum_scope=scope)
         original=self.context.backend.begin_query_read;opened=[]
-        def open_view():
-            view=original();opened.append(view);return view
+        def open_view(**kwargs):
+            view=original(**kwargs);opened.append(view);return view
         try:
             with patch.object(self.context.backend,'begin_query_read',side_effect=open_view), \
                  patch.object(DocumentView,'close',side_effect=BackendError('integrity')):
@@ -280,7 +280,7 @@ class EnumRelationalGuardTests(unittest.TestCase):
 
     def test_reused_membership_charges_before_dedup(self):
         text='SELECT Unit FROM Catalog.Products WHERE Unit IN (&V) OR Unit IN (&V)'
-        with patch('yadinassi.queries._MAX_CELLS',3):
+        with patch('yadinassi.db.query.queries._MAX_CELLS',3):
             with self.assertRaisesRegex(ValueError,'membership resource'):
                 self.query(text,V=array(self.piece,self.piece))
 
@@ -292,7 +292,7 @@ class EnumRelationalGuardTests(unittest.TestCase):
                 self.query(text,U=self.piece)
 
     def test_previous_reference_profile_does_not_gain_null_parameters(self):
-        from yadinassi.configuration_accumulation_references import PROFILE as LEGACY
+        from yadinassi.configuration.configuration_accumulation_references import PROFILE as LEGACY
         source=ROOT/'scripts/inventory_reference_behavior/runtime_source'
         with closing(create_prepared(self.directory/'legacy.sqlite',prepare_directory(source,profile=LEGACY))) as context:
             with closing(Interpreter(database_context=context)) as vm:

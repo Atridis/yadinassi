@@ -10,14 +10,16 @@ import unittest
 from uuid import uuid4
 
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import BSLDate, literal_date
-from yadinassi.periodic_information_registers import period
-from yadinassi.queries import BSLQuery
-from yadinassi.register_backend import RegisterKey, RegisterDraft, RegisterScanRequest
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.temporal.dates import BSLDate, literal_date
+from yadinassi.db.registers.periodic_information_registers import period
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.registers.register_backend import RegisterKey, RegisterDraft, RegisterScanRequest
 from test_information_registers import register_files
+from yadinassi.db.sqlite.sqlite_register_layout import register_table
+from yadinassi.db.sqlite.sqlite_typed_rows import attribute_column
 
 
 def periodic_files(periodicity='Day', catalogs=True):
@@ -74,6 +76,19 @@ class PeriodicRegisterTests(unittest.TestCase):
         q=BSLQuery(self.vm._catalogs,text,self.vm._documents,self.vm._information_registers)
         if when is not None:q.set_parameter('At',when)
         return q
+    def test_exact_get_and_record_read_use_same_normalized_period_key(self):
+        self.seed()
+        from yadinassi.db.sqlite.sqlite_registers import RegisterView
+        from unittest.mock import patch
+
+        with patch.object(RegisterView,'_preflight',side_effect=AssertionError('whole register read')):
+            self.execute(
+                'X=InformationRegisters.Prices.Get(Date(2024,1,2,18,31,59),'
+                'New Structure("Item,Region","A","North"));Message(X.Price);'
+                'R=InformationRegisters.Prices.CreateRecordManager();'
+                'R.Item="A";R.Region="North";R.Period=Date(2024,1,2,7,8,9);R.Read();Message(R.Price);')
+        self.assertEqual(self.output,['20','20'])
+
     def test_explicit_v9_and_reopen(self):
         self.assertEqual(self.context.backend.storage_version,9)
         self.seed();self.context.close()
@@ -163,7 +178,7 @@ class PeriodicRegisterTests(unittest.TestCase):
         with self.assertRaises(BackendError):SQLiteDBContext(self.path)
     def test_read_only_reads_and_rejects_write(self):
         self.seed();self.context.close();ctx=SQLiteDBContext(self.path);ctx.close()
-        from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         ctx._backend=SQLiteCatalogBackend(self.path,read_only=True)
         try:
             vm=Interpreter(database_context=ctx,output=self.output.append)
@@ -173,7 +188,9 @@ class PeriodicRegisterTests(unittest.TestCase):
     def test_query_projection_does_not_hide_corrupt_history(self):
         self.seed()
         with closing(sqlite3.connect(self.path)) as c:
-            c.execute("UPDATE information_register_record SET values_json='[]' WHERE key_json=(SELECT MIN(key_json) FROM information_register_record)");c.commit()
+            c.execute('PRAGMA ignore_check_constraints=ON')  # Simulate damaged storage, not an admissible write.
+            table=register_table(self.schema);price=attribute_column(self.schema.resources[0])
+            c.execute(f"UPDATE {table} SET {price}=? WHERE rowid=(SELECT MIN(rowid) FROM {table})",(10**12,));c.commit()
         with self.assertRaises(BackendError):self.query('SELECT Price FROM InformationRegister.Prices.SliceLast(&At)',literal_date('20240103')).execute()
     def test_scalar_slice_rejects_fractional_boundary(self):
         with self.assertRaises(ValueError):self.manager.slice_last(BSLDate(1))
@@ -185,8 +202,8 @@ class PeriodicRegisterTests(unittest.TestCase):
 class PeriodicConfigurationRuntimeTests(unittest.TestCase):
     def test_explicit_module_runtime_and_v9_query_share_validated_schema(self):
         from test_register_configuration_runtime import combined_files
-        from yadinassi.configuration_modules import MODULE_RUNTIME
-        from yadinassi.configuration_runtime import ConfigurationApplication
+        from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
+        from yadinassi.configuration.configuration_runtime import ConfigurationApplication
         files=combined_files()
         files['InformationRegisters/Prices.xml']=files['InformationRegisters/Prices.xml'].replace(b'Nonperiodical',b'Day')
         config=import_configuration(files,numbering_policy='decimal_v1',module_runtime=MODULE_RUNTIME)
@@ -207,7 +224,7 @@ class PeriodicConfigurationRuntimeTests(unittest.TestCase):
 
     def test_module_canonical_import_rejects_forged_periodicity(self):
         from test_register_configuration_runtime import combined_files
-        from yadinassi.configuration_modules import MODULE_RUNTIME
+        from yadinassi.configuration.configuration_modules import MODULE_RUNTIME
         files=combined_files()
         config=import_configuration(files,numbering_policy='decimal_v1',module_runtime=MODULE_RUNTIME)
         forged=replace(config,information_registers=(replace(config.information_registers[0],periodicity='Day'),))

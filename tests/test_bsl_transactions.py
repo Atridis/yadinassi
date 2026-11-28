@@ -4,16 +4,16 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi.catalog_backend import BackendError
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.database_transactions import execution, begin, commit, rollback, current
-from yadinassi.sqlite_migration_plan import prepare, apply
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.database_transactions import active, execution, begin, commit, rollback, current
+from yadinassi.db.sqlite.sqlite_migration_plan import prepare, apply
 from test_sqlite_catalog_hierarchy import configuration
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
 
 class BSLTransactionsTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self, *, allow_extensions=False):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'owned.sqlite'
         context = SQLiteDBContext.create(self.path, configuration(mixed=True)); context.close()
@@ -21,7 +21,8 @@ class BSLTransactionsTests(unittest.TestCase):
         self.context = SQLiteDBContext(self.path); self.addCleanup(self.context.close)
         self.backend = self.context.backend
         self.output = []
-        self.vm = Interpreter(database_context=self.context, output=self.output.append)
+        self.vm = Interpreter(database_context=self.context, output=self.output.append,
+                              allow_extensions=allow_extensions)
 
     def catalog(self):
         return self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="A";C.Description="edited";C')
@@ -34,6 +35,34 @@ BeginTransaction();C.Write();D.Write();R.Write();Message(C.IsNew());Message(D.Is
 CommitTransaction();Message(C.IsNew());Message(D.IsNew());Message(R.Selected());''')
         self.assertEqual(self.output, ['Да','Да','Нет','Нет','Да'])
         self.assertEqual(self.vm.execute('Catalogs.Products.FindByCode("A").Code'), 'A')
+
+    def test_document_stage_normalizes_once_and_failed_stage_keeps_prior_document(self):
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+
+        first = self.vm.execute(
+            'D=Documents.Orders.CreateDocument();D.Number="A";D.Date=Date(2026,1,1);D')
+        second = self.vm.execute(
+            'D=Documents.Orders.CreateDocument();D.Number="A";D.Date=Date(2026,1,1);D')
+        calls = []
+        original = DocumentView._intent
+        def intent(view, draft, expected):
+            calls.append(draft.key)
+            return original(view, draft, expected)
+
+        with execution(self.backend):
+            begin(self.backend)
+            transaction = current(self.backend)
+            statements = []
+            transaction.unit._view._connection.set_trace_callback(statements.append)
+            with patch.object(DocumentView, '_intent', intent):
+                first.write()
+                with self.assertRaisesRegex(BackendError, 'duplicate_number'): second.write()
+            self.assertEqual(calls, [first._key, second._key])
+            self.assertEqual(sum(sql.startswith('SAVEPOINT ') for sql in statements), 2)
+            self.assertEqual(len(transaction.unit.requests), 1)
+            commit(self.backend)
+        self.assertFalse(first.is_new())
+        self.assertTrue(second.is_new())
 
     def test_rollback_keeps_edits_not_revision(self):
         self.vm.execute('C=Catalogs.Products.CreateItem();C.Code="A";BeginTransaction();C.Write();RollbackTransaction();Message(C.IsNew());Message(C.Code);')
@@ -97,6 +126,24 @@ CommitTransaction();''')
             commit(self.backend)
         self.assertFalse(obj.is_new())
 
+    def test_read_lease_reuses_its_own_locked_writer_identity(self):
+        from contextlib import closing
+        from contextvars import Context
+
+        with execution(self.backend):
+            begin(self.backend)
+            writer = current(self.backend).unit._view
+            statements = []
+            writer._connection.set_trace_callback(statements.append)
+            with self.assertRaisesRegex(BackendError, 'unsupported'):
+                Context().run(self.backend.begin_read)
+            with closing(self.backend.begin_read()) as lease:
+                self.assertIs(lease._connection, writer._connection)
+                self.assertEqual((lease.database_id,lease.configuration_generation),
+                                 (writer.database_id,writer.configuration_generation))
+            self.assertEqual(statements, [])
+            rollback(self.backend)
+
     def test_open_lease_blocks_commit_and_stage(self):
         obj = self.catalog()
         with execution(self.backend):
@@ -123,34 +170,94 @@ CommitTransaction();''')
             rollback(self.backend)
         self.assertTrue(self.vm.execute('Catalogs.Products.FindByCode("A").IsEmpty()'))
 
-    def test_uncertain_after_commit_resolves_whole_batch(self):
+    def test_unknown_commit_never_resolves_or_replays(self):
+        for phase in ('before', 'after'):
+            with self.subTest(phase=phase):
+                obj = self.catalog()
+                # Normal execution exit also refuses to swallow a possibly
+                # committed write when the script caught the initial error.
+                with self.assertRaisesRegex(BackendError, '^uncertain_commit$'), execution(self.backend):
+                    begin(self.backend); obj.write(); tx = current(self.backend)
+                    fault = FaultConnection(tx.unit._view._connection, commit_fault=phase)
+                    tx.unit._view._connection = fault
+                    for action in (commit, active, commit, rollback):
+                        with self.assertRaisesRegex(BackendError, '^uncertain_commit$'):
+                            action(self.backend)
+                self.assertEqual(fault.commit_calls, 1)
+                self.assertIsNone(tx.unit._view._connection)
+                self.assertIsNone(current(self.backend))
+                self.assertTrue(obj.is_new())
+                with self.assertRaisesRegex(BackendError, '^uncertain_commit$'):
+                    obj.set_member('Description', 'must stay frozen')
+                # The current DB record is independent evidence, not a receipt.
+                self.assertEqual(self.vm.execute('Catalogs.Products.FindByCode("A").IsEmpty()'),
+                                 phase == 'before')
+
+    def test_bsl_catch_cannot_silence_unknown_at_execution_exit(self):
+        from yadinassi.db.sqlite.sqlite_transactions import UnitOfWork
+        original = UnitOfWork.commit
+        faults = []
+        def lose_reply(unit):
+            fault = FaultConnection(unit._view._connection, commit_fault='after')
+            faults.append(fault)
+            unit._view._connection = fault
+            return original(unit)
+        self.catalog()
+        with patch.object(UnitOfWork, 'commit', lose_reply):
+            with self.assertRaisesRegex(BackendError, '^uncertain_commit$'):
+                self.vm.execute('BeginTransaction();C.Write();Try CommitTransaction(); '
+                                'Except Caught=True; EndTry;')
+        self.assertTrue(self.vm.variables['caught'])
+        self.assertEqual([fault.commit_calls for fault in faults], [1])
+        self.assertTrue(self.vm.execute('C.IsNew()'))
+        self.assertFalse(self.vm.execute('Catalogs.Products.FindByCode("A").IsEmpty()'))
+
+    def test_uncertain_exception_exit_preserves_error_and_frozen_buffer(self):
         obj = self.catalog()
-        with execution(self.backend):
-            begin(self.backend);obj.write(); tx=current(self.backend)
-            tx.unit._view._connection=FaultConnection(tx.unit._view._connection, commit_fault='after')
-            with self.assertRaisesRegex(BackendError, 'uncertain_commit'): commit(self.backend)
-            self.assertTrue(obj.is_new())
+        with self.assertRaises(KeyboardInterrupt), execution(self.backend):
+            begin(self.backend); obj.write(); tx = current(self.backend)
+            fault = FaultConnection(tx.unit._view._connection, commit_fault='interrupt')
+            tx.unit._view._connection = fault
             commit(self.backend)
-        self.assertFalse(obj.is_new())
-
-    def test_uncertain_before_commit_does_not_replay(self):
-        obj = self.catalog()
-        with execution(self.backend):
-            begin(self.backend);obj.write();tx=current(self.backend)
-            tx.unit._view._connection=FaultConnection(tx.unit._view._connection, commit_fault='before')
-            with self.assertRaises(BackendError): commit(self.backend)
-            with self.assertRaisesRegex(BackendError, 'conflict'): commit(self.backend)
+        self.assertEqual(fault.commit_calls, 1)
+        self.assertIsNone(self.backend._bsl_transaction)
+        self.assertIsNone(tx.unit._view._connection)
         self.assertTrue(obj.is_new())
-        self.assertTrue(self.vm.execute('Catalogs.Products.FindByCode("A").IsEmpty()'))
+        self.assertFalse(self.vm.execute('Catalogs.Products.FindByCode("A").IsEmpty()'))
 
-    def test_rollback_uncertain_committed_never_claims_rollback(self):
-        obj=self.catalog()
-        with execution(self.backend):
-            begin(self.backend);obj.write();tx=current(self.backend)
-            tx.unit._view._connection=FaultConnection(tx.unit._view._connection, commit_fault='after')
-            with self.assertRaises(BackendError): commit(self.backend)
-            with self.assertRaisesRegex(BackendError,'conflict'): rollback(self.backend)
+    def test_unknown_owner_is_not_transferred_if_physical_close_fails(self):
+        obj = self.catalog()
+        with self.assertRaisesRegex(BackendError, '^uncertain_commit$'), execution(self.backend):
+            begin(self.backend); obj.write(); tx = current(self.backend)
+            fault = FaultConnection(tx.unit._view._connection, commit_fault='after',
+                                    close_fault='before', close_count=10)
+            tx.unit._view._connection = fault
+            commit(self.backend)
+        original_owner = tx.owner
+        try:
+            with self.assertRaisesRegex(BackendError, '^unsupported$'), execution(self.backend):
+                commit(self.backend)
+            self.assertIs(tx.owner, original_owner)
+            self.assertIs(self.backend._bsl_transaction, tx)
+            self.assertIs(tx.unit._view._connection, fault)
+            self.assertEqual(fault.commit_calls, 1)
+        finally:
+            fault.close_count = 0
+
+    def test_known_commit_publishes_prebuilt_outcome_without_durable_lookup(self):
+        obj = self.catalog()
+        with self.assertRaisesRegex(RuntimeError, '^after known commit$'), execution(self.backend):
+            begin(self.backend); obj.write(); tx = current(self.backend)
+            commit_once = tx.unit.commit
+            def after_success():
+                commit_once()
+                raise RuntimeError('after known commit')
+            with patch.object(tx.unit, 'commit', side_effect=after_success) as low:
+                commit(self.backend)
+        low.assert_called_once_with()
+        self.assertIsNone(self.backend._bsl_transaction)
         self.assertFalse(obj.is_new())
+        self.assertFalse(self.vm.execute('Catalogs.Products.FindByCode("A").IsEmpty()'))
 
     def test_standalone_write_unchanged(self):
         obj=self.catalog();obj.write();self.assertFalse(obj.is_new())

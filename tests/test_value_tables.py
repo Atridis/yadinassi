@@ -2,15 +2,16 @@
 
 Expected state is independent of the active native output presentation format.
 """
-from decimal import Decimal, Inexact, Rounded, localcontext
+from decimal import Decimal, Inexact, Rounded, ROUND_FLOOR, localcontext
 import unittest
 from unittest.mock import patch
 
-from yadinassi.structures import BSLStructure
-from yadinassi.type_descriptions import BSLTypeDescription as TD
-from yadinassi.type_qualifiers import BSLStringQualifiers, BSLAllowedLength
-from yadinassi.values import BSLArray, NULL
-from yadinassi.value_tables import BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection
+from yadinassi import Interpreter
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_descriptions import BSLTypeDescription as TD
+from yadinassi.types.type_qualifiers import BSLStringQualifiers, BSLAllowedLength
+from yadinassi.types.values import BSLArray, NULL
+from yadinassi.collections.value_tables import BSLValueTable, BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection
 
 D = Decimal
 
@@ -233,6 +234,36 @@ class ValueTableTests(unittest.TestCase):
             t.add().set_member("Value",v)
         self.assertEqual(t.total("Value"),D(3))
 
+    def test_compiled_total_matches_native_scalar_records(self):
+        from yadinassi import Interpreter
+
+        # Total fields of the owner checkpoint table.typed.* records.
+        cases = (
+            ("String", '7', '{"N",7}'), ("Boolean", 'True', '{"N",1}'),
+            ("String", '"bad"', '{"N",0}'), ("String,Number", '"7"', '{"N",0}'),
+            ("Boolean,String", '"7"', '{"U"}'), ("Date", 'Date(2024,2,29)', '{"N",0}'),
+        )
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        for kind, value, expected in cases:
+            with self.subTest(kind=kind, value=value):
+                vm.execute(f'T=New ValueTable;T.Columns.Add("Value",New TypeDescription("{kind}"));'
+                           f'Row=T.Add();Row.Value={value};Result=ValueToStringInternal(T.Total("Value"));')
+                self.assertEqual(vm.variables['result'], expected)
+
+    def test_total_rejects_noncanonical_type_tuple_without_host_hooks(self):
+        class BadTypes(tuple):
+            def __len__(self):
+                raise AssertionError('Total invoked host length')
+
+        t = BSLValueTable()
+        description = TD("String")
+        t.columns.add("Value", description)
+        t.add().set_member("Value", "7")
+        vars(description)['types'] = BadTypes(description.types)
+        with self.assertRaises(TypeError):
+            t.total("Value")
+
     def test_total_is_exact_under_hostile_decimal_context(self):
         t = BSLValueTable()
         t.columns.add("Value")
@@ -254,9 +285,18 @@ class ValueTableTests(unittest.TestCase):
             single.columns.add("Value")
             single.add().set_member("Value", large)
             self.assertEqual(single.total("Value"), large)
-        with patch("yadinassi.value_tables._MAX_TOTAL_PRECISION", 20):
+        with patch("yadinassi.collections.value_tables._MAX_TOTAL_PRECISION", 20):
             with self.assertRaises(ValueError):
                 t.total("Value")
+
+    def test_total_mixed_column_preserves_decimal_signed_scaled_zero(self):
+        t = BSLValueTable()
+        t.columns.add("Value")
+        for value in (1, -1, D("-0.00")):
+            t.add()[0] = value
+        with localcontext() as ctx:
+            ctx.rounding = ROUND_FLOOR
+            self.assertEqual(t.total("Value").as_tuple(), D("-0.00").as_tuple())
 
     def test_documented_method_selector_bounds(self):
         t = sample()
@@ -297,6 +337,38 @@ class ValueTableTests(unittest.TestCase):
         self.assertEqual(c.name,"")
         t.columns.delete(D(0)); self.assertEqual(t.rows,[])
 
+    def test_direct_column_descriptor_contract_and_failed_name_writes(self):
+        source = """
+        T=New ValueTable; C=T.Columns;
+        Held=C.Add("Original",New TypeDescription("Number"),"visible",-1);
+        Inserted=C.Insert(0,"Before",Undefined,"first",-1);
+        InsertWidth=Inserted.Width; InitialWidth=Held.Width;
+        Held.Width=-2; SetWidth=Held.Width;
+        Row=T.Add(); Row.Original=7;
+        Try C.Add("bad name"); Except BadAdd=True; EndTry;
+        Try C.Insert(0,"bad-name"); Except BadInsert=True; EndTry;
+        Try Held.Name="bad name"; Except BadRename=True; EndTry;
+        Before=Row.Original; LiveColumns=C.Count();
+        C.Delete(Held); DeletedIndex=C.IndexOf(Held);
+        DeletedName=Held.Name; DeletedTitle=Held.Title; DeletedWidth=Held.Width;
+        DeletedType=Held.ValueType; Remaining=C.Count();
+        """
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                vm=Interpreter()
+                self.addCleanup(vm.close)
+                if prepared:vm.execute_prepared(vm.prepare(source))
+                else:vm.execute(source)
+                state=vm.variables
+                self.assertEqual(tuple(state[k] for k in ('insertwidth','initialwidth','setwidth')),
+                                 (D(4294967295),D(4294967295),D(4294967294)))
+                for key in ('badadd','badinsert','badrename'):
+                    self.assertIs(state[key],True)
+                self.assertEqual((state['before'],state['livecolumns'],state['remaining']),(7,2,1))
+                self.assertEqual(tuple(state[k] for k in ('deletedindex','deletedname','deletedtitle','deletedwidth','deletedtype')),
+                                 (D(4294967295),'','',D(0),TD()))
+                self.assertEqual(state['t'].columns.items,(state['inserted'],))
+
     def test_lookup_copy_and_nested_sharing(self):
         t=sample(); r=t.rows[0]; nested=array(D(1)); r.set_member("Имя",nested)
         self.assertIs(t.find(nested),r)
@@ -307,7 +379,7 @@ class ValueTableTests(unittest.TestCase):
         copied.columns.items[0].set_member("Name","Changed")
         self.assertEqual(t.columns.items[0].name,"Имя")
 
-    def test_protocol_and_budget(self):
+    def test_protocol_and_index_validation(self):
         t=sample(); r=t.rows[0]; c=t.columns.items[0]
         for obj in [t,t.columns,r,c]:
             for field in ["__dict__","table","rows","cells","items"]:
@@ -315,11 +387,10 @@ class ValueTableTests(unittest.TestCase):
         for obj in [r,t.columns]:
             with self.assertRaises(TypeError): obj.get("Имя")
             self.assertIsNotNone(obj.get_index("Имя"))
-        for v in [True,1,D('NaN'),D('Infinity'),D('1e999999')]:
-            with self.assertRaises((TypeError,ValueError)): t.get(v)
-        with patch('yadinassi.value_tables._MAX_CELLS',6):
-            with self.assertRaises(ValueError): t.add()
-            with self.assertRaises(ValueError): t.columns.add("Extra")
+        for v in [True,D('NaN'),D('Infinity')]:
+            with self.assertRaises(TypeError): t.get(v)
+        with self.assertRaises(IndexError): t.get(D('1e999999'))
+        self.assertIs(t.get(1), t.get(D(1)))
         self.assertEqual(len(t.rows),3); self.assertEqual(len(t.columns.items),2)
         t.columns.add("Get"); r.set_member("Get","property")
         self.assertEqual(r.get_member("Get"),"property")

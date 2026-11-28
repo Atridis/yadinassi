@@ -9,8 +9,8 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 
 CATALOG = ROOT / 'scripts/catalog_object_behavior/generated/Catalog.xml'
 OLD_NAME = 'OwnedCatalog4f4ccaa9'

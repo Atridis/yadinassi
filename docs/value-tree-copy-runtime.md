@@ -49,7 +49,7 @@ still be valid. No native-only success bypass is added.
 
 ## Local implementation and limits
 
-`yadinassi/value_trees.py` validates the complete source graph iteratively before
+`yadinassi/collections/value_trees.py` validates the complete source graph iteratively before
 allocating the result. It checks exact internal collection/row/column shapes,
 ownership, parent/depth links, live objects, unique membership, cell keys and the
 whole-tree row registry. It then constructs new columns and rows in hierarchy
@@ -71,3 +71,8 @@ bounded native measurement claims.
 
 Sort, UI, XML/internal tree codecs, transport and arbitrary Copy parameters remain
 outside this feature. `FillValues` remains a ValueTable method, not a tree method.
+
+Direct BSL Copy checks row and child origins inside the existing complete copy
+preflight, not in a separate whole-tree pass. Registry completeness, resource
+limits and cell-key checks remain in the copy preflight before a result is
+allocated. Copies retain the existing independent topology and shared cell values.

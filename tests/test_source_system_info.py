@@ -6,8 +6,8 @@ import unittest
 from test_configuration_source_runtime import source
 from yadinassi import __version__
 from yadinassi.cli import main
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 
 class SourceSystemInfoTests(unittest.TestCase):

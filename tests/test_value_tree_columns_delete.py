@@ -2,9 +2,9 @@
 from decimal import Decimal as D
 import unittest
 from yadinassi import Interpreter
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
-from yadinassi.value_trees import BSLValueTree
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
+from yadinassi.collections.value_trees import BSLValueTree
 
 
 class Poison:

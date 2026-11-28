@@ -8,12 +8,13 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.error_info import BSLErrorCategory, BSLErrorInfo
-from yadinassi.native_targets import LINUX_8_3_27_1508
-from yadinassi.type_values import type_of
-from yadinassi.values import BSLType
+from yadinassi.types.error_info import BSLErrorCategory, BSLErrorInfo
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
+from yadinassi.types.type_values import type_of
+from yadinassi.types.values import BSLType
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'async_native_linux_8_3_27_1508.json'
 FIXTURE_SHA256 = '5f4361f2aeaf96e49b4802ba93daa3fbaaf0a40dbc0213726f30f88cd42ae8ec'
@@ -125,12 +126,23 @@ class NativeAsyncObservationTests(unittest.TestCase):
     def test_exact_eight_native_observations(self):
         for case in OBSERVATIONS['cases']:
             with self.subTest(case=case['case']):
-                vm = Interpreter(output=lambda message: None,
+                vm = Interpreter(allow_extensions=True, output=lambda message: None,
                                  native_target=LINUX_8_3_27_1508)
                 capture = Capture()
                 capture.install(vm)
-                vm.execute(DECLARATIONS + case['source'] + ROOT)
-                vm.run_until_idle()
+                from yadinassi.execution.codegen import direct_emitter
+                emitted = []
+                compile_module = direct_emitter.compile_module
+                def observe_compile(*args, **kwargs):
+                    plan = compile_module(*args, **kwargs)
+                    emitted.append(plan.generated_source)
+                    return plan
+
+                with patch.object(direct_emitter, 'compile_module', side_effect=observe_compile):
+                    vm.execute(DECLARATIONS + case['source'] + ROOT)
+                    vm.run_until_idle()
+                self.assertTrue(any(code and 'yield _AwaitRequest(' in code
+                                    and '.start_async(' in code for code in emitted))
                 self.assertEqual(capture.trace, case['trace'])
                 self.assertEqual(capture.values, case['values'])
                 self.assertEqual(capture.errors, [expected_error(e) for e in case['errors']])

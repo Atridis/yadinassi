@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 
 from business_configuration_fixture import sources
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.configuration_app import ConfigurationController, ConfigurationProcess, PROTOCOL, load_application, main
 
 

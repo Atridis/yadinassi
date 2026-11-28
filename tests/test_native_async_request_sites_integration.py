@@ -6,8 +6,8 @@ from decimal import Decimal
 import unittest
 
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
-from yadinassi.structures import BSLStructure
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
+from yadinassi.collections.structures import BSLStructure
 import test_native_async_request_reader as reader_fixture
 
 SOURCE_LABEL = 'offline-managed-form-module'
@@ -117,7 +117,7 @@ def exercise_site(site_fault, case_id=0, iteration=1, *, outer=False, expose_con
     reader = SiteReader(reader_fixture.stream_tokens(reader_fixture.canonical()),
                         '/tmp/offline/request.json', site_fault, iteration)
     output = []
-    vm = Interpreter(output.append, native_target=LINUX_8_3_27_1508)
+    vm = Interpreter(output.append, native_target=LINUX_8_3_27_1508, allow_extensions=True)
     vm.register_type('JSONReader', lambda: reader)
     vm.register_type('Structure', lambda: SiteStructure(site_fault, iteration))
     vm.execute('Var JSONValueType, ТипЗначенияJSON, LaunchParameter;')

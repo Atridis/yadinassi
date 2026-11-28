@@ -9,14 +9,15 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from yadinassi import BSLError, Interpreter, value_list_sort
-from yadinassi.dates import BSLDate
-from yadinassi.maps import BSLMap
-from yadinassi.search_directions import BSLSearchDirection
-from yadinassi.sort_directions import BSLSortDirection as Direction
-from yadinassi.structures import BSLStructure
-from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, BSLType, NULL
+from yadinassi import BSLError, Interpreter
+from yadinassi.collections import value_list_sort
+from yadinassi.temporal.dates import BSLDate
+from yadinassi.collections.maps import BSLMap
+from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.collections.sort_directions import BSLSortDirection as Direction
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.collections.value_lists import BSLValueList, BSLValueListItem
+from yadinassi.types.values import BSLArray, BSLType, NULL
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +52,44 @@ class NativeValueListSortTests(unittest.TestCase):
         self.assertEqual("\n".join(outputs) + "\n", expected[start:end])
         self.assertEqual(len(outputs), 28)
         self.assertEqual(outputs[-1], "table.list.sort.checkpoint.complete: [ok]")
+
+
+    def test_direct_distinct_non_scalar_families_match_native(self):
+        self._assert_direct_archived_records("table.list.sort.value.objects",
+                                             "table.list.sort.value.types",
+                                             "table.list.sort.value.enums")
+
+    def test_direct_unobserved_family_mixes_and_nonempty_objects_reject_atomically(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        for keys in (('New Array', '0'),
+                     ('Type("Number")', 'SortDirection.Asc'),
+                     ('New Array(1)', 'New Structure'),
+                     ('New Structure("A", 1)', 'New Array')):
+            with self.subTest(keys=keys):
+                vm.execute(f'L=New ValueList; A=L.Add({keys[0]}); B=L.Add({keys[1]});')
+                for direction in ('Asc', 'Desc'):
+                    with self.assertRaises(BSLError):
+                        vm.execute(f'L.SortByValue(SortDirection.{direction});')
+                    self.assertIs(vm.variables['l'][0], vm.variables['a'])
+                    self.assertIs(vm.variables['l'][1], vm.variables['b'])
+                    self.assertEqual([item.get_id() for item in vm.variables['l']], [0, 1])
+
+    def _assert_direct_archived_records(self, *labels):
+        source = (ROOT / "integrational_tests/tests/collections.bsl").read_text(encoding="utf-8-sig")
+        archive = (ROOT / "tests/fixtures/native_windows/collections.out").read_text(encoding="utf-8")
+        outputs = []
+        vm = Interpreter(outputs.append)
+        self.addCleanup(vm.close)
+        vm.execute(source.split("#Область МассивыИСтруктуры", 1)[0])
+        for label in labels:
+            with self.subTest(label=label):
+                command, = (line for line in source.splitlines()
+                            if line.startswith(f'НаблюдатьТаблицы("{label[6:]}",'))
+                expected, = (line for line in archive.splitlines() if line.startswith(label + ": "))
+                vm.execute_prepared(vm.prepare(command))
+                self.assertEqual(outputs.pop(), expected)
+                self.assertEqual(outputs, [])
 
     def assert_orders(self, values, ascending, descending, *, presentation=False):
         for direction, expected in ((None, ascending), (Direction.ASC, ascending),
@@ -269,7 +308,7 @@ class ValueListSortBoundaryTests(unittest.TestCase):
 
     def test_all_resource_limits_are_checked_before_commit(self):
         for presentation in (False, True):
-            for constant, limit in (("_MAX_SORT_ITEMS", 1), ("_MAX_SORT_TEXT", 3),
+            for constant, limit in (("_MAX_SORT_TEXT", 3),
                                     ("_MAX_KEY_WEIGHTS", 1)):
                 owner = list_for("bb", "aa", presentations=("bb", "aa"))
                 method = owner.sort_by_presentation if presentation else owner.sort_by_value

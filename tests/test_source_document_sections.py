@@ -3,11 +3,11 @@ import unittest
 from uuid import uuid4
 import test_source_document_records as base
 import test_source_catalog_definitions as catalog
-from yadinassi.source_document_section_store import SourceDocumentSectionStore
-from yadinassi.source_document_store import SourceDocumentStore
-from yadinassi.source_document_definitions import source_document_definitions
-from yadinassi.configuration_source_runtime import SourceApplication
-from yadinassi.errors import BSLError
+from yadinassi.db.document.source_document_section_store import SourceDocumentSectionStore
+from yadinassi.db.document.source_document_store import SourceDocumentStore
+from yadinassi.db.document.source_document_definitions import source_document_definitions
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
+from yadinassi.types.errors import BSLError
 
 SECTION='<TabularSection uuid="00000000-0000-0000-0000-000000000099"><Properties><Name>Lines</Name></Properties><ChildObjects>'+catalog.attribute('Flag')+'</ChildObjects></TabularSection>'
 def package(body='',children=SECTION,**kwargs):return base.package(body,children=children,**kwargs)
@@ -61,6 +61,22 @@ class SourceDocumentSectionTests(unittest.TestCase):
         with self.assertRaises(BSLError):self.run_body('S=D.Lines; SetSafeMode(True); S.Add();')
     def test_reorder_numbers(self):
         _,out=self.run_body('A=D.Lines.Add(); A.Flag=True; B=D.Lines.Add(); B.Flag=False; D.Lines.Delete(0); Message(B.LineNumber);');self.assertEqual(out,['1'])
+    def test_line_numbers_follow_loaded_and_remaining_rows(self):
+        _, out = self.run_body("""
+            A=D.Lines.Add(); A.Flag=True;
+            B=D.Lines.Add(); B.Flag=False;
+            C=D.Lines.Add(); C.Flag=True;
+            D.Write(); O=D.Ref.GetObject();
+            A=O.Lines[0]; B=O.Lines[1]; C=O.Lines[2];
+            Message(C.LineNumber);
+            O.Lines.Delete(B);
+            Message(C.НомерСтроки);
+            Try Message(B.LineNumber); Except Message("detached"); EndTry;
+            O.Lines.Delete(0); Message(C.LineNumber);
+            O.Lines.Clear(); R=O.Lines.Add(); Message(R.LineNumber);
+        """)
+        self.assertEqual(out, ['3', '2', 'detached', '1', '1'])
+
     def test_iteration_modification(self):
         _,out=self.run_body('A=D.Lines.Add(); A.Flag=True; B=D.Lines.Add(); B.Flag=False; Try For Each R In D.Lines Do D.Lines.Clear(); EndDo; Except Message("changed"); EndTry;');self.assertEqual(out,['changed'])
     def test_empty_bundle(self):

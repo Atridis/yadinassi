@@ -10,11 +10,13 @@ import unittest
 from test_native_async_fixture import historical_source_bytes
 from unittest.mock import patch
 
+from yadinassi.db.sqlite.sqlite_movement_layout import table_name as movement_table
 from yadinassi import Interpreter, BSLRuntimeError
-from yadinassi import query_parser as syntax
-from yadinassi.configuration_accumulation import import_accumulation_configuration, PROFILE
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.dates import _from_parts
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.db.query import query_parser as syntax
+from yadinassi.configuration.configuration_accumulation import import_accumulation_configuration, PROFILE
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.temporal.dates import _from_parts
 from test_sqlite_accumulation_profile import accumulation_source
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,14 +29,14 @@ SELECTED = b'Procedure Posting(Cancel, Mode) RegisterRecords.OwnedAccumulationRo
 
 
 class AccumulationQueryRuntimeTests(unittest.TestCase):
-    def make(self, module=SELECTED, files=None):
+    def make(self, module=SELECTED, files=None, *, allow_extensions=False):
         temp = tempfile.TemporaryDirectory(dir=ROOT.parent)
         self.addCleanup(temp.cleanup)
         config = import_accumulation_configuration(
             accumulation_source(module) if files is None else files, accumulation_runtime=PROFILE)
         context = SQLiteDBContext.create_accumulation(Path(temp.name) / 'query.sqlite', config)
         self.addCleanup(context.close)
-        vm = Interpreter(database_context=context, output=lambda line: None)
+        vm = Interpreter(allow_extensions=allow_extensions, database_context=context, output=lambda line: None)
         self.addCleanup(vm.close)
         return vm, context
 
@@ -56,8 +58,41 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         vm.execute('O.Write(DocumentWriteMode.Posting);')
         return vm.execute('O')
 
+    def test_register_query_uses_live_read_lease_without_begin(self):
+        from yadinassi.db.catalog.catalog_backend import BackendError
+        from yadinassi.db.sqlite.sqlite_transactions import _accumulation_port
+
+        vm, context = self.make()
+        self.seed(vm, [('A', 1, 5, 2, False, 0)])
+        source = 'Q=New Query("SELECT Amount FROM ' + REG + '");Result=Q.Execute();'
+        vm.execute(source)
+        connection = context.backend._read_handle.connection
+        statements = []
+        connection.set_trace_callback(statements.append)
+        try:
+            vm.execute(source)
+            self.assertEqual(vm.variables['result']._rows, ((Decimal(5),),))
+            self.assertIs(context.backend._read_handle.connection, connection)
+            self.assertIsNone(context.backend._active)
+            table = movement_table('accumulation', context.backend.accumulation_configuration.registers[0])
+            self.assertTrue(any(f'FROM "{table}"' in sql for sql in statements))
+            self.assertFalse(any(sql.startswith(('BEGIN', 'ROLLBACK')) for sql in statements))
+        finally:
+            connection.set_trace_callback(None)
+        with closing(context.backend.begin_query_read(query_language=True)) as view:
+            owner = view._view
+            port = _accumulation_port(owner)
+            register = next(iter(port.schemas))
+            with self.assertRaisesRegex(BackendError, 'closed'):
+                port.scan(register)
+            self.assertEqual(len(port.scan(register, _query_view=owner)), 1)
+        with self.assertRaisesRegex(BackendError, 'closed'):
+            port.scan(register, _query_view=owner)
+
     def test_unchanged_native16_observer_and_handler_replay(self):
-        vm, _ = self.make(module=None)
+        # The observer has diagnostic callbacks; the posting handler itself
+        # remains on the ordinary, separately owned closed adapter.
+        vm, _ = self.make(module=None, allow_extensions=True)
         observed, diagnostics = [], []
         vm.register_function('ПодробноеПредставлениеОшибки', lambda info: info.get_member('Description'))
         vm.register_function('AccumulationEmit', lambda n, value: observed.append((int(n), value)), returns_value=False)
@@ -74,7 +109,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
                    'Function ReadActual(Value) Return Value;EndFunction '
                    'Procedure AssignActual(Value) Value=99;EndProcedure')
         self.assertEqual(vm.execute('ReadActual(S.Amount)'), Decimal(5))
-        with self.assertRaisesRegex(BSLRuntimeError, 'read-only property'):
+        with self.assertRaisesRegex(BSLRuntimeError, 'Свойство недоступно для записи'):
             vm.execute('AssignActual(S.Amount);')
         self.assertEqual(vm.execute('S.Amount'), Decimal(5))
 
@@ -85,7 +120,8 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
                    'Procedure AssignActual(Value) Value=1;EndProcedure')
         self.assertEqual(vm.execute('ReadActual(N.Digits)'), Decimal(38))
         self.assertEqual(vm.execute('ReadActual(N.FractionDigits)'), Decimal(3))
-        with self.assertRaisesRegex(BSLRuntimeError, 'read-only property'):
+        self.assertEqual(vm.execute('ReadActual(N.РазрядностьДробнойЧасти)'), Decimal(3))
+        with self.assertRaisesRegex(BSLRuntimeError, 'Свойство недоступно для записи'):
             vm.execute('AssignActual(N.Digits);')
         self.assertEqual(vm.execute('N.Digits'), Decimal(38))
 
@@ -95,22 +131,26 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
                    'Function ReadActual(Value) Return Value;EndFunction '
                    'Procedure AssignActual(Value) Value=1;EndProcedure')
         self.assertEqual(vm.execute('ReadActual(R.LineNumber)'), Decimal(0))
-        with self.assertRaisesRegex(BSLRuntimeError, 'read-only property'):
+        self.assertEqual(vm.execute('ReadActual(R.НомерСтроки)'), Decimal(0))
+        with self.assertRaisesRegex(BSLRuntimeError, 'Свойство недоступно для записи'):
             vm.execute('AssignActual(R.LineNumber);')
         self.assertEqual(vm.execute('R.LineNumber'), Decimal(0))
 
     def test_readonly_actual_receiver_is_evaluated_once(self):
         vm, _ = self.make()
         self.seed(vm, [('A', 1, 5, 2, False, 0)])
+        calls = []
+        vm.output = calls.append
         vm.execute('Q=New Query("SELECT Amount FROM ' + REG + '");S=Q.Execute().Select();S.Next();'
-                   'Function ReadActual(Value) Return Value;EndFunction')
-        selection, calls = vm.execute('S'), []
-        def cursor_once():
-            calls.append(True)
-            return selection
-        vm.register_function('CursorOnce', cursor_once)
-        self.assertEqual(vm.execute('ReadActual(CursorOnce().Amount)'), Decimal(5))
-        self.assertEqual(calls, [True])
+                   'Function CursorOnce(Val Cursor) Message("read once");Return Cursor;EndFunction '
+                   'Function ReadActual(Value) Return Value;EndFunction '
+                   'Function ForwardActual(Value) Return ReadActual(Value);EndFunction')
+        actual = 'ForwardActual(CursorOnce(S).Amount)'
+        self.assertEqual(vm.execute(actual), Decimal(5))
+        self.assertEqual(calls, ['read once'])
+        calls.clear()
+        self.assertEqual(vm.execute_prepared(vm.prepare(actual)), Decimal(5))
+        self.assertEqual(calls, ['read once'])
 
     def test_readonly_actual_does_not_grant_generic_object_or_method_reference(self):
         vm, _ = self.make()
@@ -118,7 +158,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         vm.execute('Q=New Query("SELECT Amount FROM ' + REG + '");S=Q.Execute().Select();S.Next();'
                    'Function ReadActual(Value) Return Value;EndFunction')
         for expression in ('ReadActual(S.Next)', 'ReadActual(R.Amount)', 'ReadActual(O.Number)'):
-            with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError):
+            with self.subTest(expression=expression), self.assertRaises(BoundaryViolation):
                 vm.execute(expression)
 
     def test_raw_scalars_and_recorder_reference_types(self):
@@ -241,8 +281,8 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         self.assertEqual(self.query(vm, 'SELECT Item,Warehouse,AmountBalance FROM ' + REG + '.Balance(&At)', At=AT)._rows, ((True, DATE, Decimal(5)),))
 
     def test_query_exception_and_interruption_release_outer_read_lease(self):
-        from yadinassi.database_transactions import execution, current, begin, rollback
-        from yadinassi.document_posting_values import DocumentWriteMode
+        from yadinassi.db.database_transactions import execution, current, begin, rollback
+        from yadinassi.db.document.document_posting_values import DocumentWriteMode
         for error in (ValueError('query stopped'), KeyboardInterrupt()):
             with self.subTest(error=type(error).__name__):
                 vm, context = self.make()
@@ -256,7 +296,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
                 with execution(context.backend):
                     begin(context.backend)
                     a.write(DocumentWriteMode.POSTING)
-                    with patch('yadinassi.accumulation_queries._dimension_key', side_effect=error):
+                    with patch('yadinassi.db.query.accumulation_queries._dimension_key', side_effect=error):
                         with self.assertRaises(type(error)):
                             query.execute()
                     self.assertEqual(current(context.backend).leases, 0)
@@ -313,7 +353,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
                     self.query(vm, 'SELECT AmountBalance FROM ' + REG + '.Balance(&At)', At=value)
 
     def test_fractional_and_reversed_boundaries_are_deferred(self):
-        from yadinassi.dates import BSLDate
+        from yadinassi.temporal.dates import BSLDate
         vm, _ = self.make()
         with self.assertRaises(TypeError): self.query(vm, 'SELECT AmountBalance FROM ' + REG + '.Balance(&At)', At=BSLDate(DATE.ticks + 1))
         with self.assertRaises(ValueError): self.query(vm, 'SELECT AmountTurnover FROM ' + REG + '.Turnovers(&Start,&EndAt)', Start=AT, EndAt=DATE)
@@ -338,7 +378,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
     def test_input_budgets_charge_excluded_and_unprojected_values(self):
         vm, _ = self.make()
         self.seed(vm, [('A', 1, 5, 2, False, 0)])
-        with patch('yadinassi.queries._MAX_CELLS', 1):
+        with patch('yadinassi.db.query.queries._MAX_CELLS', 1):
             with self.assertRaisesRegex(ValueError, 'input resource limit'):
                 self.query(vm, 'SELECT COUNT(*) AS N FROM ' + REG + '.Balance(&At)', At=DATE)
 

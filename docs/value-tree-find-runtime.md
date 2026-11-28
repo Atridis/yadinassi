@@ -51,6 +51,19 @@ and child item lists and cell dictionaries must be the implementation's ordinary
 built-in containers. Generic tests cover values/order independent of native
 witness IDs, first-result identity, resource failures and malformed host objects.
 
+Direct BSL Find checks its receiver, activation and schema after argument
+evaluation, then checks the provenance, registry membership and current cell keys
+of each row before the search reads its cells. Child collections are checked
+only on recursive descent. Find does not preflight unrelated rows before the
+first hit; malformed rows are rejected when reached. The result still shares
+the original live row. FindRows, Total and UnloadColumn use the same visited-row
+checks in their existing traversal. Nonrecursive queries and UnloadColumn only
+validate the rows of the selected collection; empty FindRows filters visit no
+rows. Rows.IndexOf checks the matching row's live position without inspecting
+other siblings' cells. Columns.Find and Columns.IndexOf check the live schema,
+not the row graph. Mutators and historical detached forwarding retain their
+existing checks.
+
 ## Native evidence and final gates
 
 The initial42 capture accepted Number 1 and String `"True"` flags but a root match

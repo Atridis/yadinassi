@@ -14,8 +14,8 @@ import test_native_1c_full_stage as stage
 from scripts import native_1c_full_host as host
 from scripts.native_historical_replay import without_exported_postcreate_probes
 from yadinassi import Interpreter
-from yadinassi.values import BSLObject, BSLArray, HostFunction
-from yadinassi.structures import BSLStructure
+from yadinassi.types.values import BSLObject, BSLArray, HostFunction
+from yadinassi.collections.structures import BSLStructure
 
 ROOT = Path(__file__).resolve().parents[1]
 launcher = stage.load_launcher(ROOT / 'integrational_tests/test_launcher.py')
@@ -224,7 +224,7 @@ class Interpreter:
 class NativeDriverOfflineTests(unittest.TestCase):
     def run_server(self, mode, enabled=True):
         pending, events = [], []
-        interpreter = Interpreter(pending.append)
+        interpreter = Interpreter(pending.append, allow_extensions=True)
         class Public(BSLObject):
             def get_method(self, name):
                 if name != 'ExportProbeAfterCreate':

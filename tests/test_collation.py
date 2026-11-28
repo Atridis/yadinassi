@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pyuca
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.collation import (
+from yadinassi.text.collation import (
     MAX_STRING_LENGTH, TABLE_NAME, TABLE_SHA256, _collator, string_key,
 )
 from yadinassi.numeric.numbers import minimum, maximum
@@ -66,7 +66,7 @@ class CollationTests(unittest.TestCase):
                          string_key('a' * MAX_STRING_LENGTH))
         with self.assertRaisesRegex(ValueError, 'ресурсный предел'):
             string_key('a' * (MAX_STRING_LENGTH + 1))
-        with patch('yadinassi.collation.unicodedata.normalize', return_value='a' * 16385):
+        with patch('yadinassi.text.collation.unicodedata.normalize', return_value='a' * 16385):
             with self.assertRaisesRegex(ValueError, 'нормализации'):
                 string_key('a')
         vm = Interpreter()
@@ -80,12 +80,12 @@ class CollationTests(unittest.TestCase):
     def test_rejects_modified_table(self):
         _collator.cache_clear()
         try:
-            with patch('yadinassi.collation.Path.read_bytes', return_value=b'changed'):
+            with patch('yadinassi.text.collation.Path.read_bytes', return_value=b'changed'):
                 with self.assertRaisesRegex(ValueError, 'таблица'):
                     string_key('a')
                 with self.assertRaises(BSLError):
                     Interpreter().execute('Min("a", "b")')
-            with patch('yadinassi.collation.Path.read_bytes', side_effect=OSError('missing')):
+            with patch('yadinassi.text.collation.Path.read_bytes', side_effect=OSError('missing')):
                 output = []
                 Interpreter(output=output.append).execute(
                     'Try Max("a", "b"); Except Message("caught"); EndTry;')

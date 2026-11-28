@@ -5,18 +5,18 @@ from itertools import product
 import unittest
 
 from yadinassi import BSLRuntimeError, Interpreter
-from yadinassi.native_targets import (
+from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342,
     current_native_target, target_context,
 )
-from yadinassi.structures import BSLFixedStructure, BSLStructure, fill_property_values
+from yadinassi.collections.structures import BSLFixedStructure, BSLStructure, fill_property_values
 
 
 TARGETS = (None, WINDOWS_8_3_27_2342, LINUX_8_3_27_1508)
 
 
-def interpreter(name):
-    return Interpreter() if name is None else Interpreter(native_target=name)
+def interpreter(name, *, allow_extensions=False):
+    return Interpreter(allow_extensions=allow_extensions) if name is None else Interpreter(allow_extensions=allow_extensions, native_target=name)
 
 
 def structure(items, reverse=False):
@@ -109,7 +109,8 @@ class NativeTargetFillTests(unittest.TestCase):
                 self.assertIs(target.get('A'), vm.variables['items'])
                 self.assertIsNone(target.get('B'))
                 self.assertEqual(target.get('Other'), Decimal(3))
-                self.assertEqual([pair.key for pair in target], ['A', 'B', 'Other'])
+                vm.execute('Keys = ""; For Each Pair In target Do Keys = Keys + Pair.Key + ","; EndDo;')
+                self.assertEqual(vm.variables['keys'], 'A,B,Other,')
                 self.assertEqual(vm.execute('source.a[0]'), Decimal(7))
 
     def test_no_list_and_exclude_paths_are_identical_in_every_target(self):
@@ -207,7 +208,7 @@ class NativeTargetFillTests(unittest.TestCase):
 
     def test_alias_identity_omission_arity_and_procedure_checks_before_operands(self):
         for name in TARGETS:
-            vm = interpreter(name)
+            vm = interpreter(name, allow_extensions=True)
             observed = []
             vm.register_function('Touch', lambda: observed.append('touch'))
             vm.execute('target = New Structure("First", 1); source = New Structure("First", 2);')
@@ -232,7 +233,7 @@ class NativeTargetFillTests(unittest.TestCase):
 
     def test_operand_evaluation_remains_once_left_to_right_before_reverse_copy(self):
         for name in TARGETS:
-            vm = interpreter(name)
+            vm = interpreter(name, allow_extensions=True)
             observed = []
 
             def argument(tag, value):

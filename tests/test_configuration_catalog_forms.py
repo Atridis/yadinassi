@@ -6,11 +6,11 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.configuration_xml import import_catalog_forms_configuration
-from yadinassi.form_program import compile_form_module
-from yadinassi.invocation import _encode_scalar
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.configuration.configuration_xml import import_catalog_forms_configuration
+from yadinassi.forms.form_program import compile_form_module
+from yadinassi.execution.invocation import _encode_scalar
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
 from yadinassi.ui.configuration_app import ConfigurationBroker, ConfigurationController, PROTOCOL
 from yadinassi.ui.protocol import decode_line, encode_line
 
@@ -91,6 +91,36 @@ class ConfigurationCatalogFormIntegrationTests(unittest.TestCase):
         self.assertEqual(self.data(app,category)['status'],'saved')
         self.assertNotEqual(app.sessions[category][0].session.form.title,app.sessions[sid][0].session.form.title)
         self.assertNotIn('Price',broker.objects[category].fields)
+
+    def test_unknown_draft_close_disposes_without_handlers_or_another_write(self):
+        from yadinassi.db.catalog.catalog_backend import BackendError
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+
+        broker, app = self.setup_app()
+        self.rpc(app, 'catalog', entry=self.entry(app))
+        sid = self.create(app); self.fill(app, sid)
+        owned = broker.objects[sid]
+        commit = _View.commit
+        def lost(view, **kwargs):
+            commit(view, **kwargs)
+            raise BackendError('uncertain_commit')
+        with patch.object(_View, 'commit', lost):
+            self.save(app, sid)
+        self.assertTrue(owned.pending_commit)
+        self.assertEqual(owned.save_state, 'uncertain')
+        server = broker.sessions[sid][0].session
+        client = app.sessions[sid][0].session
+        with patch.object(client, '_event', side_effect=AssertionError('no client handlers')), \
+             patch.object(server, '_event', side_effect=AssertionError('no server handlers')), \
+             patch.object(owned._backend, 'begin_write', side_effect=AssertionError('no write')):
+            closed = self.event(app, sid, 'close')
+        self.assertEqual(closed['error'], 'outcome_unknown')
+        self.assertEqual(closed['form']['result']['state']['kind'], 'closed')
+        self.assertNotIn(sid, broker.objects)
+        self.assertEqual(len(closed['state']['catalog']['rows']), 1)
+        record = closed['state']['catalog']['rows'][0]['key']
+        reopened = self.rpc(app, 'openRecord', entry=self.entry(app), record=record, request='fresh')['session']
+        self.assertEqual(broker.objects[reopened].save_state, 'unchanged')
 
     def test_custom_bsl_commands_run_distinct_declared_behaviors(self):
         broker, app = self.setup_app()
@@ -208,7 +238,7 @@ class ConfigurationCatalogFormIntegrationTests(unittest.TestCase):
             with self.subTest(new=new),self.assertRaises(ValueError): import_catalog_forms_configuration(files)
 
     def test_catalog_dates_and_boolean_survive_real_save_reopen(self):
-        from yadinassi.dates import BSLDate, TICKS_PER_SECOND
+        from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
         broker,app=self.setup_app();self.rpc(app,'catalog',entry=self.entry(app))
         sid=self.create(app);self.fill(app,sid)
         date=BSLDate(86400*TICKS_PER_SECOND)

@@ -11,18 +11,21 @@ import unittest
 from unittest.mock import patch
 
 from tests.native_observations import extract_payload, inverse_stream, read_observation
-from yadinassi import Interpreter, serialization
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.maps import BSLFixedMap, BSLMap
+from yadinassi import Interpreter
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.formats.storage import serialization
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.collections.maps import BSLFixedMap, BSLMap
 from yadinassi.numeric.round_modes import BSLRoundMode
-from yadinassi.search_directions import BSLSearchDirection
-from yadinassi.serialization import (
+from yadinassi.collections.search_directions import BSLSearchDirection
+from yadinassi.formats.storage.serialization import (
     FORMAT_ERROR, value_from_string_internal as read, value_to_string_internal as write,
 )
-from yadinassi.sort_directions import BSLSortDirection, BSLSortDirections, SORT_DIRECTIONS
-from yadinassi.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
+from yadinassi.collections.sort_directions import BSLSortDirection, BSLSortDirections, SORT_DIRECTIONS
+from yadinassi.collections.structures import BSLFixedStructure, BSLKeyAndValue, BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.types.values import BSLArray, BSLFixedArray, BSLObject, BSLType, equal, to_string
 
 
 ASC, DESC = BSLSortDirection.ASC, BSLSortDirection.DESC
@@ -120,13 +123,18 @@ class SortDirectionValueTests(unittest.TestCase):
                 'direction > direction', 'direction >= direction',
                 'direction + 1', '1 + direction', '-direction', 'Not direction',
                 'Boolean(direction)', 'Number(direction)', 'SortDirection[0]',
-                'SortDirection()', 'SortDirection.Asc()', 'SortDirection.Get()',
+                'SortDirection.Asc()', 'SortDirection.Get()',
                 'SortDirection.Count()', 'SortDirection + 1',
                 'SortDirection < SortDirection', 'Boolean(SortDirection)',
                 'Number(SortDirection)', 'New SortDirection', 'New НаправлениеСортировки',
                 'New (Type("SortDirection"))'):
             with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(expression)
+        # The bare namespace is not callable at compilation, unlike the
+        # member and operand denials checked above at runtime.
+        for expression in ('SortDirection()', 'НаправлениеСортировки()'):
+            with self.subTest(expression=expression), self.assertRaises(PythonDirectUnsupported):
+                self.vm.prepare(expression)
         for code in ('For Each value In direction Do EndDo;',
                      'If direction Then Message(1); EndIf;',
                      'If SortDirection Then Message(1); EndIf;'):
@@ -157,6 +165,37 @@ class SortDirectionValueTests(unittest.TestCase):
         self.assertEqual(self.output, ['0', '1', 'Да', '8', 'updated', 'desc',
                                       'zero', 'one', 'false', 'true', 'search', 'round', 'Да'])
 
+    def test_array_find_uses_sort_direction_identity_for_named_and_saved_methods(self):
+        self.vm.execute('''
+            Values = New Array;
+            Values.Add(0); Values.Add(False); Values.Add(SearchDirection.FromBegin);
+            Values.Add(RoundMode.Round15as10); Values.Add(SortDirection.Desc);
+            Values.Add(SortDirection.Asc); Values.Add(SortDirection.Asc);
+            FindValue = Values.Find;
+            Snapshot = New FixedArray(Values);
+            Message(Values.Find(SortDirection.Asc));
+            Message(FindValue(SortDirection.Desc));
+            Message(Snapshot.Find(SortDirection.Asc));
+            Message(Values.Find(False));
+        ''')
+        self.assertEqual(self.output, ['5', '4', '5', '1'])
+
+    def test_fixed_map_copy_preserves_logical_sort_direction_keys(self):
+        self.vm.execute('''
+            M = New Map;
+            M[SortDirection.Asc] = "sort";
+            M[0] = "number"; M[False] = "boolean";
+            Snapshot = New FixedMap(M); Copy = New Map(Snapshot);
+            M.Delete(SortDirection.Asc);
+            Message(Snapshot[НаправлениеСортировки.Возр]);
+            Message(Copy[0]); Message(Copy[False]);
+            For Each Pair In Copy Do
+                If Pair.Value = "sort" Then Key = Pair.Key; EndIf;
+            EndDo;
+        ''')
+        self.assertEqual(self.output, ['sort', 'number', 'boolean'])
+        self.assertIs(self.vm.execute('Key'), ASC)
+
 
 class SortDirectionIterationTests(unittest.TestCase):
     def setUp(self):
@@ -172,6 +211,8 @@ class SortDirectionIterationTests(unittest.TestCase):
         self.assertEqual(list(SORT_DIRECTIONS), [ASC, DESC])
 
     def test_aliases_and_loop_expression_evaluated_once(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
 
         def directions():
@@ -185,7 +226,9 @@ class SortDirectionIterationTests(unittest.TestCase):
                 alias = SortDirection; found = New Array;
                 Для Каждого item Из {name} Цикл found.Add(item); КонецЦикла;
             ''')
-            self.assertEqual(self.vm.variables['found'].items, [ASC, DESC])
+            self.assertEqual(self.vm.execute('Found.Count()'), Decimal(2))
+            self.assertIs(self.vm.execute('Found[0]'), ASC)
+            self.assertIs(self.vm.execute('Found[1]'), DESC)
         self.assertEqual(calls, [True])
 
     def test_nested_loops_break_continue_return_and_error_recovery(self):
@@ -213,6 +256,8 @@ class SortDirectionIterationTests(unittest.TestCase):
         self.assertEqual(self.output[-2:], ['По возрастанию', 'По убыванию'])
 
     def test_host_subclasses_and_hostile_metaclasses_are_not_iterated(self):
+        self.vm.close()
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         calls = []
 
         class HostNamespace(BSLSortDirections):
@@ -222,18 +267,37 @@ class SortDirectionIterationTests(unittest.TestCase):
 
         class PretendNamespace(type):
             def __eq__(cls, other):
+                calls.append('class equality')
                 return True
+
+            def __hash__(cls):
+                calls.append('class hash')
+                return 0
 
         class HostObject(BSLObject, metaclass=PretendNamespace):
             def __iter__(self):
                 calls.append('host')
                 return iter([ASC])
 
-        for value in (ASC, DESC, HostNamespace(), HostObject(), [], (), {}, iter([ASC])):
+        self.vm.variables.update(values=[ASC, DESC], mapping={'asc': ASC})
+        self.vm.execute('''
+            For Each Item In Values Do Message(Item); EndDo;
+            For Each Item In Mapping Do Message(Item.Key); Message(Item.Value); EndDo;
+        ''')
+        self.assertEqual(self.output, ['По возрастанию', 'По убыванию', 'asc', 'По возрастанию'])
+
+        for value in (HostNamespace(), HostObject(), (), iter([ASC])):
             self.vm.variables['source'] = value
-            with self.subTest(kind=type(value).__name__), self.assertRaisesRegex(
-                    BSLRuntimeError, 'Для Каждого ожидает'):
-                self.vm.execute('For Each item In source Do EndDo;')
+            with self.subTest(kind=type(value).__name__), self.assertRaises(BoundaryViolation):
+                self.vm.execute('Try For Each item In source Do EndDo; Except EndTry;')
+        for value in (ASC, DESC):
+            with self.subTest(direction=value.name):
+                self.vm.variables['source'] = value
+                before = len(self.output)
+                self.vm.execute('Try For Each item In source Do EndDo; '
+                                'Except Message("caught"); EndTry;')
+                self.assertEqual(len(self.output), before + 1)
+                self.assertEqual(self.output[-1], 'caught')
         self.assertEqual(calls, [])
 
 
@@ -374,8 +438,10 @@ class SortDirectionNativeEvidenceTests(unittest.TestCase):
     def test_entire_native_identity_and_iteration_record(self):
         vm = Interpreter()
         vm.execute(self.helpers)
-        self.assertEqual(write(vm.execute('ТипНаправленияСортировкиПробы()')),
-                         write(self.native('identity')))
+        # Serialize the direct BSL result at its public BSL codec boundary.
+        # The Python writer below normalizes the already decoded native fixture.
+        result = vm.execute('ValueToStringInternal(ТипНаправленияСортировкиПробы())')
+        self.assertEqual(result, write(self.native('identity')))
 
     def test_entire_native_value_and_type_codec_records(self):
         vm = Interpreter()
@@ -393,9 +459,9 @@ class SortDirectionNativeEvidenceTests(unittest.TestCase):
         vm = Interpreter()
         vm.execute(self.helpers)
         result = vm.execute('''
-            СерияСортировкиСписка("empty", "Ответ = Новый SortDirection;|SortDirection.Asc = SortDirection.Desc;|Ответ = SortDirection.Unknown;|Ответ = SortDirection[0];")
+            ValueToStringInternal(СерияСортировкиСписка("empty", "Ответ = Новый SortDirection;|SortDirection.Asc = SortDirection.Desc;|Ответ = SortDirection.Unknown;|Ответ = SortDirection[0];"))
         ''')
-        self.assertEqual(write(result), write(self.native('boundaries')))
+        self.assertEqual(result, write(self.native('boundaries')))
 
 
 if __name__ == '__main__':

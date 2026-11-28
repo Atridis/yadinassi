@@ -7,8 +7,8 @@ import unittest
 from unittest import mock
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.value_trees import BSLValueTreeRowCollection as Rows, BSLValueTreeColumnCollection as Columns
-from yadinassi.values import HostFunction
+from yadinassi.collections.value_trees import BSLValueTreeRowCollection as Rows, BSLValueTreeColumnCollection as Columns
+from yadinassi.types.values import HostFunction
 from scripts import native_1c_tree_move_contract as contract
 
 ROOT = Path(__file__).resolve().parents[1]

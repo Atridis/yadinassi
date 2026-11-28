@@ -167,7 +167,7 @@ class InventoryApplicationBrowserContractTests(unittest.TestCase):
 
     def test_manifest_covers_source_harness_and_route(self):
         self.contains("'examples/configuration-inventory-application'", "'frontend/configuration/src/reports.mjs'",
-            "'yadinassi/sqlite_launch.py'", "'tests/test_inventory_application_browser_qa_contract.py'",
+            "'yadinassi/db/sqlite/sqlite_launch.py'", "'tests/test_inventory_application_browser_qa_contract.py'",
             "'docs/inventory-application-browser-qa.md'", "'source_manifest_missing'",
             "'tracked_checkout_dirty'", "'source_binding_changed'", "git('rev-parse','HEAD^{tree}')")
         self.assertIn('All business audit rows share one read lease', self.docs)

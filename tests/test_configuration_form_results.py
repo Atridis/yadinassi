@@ -8,12 +8,12 @@ from unittest.mock import patch
 import weakref
 
 from configuration_form_results_fixture import sources, OPEN, OWNER_MODULE, CHILD_MODULE
-from yadinassi.configuration_application_profile import import_application_configuration
-from yadinassi.configuration_forms import load_configuration_forms
-from yadinassi.form_results import freeze_result, result_value
-from yadinassi.dates import date
-from yadinassi.values import NULL
-from yadinassi.structures import BSLStructure, BSLFixedStructure
+from yadinassi.configuration.configuration_application_profile import import_application_configuration
+from yadinassi.configuration.configuration_forms import load_configuration_forms
+from yadinassi.forms.form_results import freeze_result, result_value
+from yadinassi.temporal.dates import date
+from yadinassi.types.values import NULL
+from yadinassi.collections.structures import BSLStructure, BSLFixedStructure
 from yadinassi.ui.configuration_app import ConfigurationBroker, ConfigurationController, PROTOCOL
 from yadinassi.ui.local_app import LocalTransportError
 from yadinassi.ui.protocol import decode_line, encode_line
@@ -24,8 +24,8 @@ class HostFixture:
         files = sources() if files is None else files
         database = None
         if business:
-            from yadinassi.configuration_business_profile import import_business_configuration
-            from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+            from yadinassi.configuration.configuration_business_profile import import_business_configuration
+            from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
             temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
             database = Path(temporary.name)/'owned.sqlite'
             SQLiteCatalogBackend.create_business_application(database, files).close()
@@ -487,10 +487,11 @@ class OwnedResultCodecTests(unittest.TestCase):
         source=BSLStructure('A,B',Decimal(1),'b'); fixed=BSLFixedStructure(source)
         raw=freeze_result(fixed); source.set('A',Decimal(2))
         result=result_value(raw)
-        self.assertIs(type(result),BSLStructure); self.assertEqual(result.get('A'),Decimal(1))
+        from yadinassi.execution.codegen.direct_structure import _DirectStructure
+        self.assertIs(type(result), _DirectStructure); self.assertEqual(result.get('A'), Decimal(1))
 
     def test_nested_or_capability_values_refused(self):
-        from yadinassi.callbacks import BSLCallbackDescription
+        from yadinassi.application.callbacks import BSLCallbackDescription
         for value in ([],{},object(),BSLCallbackDescription(),BSLStructure('Nested',BSLStructure())):
             with self.subTest(value=type(value).__name__),self.assertRaises((TypeError,ValueError)):
                 freeze_result(value)
@@ -577,8 +578,8 @@ class OwnedBusinessFormTests(HostFixture, unittest.TestCase):
 
     def test_dedicated_posting_host_does_not_enroll_form_results(self):
         from test_configuration_posting_app import files, EXAMPLE
-        from yadinassi.configuration_posting_application import import_posting_application, PROFILE
-        from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+        from yadinassi.configuration.configuration_posting_application import import_posting_application, PROFILE
+        from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
         from yadinassi.ui.configuration_app import load_application
         temporary=tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
         path=Path(temporary.name)/'posting.sqlite'

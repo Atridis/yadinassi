@@ -8,10 +8,10 @@ import sys
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.form_model import BSLFormAttribute
-from yadinassi.form_runtime import FormSession
-from yadinassi.invocation import InvocationBinding, InvocationPort, InvocationServer
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.forms.form_model import BSLFormAttribute
+from yadinassi.forms.form_runtime import FormSession
+from yadinassi.execution.invocation import InvocationBinding, InvocationPort, InvocationServer
+from yadinassi.types.type_descriptions import BSLTypeDescription
 from yadinassi.ui.protocol import decode_line
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,16 +76,63 @@ class FormInvocationTests(unittest.TestCase):
         self.assertFalse(port.uncertain)
         self.assertEqual(session.interpreter.server_routines['remotetotal'].body, [])
         self.assertNotIn('calculate', session.interpreter.server_routines)
-        self.assertTrue(server._interpreter.server_routines['calculate'].body)
+        server_module=server._interpreter._direct_routine_modules['calculate']
+        self.assertIn('calculate',server_module.nocontext_names)
+        self.assertIsNotNone(server_module.nocontext_plan)
         frame = decode_line(requests[0])
         self.assertEqual(frame['arguments'], [{'type': 'Number', 'value': '20.10'},
                                              {'type': 'Number', 'value': '3'}])
         self.assertEqual(set(frame), {'protocol', 'id', 'endpoint', 'arguments'})
         self.assertNotIn(b'Calculate', requests[0])
 
+    def test_remote_alias_rejects_contextful_or_nonempty_stub(self):
+        from unittest.mock import patch
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+
+        session, port, server, requests = self.setup_form()
+        session.open()
+        stub = session.interpreter.server_routines['remotetotal']
+        self.assertIs(stub.module_context,False)
+        for field, value in (('module_context',True),
+                             ('body',session.interpreter.routines['calculatecommand'].body)):
+            with self.subTest(field=field),patch.object(stub,field,value):
+                with self.assertRaises(BoundaryViolation):
+                    self.command(session)
+                self.assertEqual(requests,[])
+
+    def test_bound_remote_alias_rejects_replaced_adapter_before_wire(self):
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+        from yadinassi.execution.direct.python_direct_forms import FormBoundary
+
+        session, port, server, requests = self.setup_form()
+        session.open()
+        vm = session.interpreter
+        adapter = vm._invocation_bindings['remotetotal'][1]
+        context = FormBoundary(session, vm.routines['calculatecommand'])
+        session._begin(session.revision)
+        context.enter()
+        try:
+            call = context.resolve_service('remotetotal', require_value=True)
+            alternate = InvocationPort(lambda raw: self.fail('unexpected transport'))
+            for target, field, replacement in ((adapter, 'port', alternate),
+                                               (adapter.binding, 'endpoint', 2)):
+                with self.subTest(field=field):
+                    original = getattr(target, field)
+                    object.__setattr__(target, field, replacement)
+                    try:
+                        with self.assertRaises(BoundaryViolation):
+                            call(Decimal(4), Decimal(3))
+                    finally:
+                        object.__setattr__(target, field, original)
+                    self.assertEqual(requests, [])
+        finally:
+            context.leave()
+            session._busy = False
+            session._gate.release()
+
     def test_real_separate_process_calculates_form_result_without_client_server_body(self):
         child = '''import sys
-from yadinassi.invocation import InvocationServer
+from yadinassi.execution.invocation import InvocationServer
 server = InvocationServer(%r, {1: 'Calculate'})
 sys.stdout.buffer.write(server.exchange(sys.stdin.buffer.readline(131073)))
 ''' % SERVER
@@ -233,15 +280,41 @@ F = Items.Add''')
         self.assertEqual(dict(self.command(session).attributes)['Result'], Decimal(61))
 
     def test_local_server_cannot_dispatch_remote_alias_or_evaluate_its_arguments(self):
-        source = SOURCE.replace('F = Items.Add', 'RemoteTotal(Effect(), 3);\nF = Items.Add') + '''
+        from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
+
+        call = 'RemoteTotal(Effect(), 3);'
+        effect = '''
 &AtServer
-Function Effect() Message("must not run"); Return 2; EndFunction'''
-        session, port, server, requests = self.setup_form(source=source)
-        with self.assertRaises(BSLError): session.open()
-        self.assertEqual(session.messages, ())
-        self.assertEqual(requests, [])
-        self.assertEqual(session.state, 'failed')
-        self.assertFalse(port.uncertain)
+Function Effect() Message("argument evaluated"); Return 2; EndFunction'''
+        # The documented alias is available only on the client side; a
+        # local server event must fail closed before evaluating the actuals.
+        with self.subTest(side='server'):
+            source = SOURCE.replace('F = Items.Add',
+                'ThisObject.Status = "entered local server";\n' + call + '\nF = Items.Add') + effect
+            session, port, _, requests = self.setup_form(source=source)
+            self.addCleanup(session.interpreter.close)
+            with self.assertRaises(BoundaryViolation):
+                session.open()
+            self.assertEqual(session.messages, ())
+            self.assertEqual(requests, [])
+            self.assertEqual(session.state, 'failed')
+            self.assertFalse(port.uncertain)
+            self.assertEqual(dict(session.snapshot().attributes)['Status'], 'entered local server')
+
+        with self.subTest(side='client'):
+            source = SOURCE.replace(COMMAND, 'ThisObject.Result = ' + call) + effect
+            session, port, _, requests = self.setup_form(source=source)
+            self.addCleanup(session.interpreter.close)
+            session.open()
+            result = self.command(session)
+            self.assertEqual(dict(result.attributes)['Result'], Decimal(6))
+            self.assertEqual(session.messages, ('argument evaluated', 'server total'))
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(decode_line(requests[0])['arguments'], [
+                {'type': 'Number', 'value': '2'}, {'type': 'Number', 'value': '3'},
+            ])
+            self.assertEqual(session.state, 'open')
+            self.assertFalse(port.uncertain)
 
     def test_form_objects_and_bare_static_attribute_references_do_not_cross(self):
         for argument in ('ThisObject', 'Items', 'Price'):

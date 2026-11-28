@@ -82,10 +82,10 @@ class ValueTableCheckpointTests(unittest.TestCase):
     def test_compact_formatter_preserves_scalar_bytes_and_container_kinds(self):
         # Local formatter contract, never a newly manufactured native golden.
         from decimal import Decimal
-        from yadinassi.serialization import value_to_string_internal
-        from yadinassi.structures import BSLStructure
-        from yadinassi.values import BSLArray, NULL
-        vm = Interpreter()
+        from yadinassi.formats.storage.serialization import value_to_string_internal
+        from yadinassi.collections.structures import BSLStructure
+        from yadinassi.types.values import BSLArray, NULL
+        vm = Interpreter(allow_extensions=True)
         vm.execute(parts()[1])
         scalars = [None, NULL, False, Decimal(0), '0', '',
                    'quotes " and delimiters ;[]= with \\n and CR\rLF\nTAB\t Я😀']
@@ -104,7 +104,7 @@ class ValueTableCheckpointTests(unittest.TestCase):
         self.assertEqual(len(set(representations)), 3)
 
         # Actual controls and their literal escape spellings must never collide.
-        from yadinassi.serialization import value_from_string_internal
+        from yadinassi.formats.storage.serialization import value_from_string_internal
         pairs = ['\n', r'\n', '\r', r'\r', '\\', '"', ';[]=', '\t', r'\t', '\x00']
         encoded = []
         for value in pairs:

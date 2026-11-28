@@ -20,7 +20,7 @@ SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
 
 def emit(*, missing=False, source=SOURCE):
     out = []
-    vm = Interpreter(out.append)
+    vm = Interpreter(out.append, allow_extensions=True)
     if missing:
         def unavailable(*args):
             raise ValueError('injected unavailable factory')
@@ -80,7 +80,7 @@ class XDTOFamilyMeasurementTests(unittest.TestCase):
         self.assertFalse(any(row['status'] == 'observer-error' for row in records))
 
     def test_unexpected_children_are_not_recursively_swept(self):
-        import yadinassi.file_io as files
+        import yadinassi.streams.file_io as files
         original = files.create_directory
         def create_with_sentinel(path):
             original(path)
@@ -88,7 +88,7 @@ class XDTOFamilyMeasurementTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='xdto-unexpected-') as tmp, \
                 mock.patch('tempfile.gettempdir', return_value=tmp):
             output = []
-            vm = Interpreter(output.append)
+            vm = Interpreter(output.append, allow_extensions=True)
             vm.register_function('СоздатьКаталог', create_with_sentinel, 'CreateDirectory', returns_value=False)
             vm.execute(SOURCE)
             roots = list(Path(tmp).iterdir())
@@ -106,7 +106,7 @@ class XDTOFamilyMeasurementTests(unittest.TestCase):
             sentinel = root / 'keep.bin'
             sentinel.write_bytes(b'owned-sentinel')
             output = []
-            vm = Interpreter(output.append)
+            vm = Interpreter(output.append, allow_extensions=True)
             vm.register_function('ПолучитьИмяВременногоФайла', lambda *args: str(root), 'GetTempFileName')
             vm.execute(SOURCE)
             self.assertEqual(list(root.iterdir()), [sentinel])

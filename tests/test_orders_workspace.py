@@ -2,8 +2,8 @@
 from pathlib import Path
 import tempfile
 import unittest
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.configuration_import import load_configuration_directory
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_import import load_configuration_directory
 from yadinassi.ui.orders_workspace import OrdersBroker, WorkspaceController, WorkspaceProcess, PROTOCOL
 from yadinassi.ui.protocol import decode_line, encode_line
 from test_order_workbench import seed

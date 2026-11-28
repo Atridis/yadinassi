@@ -6,11 +6,11 @@ from unittest.mock import Mock
 from uuid import uuid4
 import unittest
 
-from yadinassi.catalog_backend import FieldSchema, TabularSectionSchema, TabularSectionRows, TabularRow, BackendError
-from yadinassi.document_backend import DocumentSchema, DocumentKey, DocumentRevision, DocumentCard
-from yadinassi.configuration_document import _OpenedDocument, _read_form_document, _FormCapacityError
-from yadinassi.form_tables import FormTableSchema, FormTableColumn
-from yadinassi.type_descriptions import BSLTypeDescription
+from yadinassi.db.catalog.catalog_backend import FieldSchema, TabularSectionSchema, TabularSectionRows, TabularRow, BackendError
+from yadinassi.db.document.document_backend import DocumentSchema, DocumentKey, DocumentRevision, DocumentCard
+from yadinassi.configuration.configuration_document import _OpenedDocument, _read_form_document, _FormCapacityError
+from yadinassi.forms.form_tables import FormTableSchema, FormTableColumn
+from yadinassi.types.type_descriptions import BSLTypeDescription
 
 
 class DocumentOpenPreflightTests(unittest.TestCase):

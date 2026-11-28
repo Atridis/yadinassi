@@ -1,7 +1,7 @@
 """Closed stock period grammar; native observation determines result semantics."""
 import unittest
 
-from yadinassi import query_parser as syntax
+from yadinassi.db.query import query_parser as syntax
 
 
 class PeriodStatementGrammarTests(unittest.TestCase):
@@ -35,7 +35,7 @@ class PeriodStatementGrammarTests(unittest.TestCase):
 
 from decimal import Decimal, localcontext
 from unittest.mock import patch
-from yadinassi.dates import _from_parts, BSLDate
+from yadinassi.temporal.dates import _from_parts, BSLDate
 import test_accumulation_query_runtime as fixture
 
 REG = fixture.REG
@@ -127,7 +127,7 @@ class PeriodStatementRuntimeTests(unittest.TestCase):
         self.seed(vm,[('A',1,7,7,False,-1)])
         # One input row costs ten cells; the first generated boundary carries
         # all dimensions and resource totals even with COUNT(*) projection.
-        with patch('yadinassi.queries._MAX_CELLS',11):
+        with patch('yadinassi.db.query.queries._MAX_CELLS',11):
             with self.assertRaisesRegex(ValueError,'period result resource limit'):
                 self.report(vm,'COUNT(*) AS N',periodicity='Day')
 

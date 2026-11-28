@@ -9,7 +9,17 @@ existing reviewed migration plan. `BeginTransaction()` never upgrades a file.
 synchronous execution. Writes of catalog objects, non-posting documents,
 independent register record managers and record sets stage into the same owned
 SQLite transaction. The host journal's operation and byte budgets still apply.
-Standalone `Write()` retains its existing behavior.
+Standalone operations do not start a BSL transaction. When an admitted
+operation needs just one SQLite statement, SQLite supplies the implicit
+transaction. Multi-statement operations still use explicit SQLite transactions
+to prevent partial records. The statement path does not borrow or commit a
+caller-owned transaction.
+
+An open SQLite application owns the admitted physical layout and connection
+settings. Close it before changing the schema, configuration, journal mode or
+page size outside the runtime, then reopen. The benchmark's warm SQL count
+includes every executed statement in the operation; one-time connection setup
+and persisted-result verification are outside the measured loop.
 
 A staged object remains new, and keeps its old revision/number/reference state,
 until the entire batch commits. User field and section edits remain in memory
@@ -20,9 +30,10 @@ that must be referenced by another staged object need explicit nonempty refs via
 
 Before COMMIT, all outcomes are validated and all acceptance dictionaries,
 references and operation UUIDs are prepared. After COMMIT the prepared images
-are installed without invoking user code. A lost commit response retains the
-whole batch, and a repeated commit resolves its root receipt rather than
-replaying writes. Rollback cannot claim that a committed batch was undone.
+are installed without invoking user code. A lost COMMIT response is terminal:
+neither COMMIT nor ROLLBACK can resolve or replay that batch, and a later
+execution cannot take ownership of it. A confirmed COMMIT is never reported
+as rolled back.
 
 Queries borrow a read-only lease on the owning connection and can see staged
 rows. Closing the query closes only its lease/cursors. An outstanding lease
@@ -32,9 +43,11 @@ currently refused rather than returning a provisional revision as persistent.
 
 The first profile intentionally rejects nested transactions, async tasks and
 Await, callback dispatch and transfer to a new server activation. An unfinished
-transaction is rolled back when execution ends; an unresolved durable outcome
-keeps participant buffers locked until receipt resolution. Catalog object-form
-preparation handlers are not yet admitted to the explicit batch writer.
+transaction is rolled back when execution ends. After an unknown COMMIT,
+teardown only releases resources. The pending buffers stay locked, and a
+failed physical close keeps its owner until the handle is released. After
+cleanup, use an ordinary read with fresh objects; it shows current stored
+state, not the fate of that operation.
 
 Admission is bound to the synchronous call origin, not to the interpreter that
 owns a common-module routine. A new server activation cannot begin a transaction,

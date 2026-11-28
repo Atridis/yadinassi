@@ -1,5 +1,5 @@
 """Owned SQLite catalog section runtime; these are not native 1C parity tests."""
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 import sys
@@ -10,11 +10,11 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.errors import BSLRuntimeError
-from yadinassi.sqlite_catalog import _View
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.types.errors import BSLRuntimeError
+from yadinassi.db.sqlite.sqlite_catalog import _View
 from catalog_sections_fixture import configuration_files_with_sections
 
 
@@ -109,7 +109,8 @@ Message(O.Lines.Count()); Message(O.Lines[0].Text);'''),
         unused, unused_section, row = self.new_row()
         row.set_member('Text', 'keep')
         row.set_member('Amount', Decimal('1.25'))
-        for name, value in [('Text', Decimal(1)), ('Amount', True), ('Amount', 1),
+        class ForeignInteger(int): pass
+        for name, value in [('Text', Decimal(1)), ('Amount', True), ('Amount', ForeignInteger(1)),
                             ('Amount', Decimal('NaN')), ('Amount', Decimal('Infinity')),
                             ('Active', Decimal(1)), ('Stamp', '2024-01-01'),
                             ('Category', None), ('Missing', 'bad')]:
@@ -194,44 +195,33 @@ For I=1 To 999 Do O.Lines.Add(); EndDo; O.Notes.Add();''')
         self.assertEqual(self.execute('''O.Lines.Delete(0); O.Notes.Add();
 Message(O.Lines.Count()); Message(O.Notes.Count());'''), ['998', '2'])
 
-    def test_uncertain_commit_freezes_nested_intent_and_resolves_without_recommit(self):
-        obj, section, row = self.new_row()
+    def test_uncertain_commit_freezes_buffer_and_preserves_committed_sections(self):
+        obj, _, row = self.new_row()
         row.set_member('Text', 'original')
         self.vm.execute('N=O.Notes.Add(); N.Text="note";')
         commit = _View.commit
 
-        def lose_response(tx):
-            commit(tx)
+        def lose_response(tx, **kwargs):
+            commit(tx, **kwargs)
             raise BackendError('uncertain_commit')
 
         with patch.object(_View, 'commit', lose_response), self.assertRaises(BackendError):
             obj.write()
         self.assertTrue(obj.is_new())
         self.assertTrue(obj.get_member('Ref').is_empty())
-        pending = obj._pending_write
-        self.assertIsNotNone(pending)
-        draft = pending[0]
-        self.assertIsInstance(draft.tabular_sections, tuple)
-        self.assertTrue(all(isinstance(part.rows, tuple) for part in draft.tabular_sections))
-        stored_row = draft.tabular_sections[0].rows[0]
-        self.assertIsInstance(stored_row.values, tuple)
-        with self.assertRaises((FrozenInstanceError, AttributeError)):
-            stored_row.values = ()
         for code in ('R.Text="changed";', 'O.Lines.Add();', 'O.Lines.Delete(0);',
                      'O.Lines.Clear();', 'O.Notes.Add();', 'N.Text="changed";',
                      'O.Description="changed";'):
             with self.subTest(code=code), self.assertRaisesRegex(BSLRuntimeError, 'uncertain_commit'):
                 self.vm.execute(code)
-        self.assertEqual(obj._pending_write, pending)
-        with patch.object(_View, 'commit', side_effect=AssertionError('must not recommit')):
+        with patch.object(_View, 'commit', side_effect=AssertionError('must not recommit')), self.assertRaisesRegex(BackendError, 'uncertain_commit'):
             obj.write()
-        self.assertFalse(obj.is_new())
+        self.assertTrue(obj.is_new())
         self.assertEqual(self.execute('''P=Catalogs.Products.FindByCode("10").GetObject();
 Message(P.Lines.Count()); Message(P.Lines[0].Text); Message(P.Notes.Count()); Message(P.Notes[0].Text);'''),
                          ['1', 'original', '1', 'note'])
-        row.set_member('Text', 'next')
-        obj.write()
-        self.assertEqual(self.vm.execute('O.Ref.GetObject().Lines[0].Text'), 'next')
+        self.vm.execute('P.Lines[0].Text="next"; P.Write();')
+        self.assertEqual(self.vm.execute('P.Ref.GetObject().Lines[0].Text'), 'next')
 
     def test_direct_reference_and_selection_parts_require_getobject(self):
         self.vm.execute('''O=Catalogs.Products.CreateItem(); O.Code="10"; O.Lines.Add(); O.Write();
@@ -270,7 +260,7 @@ Message(R.Text);'''), ['indexed', 'Да', 'nonstring', 'unknown', 'indexed'])
         row.set_member('Text', 'keep')
         self.vm.execute('N=O.Notes.Add(); N.Text="note";')
         size = obj._section_buffer_bytes()
-        with patch('yadinassi.catalog_sections._MAX_BUFFER_BYTES', size):
+        with patch('yadinassi.db.catalog.catalog_sections._MAX_BUFFER_BYTES', size):
             for code in ('O.Lines.Add();', 'O.Notes.Add();',
                          'R.Text="longer";', 'N.Text="longer";'):
                 with self.subTest(code=code), self.assertRaisesRegex(BSLRuntimeError, 'buffer limit'):

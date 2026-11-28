@@ -3,17 +3,19 @@ from decimal import Decimal, Inexact, Rounded, localcontext
 import unittest
 from unittest.mock import patch
 
-from yadinassi import Interpreter, query_parser as syntax
-from yadinassi.dates import BSLDate, TICKS_PER_SECOND
-from yadinassi.queries import BSLQuery
-from yadinassi.query_packages import BSLTempTablesManager
-from yadinassi.query_sources import _snapshot
-from yadinassi.sqlite_catalog import _View
-from yadinassi.type_descriptions import BSLTypeDescription
-from yadinassi.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
+from yadinassi import Interpreter
+from yadinassi.db.query import query_parser as syntax
+from yadinassi.db.query import queries as query_runtime
+from yadinassi.temporal.dates import BSLDate, TICKS_PER_SECOND
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.query.query_packages import BSLTempTablesManager
+from yadinassi.db.query.query_sources import _snapshot
+from yadinassi.db.sqlite.sqlite_catalog import _View
+from yadinassi.types.type_descriptions import BSLTypeDescription
+from yadinassi.types.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedLength, BSLAllowedSign, BSLDateFractions)
-from yadinassi.value_tables import BSLValueTable
-from yadinassi.values import NULL, BSLType
+from yadinassi.collections.value_tables import BSLValueTable
+from yadinassi.types.values import NULL, BSLType
 import test_catalog_queries as fixtures
 
 
@@ -198,7 +200,7 @@ Message(A[2].IsEmpty());M.Close();''')
             with self.assertRaisesRegex(ValueError, 'input resource'):
                 self.rows('SELECT TOP 1 Amount FROM Catalog.Products UNION SELECT TOP 1 Amount FROM Catalog.Products')
         # Scalar projections expand output text independently of narrow input.
-        with patch('yadinassi.queries._MAX_RESULT_TEXT', 20):
+        with patch('yadinassi.db.query.queries._MAX_RESULT_TEXT', 20):
             with self.assertRaisesRegex(ValueError, 'UNION result'):
                 self.rows('SELECT "abcd" AS N FROM Catalog.Products UNION SELECT "abcd" AS N FROM Catalog.Products')
 
@@ -241,7 +243,7 @@ Message(A[2].IsEmpty());M.Close();''')
         def scan(view, *args):
             source.rows[0].set_member('N', Decimal(99))
             return original(view, *args)
-        with patch('yadinassi.query_sources._snapshot', wraps=_snapshot) as snapshot, patch.object(_View, 'scan_catalog_values', scan):
+        with patch('yadinassi.db.query.query_sources._snapshot', wraps=_snapshot) as snapshot, patch.object(_View, 'scan_catalog_values', scan):
             result = query.execute()
         self.assertEqual(snapshot.call_count, 1)
         self.assertEqual((result._rows[0], result._rows[-1]), ((Decimal(3),), (Decimal(3),)))
@@ -315,29 +317,63 @@ Message(A[2].IsEmpty());M.Close();''')
             def __str__(self): raise AssertionError('must not stringify')
         for value in (None, NULL, True, '1', [], Hostile(), Decimal('NaN'), Decimal('1.001'), Decimal('1e1000')):
             source = table([('Keep',string()),('N',number())], [('safe',Decimal(1))])
-            source.rows[0].cells[source.columns.items[1]] = value
+            list.__setitem__(source.rows[0], 1, value)
             with self.subTest(kind=type(value).__name__), self.assertRaises((ValueError, TypeError)):
                 self.rows('SELECT TOP 1 Keep FROM &T WHERE Keep="absent"', [('T',source)])
+
+    def test_external_native_integer_is_numeric_not_boolean(self):
+        source = table([('N', number())], [(Decimal(1),)])
+        list.__setitem__(source.rows[0], 0, 2)
+        result = self.rows('SELECT N FROM &T', [('T', source)])
+        self.assertEqual(result, ((Decimal(2),),))
+        self.assertIs(type(result[0][0]), Decimal)
+        for unsupported in (True, 10**1000):
+            list.__setitem__(source.rows[0], 0, unsupported)
+            with self.assertRaises((TypeError, ValueError)):
+                self.rows('SELECT N FROM &T', [('T', source)])
+
+    def test_external_positional_integrity(self):
+        for mutate in (
+            lambda t: setattr(t, 'rows', list(t.rows)),
+            lambda t: t._storage.schema._metadata.__setitem__(0, None),
+            lambda t: setattr(t.rows[0], 'table', None),
+            lambda t: list.pop(t.rows[0]),
+        ):
+            source = table([('N', number())], [(Decimal(1),)])
+            mutate(source)
+            with self.assertRaises((TypeError, ValueError)):
+                self.rows('SELECT N FROM &T', [('T', source)])
+
+    def test_external_requires_canonical_layout_before_reading_shape(self):
+        source = table([('N', number())], [(Decimal(1),)])
+        schema = source._storage.schema
+        schema._offsets = {'n': 0}
+        with self.assertRaisesRegex(TypeError, 'Malformed external query table schema'):
+            self.rows('SELECT N FROM &T', [('T', source)])
 
     def test_external_checks_utf16_fixed_and_date_fraction_limits(self):
         cases = [(string(1), '😀'), (string(4,True),'x'), (string(4),'\ud800'),
                  (BSLTypeDescription('Date',None,None,BSLDateQualifiers(BSLDateFractions.DATE)), BSLDate(1))]
         for description, value in cases:
             source = table([('V',description)])
-            row = source.add(); row.cells[source.columns.items[0]] = value
+            row = source.add(); list.__setitem__(row, 0, value)
             with self.subTest(kind=type(value).__name__), self.assertRaises(ValueError):
                 self.rows('SELECT V FROM &T', [('T',source)])
 
     def test_external_resource_limits_count_entire_source_before_top(self):
         source = table([('N',number()),('S',string())], [(Decimal(1),'hello'),(Decimal(2),'world')])
-        for module, limit, value in [('query_parser','MAX_ROWS',1), ('queries','_MAX_CELLS',3), ('queries','_MAX_RESULT_TEXT',9)]:
-            with self.subTest(limit=limit), patch('yadinassi.'+module+'.'+limit,value):
-                with self.assertRaises(ValueError): self.rows('SELECT TOP 1 N FROM &T', [('T',source)])
+        for module, limit, value, diagnostic in (
+                (syntax, 'MAX_ROWS', 1, 'source size'),
+                (query_runtime, '_MAX_CELLS', 3, 'source cell'),
+                (query_runtime, '_MAX_RESULT_TEXT', 9, 'source text')):
+            with self.subTest(limit=limit), patch.object(module, limit, value):
+                with self.assertRaisesRegex(ValueError, diagnostic):
+                    self.rows('SELECT TOP 1 N FROM &T', [('T',source)])
 
     def test_external_snapshot_budget_is_shared_across_distinct_parameters(self):
         a = table([('N',number())], [(Decimal(1),),(Decimal(2),)])
         b = table([('N',number())], [(Decimal(3),),(Decimal(4),)])
-        with patch('yadinassi.queries._MAX_CELLS',3):
+        with patch('yadinassi.db.query.queries._MAX_CELLS',3):
             with self.assertRaisesRegex(ValueError, 'source cell'):
                 self.rows('SELECT TOP 1 N FROM &A UNION SELECT TOP 1 N FROM &B', [('A',a),('B',b)])
 
@@ -366,8 +402,8 @@ Message(A[2].IsEmpty());M.Close();''')
             self.assertEqual(self.rows('SELECT N FROM &T UNION SELECT N FROM &T', [('T',source)]), ((Decimal('12345.125'),),))
 
     def test_simple_catalog_select_retains_original_fast_path(self):
-        with patch('yadinassi.query_packages.execute_package',side_effect=AssertionError('not a package')):
-            with patch('yadinassi.relational_queries._Plan.execute',side_effect=AssertionError('not relational execution')):
+        with patch('yadinassi.db.query.query_packages.execute_package',side_effect=AssertionError('not a package')):
+            with patch('yadinassi.db.query.relational_queries._Plan.execute',side_effect=AssertionError('not relational execution')):
                 self.assertEqual(self.rows('SELECT TOP 1 Amount FROM Catalog.Products ORDER BY Amount'), ((Decimal(10),),))
 
 

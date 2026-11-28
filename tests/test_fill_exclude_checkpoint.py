@@ -9,7 +9,7 @@ from scripts.native_historical_replay import (
     without_fill_exclude_order_probes,
 )
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, current_native_target
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, current_native_target
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKPOINT_SHA = 'fef5af9c34d3af7ae73e427ac1e846c539246530aa9bcd5858932fc397754ed9'
@@ -62,13 +62,12 @@ class FillExcludeCheckpointTests(unittest.TestCase):
         # Competing synthetic policies test observation power, not 1C semantics.
         def ignored(target, source, include, exclude):
             self.assertIsNone(include)
-            for key, (name, value) in tuple(target._items.items()):
-                if key in source._items and name not in exclude.split(','):
-                    target._items[key] = name, source._items[key][1]
+            for name, _ in tuple(target.items()):
+                if name in source and name not in exclude.split(','):
+                    target[name] = source[name]
         def partial(target, source, include, exclude):
             self.assertIsNone(include)
-            name, value = source._items['copy']
-            target._items['copy'] = name, value
+            target['copy'] = source['copy']
             raise ValueError('synthetic failure')
         # Execute only the real new helper and original presentation helper.
         presentation = 'Процедура Показать(Знач Метка, Знач Значение)\nСообщить(Метка + ": [" + Значение + "]");\nКонецПроцедуры\n'

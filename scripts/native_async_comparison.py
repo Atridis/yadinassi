@@ -203,8 +203,8 @@ class Capture:
         self.trace.append(int(code))
 
     def retain(self, value):
-        from yadinassi.type_values import type_of
-        from yadinassi.values import BSLType
+        from yadinassi.types.type_values import type_of
+        from yadinassi.types.values import BSLType
         if type_of(value) is BSLType.PROMISE:
             _require(len(self.retained) < 32)
             self.retained.append(value)
@@ -214,8 +214,8 @@ class Capture:
         return int(slot)
 
     def save(self, slot, value):
-        from yadinassi.type_values import type_of
-        from yadinassi.values import BSLType
+        from yadinassi.types.type_values import type_of
+        from yadinassi.types.values import BSLType
         kind = type_of(value)
         tags = {BSLType.UNDEFINED: 1, BSLType.NULL: 2, BSLType.BOOLEAN: 3,
                 BSLType.NUMBER: 4, BSLType.STRING: 5, BSLType.PROMISE: 6}
@@ -233,9 +233,9 @@ class Capture:
         self.values[self._slot(slot)] = [tag, payload]
 
     def save_error(self, slot, phase, error):
-        from yadinassi.error_info import BSLErrorCategory, BSLErrorInfo
-        from yadinassi.type_values import type_of
-        from yadinassi.values import BSLType
+        from yadinassi.types.error_info import BSLErrorCategory, BSLErrorInfo
+        from yadinassi.types.type_values import type_of
+        from yadinassi.types.values import BSLType
         _require(type(error) is BSLErrorInfo and len(self.errors) < 3)
         _require(phase == int(phase) and 0 <= phase <= 6)
         fields = [error.get_member(name) for name in
@@ -260,63 +260,29 @@ class Capture:
             vm.register_function(name, callback, returns_value=False)
 
 
-def execute_actual(sources, *, execution_backend="interpreter", execution_evidence=None):
+def execute_actual(sources, *, execution_backend="python-direct", execution_evidence=None):
     """Child-only execution of eight pinned bodies; NO native rows accepted.
 
     The returned JSON-ready rows contain only actual bounded observations.
     """
-    if execution_backend not in ("interpreter", "compiled-strict"):
+    if execution_backend != "python-direct" or execution_evidence is not None:
         raise ValueError("invalid execution backend")
     _validate_bodies(sources)
     actual = []
     for source in sources:
         capture, vm = Capture(), None
-        counters = []
-        violations = {"old_backend_executions": 0, "strict_rejections": 0}
-        observed = False
         failed, lifecycle = False, False
         try:
-            from yadinassi.compiled_backend import Engine, CompiledUnsupported
             from yadinassi import Interpreter
-            from yadinassi.configuration_source_runtime import _SourceInterpreter
-            from yadinassi.form_runtime import _FormInterpreter
-            from yadinassi.catalog_object_preparation import _ObjectInterpreter
-            from yadinassi.document_posting import _PostingInterpreter
-            from yadinassi.form_event_simulation import _EventInterpreter
-            from yadinassi.source_constant_managers import _ValueInterpreter
-            old_visitors = {(cls, name): method for cls in (Interpreter, _SourceInterpreter, _FormInterpreter, _ObjectInterpreter, _PostingInterpreter, _EventInterpreter, _ValueInterpreter)
-                            for name, method in cls.__dict__.items() if name.startswith('visit_')}
-            def count_legacy(method):
-                def counted(vm, *args, **kwargs):
-                    violations['old_backend_executions'] += 1
-                    return method(vm, *args, **kwargs)
-                return counted
-            original_visit = Interpreter._visit
-            original_rejection = CompiledUnsupported.__init__
-            violations = {"old_backend_executions": 0, "strict_rejections": 0}
-            def observe_visit(vm, node):
-                if vm.execution_backend != "compiled-strict":
-                    violations["old_backend_executions"] += 1
-                return (yield from original_visit(vm, node))
-            def observe_rejection(error, node, reason):
-                violations["strict_rejections"] += 1
-                original_rejection(error, node, reason)
-            original_engine_init = Engine.__init__
-            def observe_engine(engine, owner):
-                original_engine_init(engine, owner)
-                counters.append(engine.stats)
-            if execution_backend == 'compiled-strict':
-                for (cls, name), method in old_visitors.items():
-                    setattr(cls, name, count_legacy(method))
-                Engine.__init__ = observe_engine
-                Interpreter._visit = observe_visit
-                CompiledUnsupported.__init__ = observe_rejection
-            observed = True
-            from yadinassi.native_targets import LINUX_8_3_27_1508
+            from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
             vm = Interpreter(output=lambda message: None, native_target=LINUX_8_3_27_1508, execution_backend=execution_backend)
+            if vm.execution_backend != "python-direct":
+                raise ValueError("execution backend mismatch")
             capture.install(vm)
             vm.execute(DECLARATIONS + source + ROOT)
             vm.run_until_idle()
+            if vm.execution_backend != "python-direct":
+                raise ValueError("execution backend mismatch")
             lifecycle = (not vm.pending_promises and bool(capture.retained)
                          and all(p.state != 'pending' for p in capture.retained)
                          and not vm.variables['асинхсбой'])
@@ -328,15 +294,6 @@ def execute_actual(sources, *, execution_backend="interpreter", execution_eviden
                     vm.close()
                 except Exception:
                     failed = True
-            if observed:
-                for (cls, name), method in old_visitors.items():
-                    setattr(cls, name, method)
-                Engine.__init__ = original_engine_init
-                Interpreter._visit = original_visit
-                CompiledUnsupported.__init__ = original_rejection
-        if execution_evidence is not None:
-            keys = ('emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'inline_blocks', 'inline_fragments')
-            execution_evidence.append({**{key: sum(stats.get(key, 0) for stats in counters) for key in keys}, **violations, "block_executions": sum(stats.get("block_executions",0) for stats in counters), "metadata_block_executions": sum(stats.get("metadata_block_executions",0) for stats in counters), "plain_adapter_blocks": sum(stats.get("plain_adapter_blocks",0) for stats in counters), "python_sync_routine_calls": sum(stats.get("python_sync_routine_calls",0) for stats in counters), "python_translated_blocks": sum(stats.get("python_translated_blocks",0) for stats in counters), "python_translated_nodes": sum(sum(stats.get("python_translated_node_kinds",{}).values()) for stats in counters), "node_coverage": "unobserved" if any(stats.get("node_coverage") == "unobserved" for stats in counters) else "observed", "lowering_variant": ("python-translation" if Engine.FORCE_PYTHON_TRANSLATION else "inline" if Engine.INLINE else "node-scaffold") if observed else "unobserved", "fast_inline_enabled": bool(Engine.FAST_INLINE) if observed else False})
         actual.append([capture.trace, capture.values, capture.errors, lifecycle, failed])
     validate_actual(actual)
     return actual

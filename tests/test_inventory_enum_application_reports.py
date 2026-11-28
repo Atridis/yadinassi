@@ -6,11 +6,11 @@ import unittest
 from uuid import UUID, uuid4
 
 from inventory_enum_application_fixture import source
-from yadinassi.configuration_inventory_enum_application import import_inventory_application, PROFILE, validated_core
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.catalog_backend import BackendError
-from yadinassi.enum_storage_values import EnumKey
-from yadinassi.inventory_application_reports import InventoryReports, _enum_text
+from yadinassi.configuration.configuration_inventory_enum_application import import_inventory_application, PROFILE, validated_core
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.db.metadata.enum_storage_values import EnumKey
+from yadinassi.configuration.demos.inventory_application_reports import InventoryReports, _enum_text
 from yadinassi.runtime import Interpreter
 
 

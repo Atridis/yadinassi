@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from contextlib import closing
 from test_source_constant_store import configuration
-from yadinassi.source_constant_store import SourceConstantStore
-from yadinassi.configuration_source_runtime import SourceApplication
+from yadinassi.db.metadata.source_constant_store import SourceConstantStore
+from yadinassi.configuration.configuration_source_runtime import SourceApplication
 
 
 class ScratchReopenTests(unittest.TestCase):
@@ -114,7 +114,7 @@ class ScratchReopenTests(unittest.TestCase):
         import contextlib
         import io
         from yadinassi.cli import main
-        from yadinassi.configuration_source import save_source_archive
+        from yadinassi.configuration.configuration_source import save_source_archive
         self.create()
         archive = self.path.with_suffix('.zip')
         save_source_archive(archive, self.source)
@@ -128,7 +128,7 @@ class ScratchReopenTests(unittest.TestCase):
         from unittest.mock import patch
         self.create()
         with closing(SourceConstantStore.reopen(self.path, self.source)) as store:
-            with patch('yadinassi.source_constant_store._verify_source', side_effect=AssertionError('redundant full scan')):
+            with patch('yadinassi.db.metadata.source_constant_store._verify_source', side_effect=AssertionError('redundant full scan')):
                 self.assertEqual(store.get('Text'), 'persisted')
                 store.set('Text', 'new')
                 self.assertEqual(store.get('Text'), 'new')
@@ -154,7 +154,7 @@ class ScratchReopenTests(unittest.TestCase):
         def connect(path, *args, **kwargs):
             calls.append(str(path))
             return original(path, *args, **kwargs)
-        with patch('yadinassi.source_constant_store.sqlite3.connect', side_effect=connect):
+        with patch('yadinassi.db.metadata.source_constant_store.sqlite3.connect', side_effect=connect):
             with self.assertRaisesRegex(ValueError, 'schema'): SourceConstantStore.reopen(self.path, self.source)
         self.assertTrue(any('mode=ro' in path for path in calls))
         self.assertFalse(any('mode=rw' in path for path in calls))

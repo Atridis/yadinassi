@@ -57,10 +57,9 @@ No Node, network connection or rewritten demo sources are needed at runtime.
 - Every transaction retains the existing source validation under the writer
   lock. Source drift blocks new warehouse writes too, even when only an inactive
   product module changed. Unsaved editor values remain visible after refusal.
-- Existing opaque revisions, numbering, receipts and uncertain-commit recovery
-  are reused. Historical receipt resolution does not authorize new writes after
-  source drift. A committed-but-unrefreshed record is refreshed without another
-  write. These are local host guarantees, not native 1C behavior measurements.
+- Opaque revisions and numbering retain their transaction rules. An unknown
+  write outcome leaves the draft locked; use a fresh read instead of trying the
+  write again. A confirmed-but-unrefreshed record is read without another write. These are local host guarantees, not native 1C behavior measurements.
 
 ## Verification
 

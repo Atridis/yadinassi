@@ -3,7 +3,6 @@ from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
-import json
 import re
 import sqlite3
 import tempfile
@@ -12,12 +11,15 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi import Interpreter
-from yadinassi.catalog_backend import BackendError
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.queries import BSLQuery
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-from yadinassi.sqlite_documents import DocumentView
+from yadinassi.db.catalog.catalog_backend import BackendError
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.db.query.queries import BSLQuery
+from yadinassi.db.sqlite.sqlite_catalog import SQLiteCatalogBackend
+from yadinassi.db.sqlite.sqlite_documents import DocumentView
+from yadinassi.db.sqlite.sqlite_register_layout import register_table
+from yadinassi.db.sqlite.sqlite_registers import RegisterView
+from yadinassi.db.sqlite.sqlite_typed_rows import attribute_column
 from test_document_configuration_xml import document_files
 
 
@@ -66,6 +68,19 @@ For I=1 To 3 Do
  R.Amount=I*10;R.Enabled=I<>2;R.Stamp=Date(2026,11,I);R.Write();
 EndDo;
 D=Documents.Orders.CreateDocument();D.Category=C.Ref;D.Amount=100;D.Write();''')
+
+    def test_ordered_top_register_with_literal_matches_residual(self):
+        from yadinassi.db.query.relational_queries import _Plan
+        from yadinassi.db.sqlite.sqlite_documents import DocumentView
+        self.seed()
+        # No reference projection or filter: use the existing scalar port.
+        text='SELECT TOP 1 Key, "tag" AS Marker FROM InformationRegister.Rates WHERE Enabled=TRUE ORDER BY Key'
+        with patch.object(DocumentView,'ordered_register_records',return_value=None) as decline:
+            expected=self.rows(text)
+        decline.assert_called_once()
+        self.assertEqual(expected,(('1','tag'),))
+        with patch.object(_Plan,'load',side_effect=AssertionError('materialized input')):
+            self.assertEqual(self.rows(text),expected)
 
     def test_english_bsl_report_and_exact_parameters(self):
         self.seed()
@@ -194,23 +209,50 @@ Message(Q.Execute().Unload()[0].Total);''')
 
     def test_input_budget_and_row_bound_fail_before_top_result(self):
         self.seed()
-        with patch('yadinassi.queries._MAX_CELLS', 1), self.assertRaisesRegex(ValueError, 'input resource'):
+        with patch('yadinassi.db.query.queries._MAX_CELLS', 1), self.assertRaisesRegex(ValueError, 'input resource'):
             self.rows('SELECT TOP 1 Key FROM InformationRegister.Rates')
-        with patch('yadinassi.query_parser.MAX_ROWS', 2), self.assertRaisesRegex(ValueError, 'input row'):
+        with patch('yadinassi.db.query.query_parser.MAX_ROWS', 2), self.assertRaisesRegex(ValueError, 'input row'):
             self.rows('SELECT TOP 1 Key FROM InformationRegister.Rates')
         self.assertIsNone(self.context.backend._active)
 
     def test_more_than_1000_records_are_scanned_without_truncation(self):
         self.seed()
         with closing(sqlite3.connect(self.path)) as connection, connection:
-            identity, key, revision, values = connection.execute('SELECT * FROM information_register_record LIMIT 1').fetchone()
-            dimensions = json.loads(key)
-            additions = []
-            for i in range(4,1002):
-                new = list(dimensions); new[0] = ['s',str(i)]
-                additions.append((identity,json.dumps(new,ensure_ascii=False,separators=(',',':')),revision,values))
-            connection.executemany('INSERT INTO information_register_record VALUES(?,?,?,?)', additions)
+            schema=self.context.backend._register_schemas[0]
+            table=register_table(schema)
+            row=connection.execute(f'SELECT * FROM {table} LIMIT 1').fetchone()
+            additions=((row[0],str(i),*row[2:]) for i in range(4,1002))
+            placeholders=','.join('?' for _ in row)
+            connection.executemany(f'INSERT INTO {table} VALUES({placeholders})', additions)
         self.assertEqual(self.rows('SELECT COUNT(*) AS N FROM InformationRegister.Rates'), ((Decimal(1001),),))
+
+    def test_typed_ordered_top_provider_uses_native_fields_and_keeps_empty_ref_identity(self):
+        from yadinassi.db.catalog.catalog_backend import CatalogOrder
+        from yadinassi.db.registers.register_backend import RegisterDraft, RegisterKey
+        self.seed()
+        schema=self.context.backend._register_schemas[0]
+        self.vm.execute('R=InformationRegisters.Rates.CreateRecordManager();R.Key="empty";R.Amount=40;R.Write();')
+        backend=self.context.backend
+        with closing(backend.begin_query_read(query_language=True)) as query_view:
+            reader=RegisterView(query_view._view)
+            page=reader.ordered_register_records(schema.identity,(CatalogOrder(schema.resources[0].identity,True),),2)
+        self.assertEqual(tuple(row.key.dimensions[0] for row in page.rows),('empty','3'))
+        empty=page.rows[0]
+        self.assertEqual(empty.key.dimensions[1].record_id.int,0)
+        self.assertIsNone(page.continuation)
+        with patch.object(RegisterView,'scan_register',side_effect=AssertionError('standard TOP used raw scan')):
+            self.assertEqual(self.rows('SELECT TOP 2 Key,Amount FROM InformationRegister.Rates ORDER BY Amount DESC'),
+                             (('empty',Decimal(40)),('3',Decimal(30))))
+        with closing(backend.begin_register_write(uuid4())) as writer:
+            with self.assertRaisesRegex(BackendError,'duplicate_identity'):
+                writer.write(RegisterDraft(RegisterKey(backend.database_id,schema.identity,empty.key.dimensions),empty.values))
+            self.assertIsNone(writer.ordered_register_records(schema.identity,(CatalogOrder(schema.resources[0].identity,True),),2))
+        table=register_table(schema)
+        with closing(sqlite3.connect(self.path)) as connection:
+            _,reference=map(attribute_column,schema.dimensions)
+            self.assertEqual(connection.execute(f'SELECT COUNT(*) FROM {table} WHERE {reference} IS NULL').fetchone(),(1,))
+            with self.assertRaises(sqlite3.IntegrityError):
+                connection.execute(f'INSERT INTO {table} SELECT * FROM {table} WHERE {reference} IS NULL')
 
     def test_readonly_report_does_not_mutate_database(self):
         self.seed(); self.context.close()
@@ -231,5 +273,5 @@ Message(Q.Execute().Unload()[0].Total);''')
 
     def test_catalog_fast_path_does_not_require_register_methods(self):
         self.seed()
-        with patch.object(self.context.backend, 'begin_query_read', side_effect=AssertionError('not needed')):
+        with patch.object(DocumentView, '_register_reader', side_effect=AssertionError('unused registers')):
             self.assertEqual(self.rows('SELECT Code AS Code FROM Catalog.Categories'), (('C',),))

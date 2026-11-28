@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from yadinassi import Interpreter
+from yadinassi.execution.codegen.direct_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
 import native_1c_data_io_family_contract as wire
 
@@ -17,12 +18,9 @@ SOURCE_PATH = ROOT / 'integrational_tests/measurements/data_io_family.bsl'
 SOURCE = SOURCE_PATH.read_text(encoding='utf-8')
 
 
-def emit(*, missing=False, source=SOURCE):
+def emit(*, source=SOURCE):
     out = []
     vm = Interpreter(out.append)
-    if missing:
-        for name in ('datareader', 'чтениеданных'):
-            vm.types.pop(name, None)
     with tempfile.TemporaryDirectory(prefix="data-io-test-") as tmp, mock.patch("tempfile.gettempdir", return_value=tmp):
         vm.execute(source)
         if list(Path(tmp).iterdir()):
@@ -65,18 +63,30 @@ class DataIOFamilyMeasurementTests(unittest.TestCase):
         raw = emit()
         self.assertEqual(len(wire.require_available(raw)), 40)
         self.assertFalse(any(row['status'] == 'observer-error' for row in wire.validate_output(raw)))
-        with self.assertRaises(wire.AvailabilityError): wire.require_available(emit(missing=True))
+
+    def test_missing_local_capability_fails_before_publishing_an_observation(self):
+        # Artificial registry removal is a boundary denial, not a BSL action error.
+        out = []
+        vm = Interpreter(out.append)
+        self.addCleanup(vm.close)
+        vm.types.pop('datareader')
+        vm.types.pop('чтениеданных')
+        with self.assertRaisesRegex(BoundaryViolation, 'direct constructor requires canonical registration: datareader'):
+            vm.execute('Target=New DataReader(); Message("unreachable");')
+        self.assertNotIn('target', vm.variables)
+        self.assertEqual(out, [])
 
     def test_action_failure_still_cleans_owned_paths(self):
-        from yadinassi.data_io import BSLDataWriter
+        from yadinassi.streams.data_io import BSLDataWriter
         with mock.patch.object(BSLDataWriter, 'write_chars', side_effect=ValueError('injected')):
             raw = emit()
         records = wire.validate_output(raw)
         self.assertTrue(any(row['status'] == 'action-error' for row in records))
         self.assertFalse(any(row['status'] == 'observer-error' for row in records))
+        with self.assertRaises(wire.AvailabilityError): wire.require_available(raw)
 
     def test_unexpected_children_are_not_recursively_swept(self):
-        import yadinassi.file_io as files
+        import yadinassi.streams.file_io as files
         original = files.create_directory
         def create_with_sentinel(path):
             original(path)
@@ -84,7 +94,7 @@ class DataIOFamilyMeasurementTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='data-io-unexpected-') as tmp, \
                 mock.patch('tempfile.gettempdir', return_value=tmp):
             output = []
-            vm = Interpreter(output.append)
+            vm = Interpreter(output.append, allow_extensions=True)
             vm.register_function('СоздатьКаталог', create_with_sentinel, 'CreateDirectory', returns_value=False)
             vm.execute(SOURCE)
             roots = list(Path(tmp).iterdir())
@@ -102,7 +112,7 @@ class DataIOFamilyMeasurementTests(unittest.TestCase):
             sentinel = root / 'keep.bin'
             sentinel.write_bytes(b'owned-sentinel')
             output = []
-            vm = Interpreter(output.append)
+            vm = Interpreter(output.append, allow_extensions=True)
             vm.register_function('ПолучитьИмяВременногоФайла', lambda *args: str(root), 'GetTempFileName')
             vm.execute(SOURCE)
             self.assertEqual(list(root.iterdir()), [sentinel])

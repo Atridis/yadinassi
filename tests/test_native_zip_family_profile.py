@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 from yadinassi import Interpreter
-from yadinassi.native_targets import LINUX_8_3_27_1508
+from yadinassi.execution.codegen.native_targets import LINUX_8_3_27_1508
 import test_native_tree_profile_budget as budget
 from test_native_tree_profile_host import synthetic_producer_reader
 from test_native_1c_smoke import bootstrap_report

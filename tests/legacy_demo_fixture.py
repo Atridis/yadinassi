@@ -1,7 +1,7 @@
 """Test-only assembly for immutable demo_*_v1 compatibility grants.
 
-The only historical bytes stored separately are the old Configuration.xml.
-Forms/handlers/catalog metadata come from the one canonical examples/demo;
+The historical root and object handler are stored separately.
+Unchanged files come from the one canonical examples/demo;
 all nineteen SHA256 pins must match before this legacy projection is returned.
 This is not another runnable demo directory and does not expand runtime grants.
 """
@@ -11,6 +11,9 @@ import stat
 
 ROOT = Path(__file__).resolve().parents[1]
 HISTORICAL_ROOT = 'tests/fixtures/legacy_demo_root.xml'
+HISTORICAL_HANDLER = 'tests/fixtures/legacy_demo_object_module.bsl'
+HANDLER = 'Catalogs/Номенклатура/Ext/ObjectModule.bsl'
+HISTORICAL_SOURCES = {'Configuration.xml': HISTORICAL_ROOT, HANDLER: HISTORICAL_HANDLER}
 CANONICAL_ROOT = 'examples/demo'
 SOURCE_SHA256 = {'Catalogs/ВидыНоменклатуры.xml': '723c973982629b92c183d68b24aef8fde1771b34e649e536749354d7a14cc2d0',
  'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента.xml': 'ccf4960ad91cc507a0e8165c973f79d88c9fe5e1773d1bf8fd1bb90584275a28',
@@ -37,7 +40,7 @@ def legacy_demo_files(root=ROOT):
     root = Path(root)
     result = {}
     for name, expected in SOURCE_SHA256.items():
-        path = root / (HISTORICAL_ROOT if name == 'Configuration.xml' else CANONICAL_ROOT + '/' + name)
+        path = root / HISTORICAL_SOURCES.get(name, CANONICAL_ROOT + '/' + name)
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 1048576:
             raise ValueError('legacy demo source file refused')

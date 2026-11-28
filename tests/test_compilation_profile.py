@@ -12,15 +12,16 @@ import unittest
 from unittest import mock
 
 from yadinassi import BSLError, BSLRuntimeError, Interpreter
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
 from yadinassi.syntax import ast
-from yadinassi.database_context import SQLiteDBContext
-from yadinassi.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_xml import import_configuration
 from sqlite_catalog_fixture import configuration_files
 from yadinassi.syntax import lexer as lexer_module
 from yadinassi.syntax import parser as parser_module
 from yadinassi import runtime as runtime_module
 from yadinassi.syntax.lexer import Lexer
-from yadinassi.native_targets import (
+from yadinassi.execution.codegen.native_targets import (
     LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context,
 )
 from yadinassi.syntax.parser import parse, parse_expression, parse_fragment
@@ -70,6 +71,40 @@ def weighted_program():
              ("Client", "Server", "NoContext", "Dual", "ServerDual")
              for suffix in ("En", "Ru")]
     return "\n".join(declarations + calls)
+
+
+def _assert_import_and_activation_profiles(case, root, profile, expected_output):
+    (root / "Middle.bsl").write_text(
+        "// #Import Leaf.bsl\nFunction Value() Export\n"
+        'Return String(Leaf.ServerValue()) + "|" + String(Leaf.NoContextValue());\n'
+        "EndFunction\n",
+        encoding="utf-8")
+    original_init = Interpreter.__init__
+    activations = []
+    with mock.patch.object(Interpreter, "__init__", autospec=True,
+                           side_effect=original_init) as constructor:
+        case.vm.execute("// #Import Middle.bsl\nMessage(Middle.Value());",
+                        str(root / "Main.bsl"))
+        for has_context in (True, False):
+            server = case.vm._new_server_activation(module_context=has_context)
+            case.addCleanup(server.close)
+            activations.append(server)
+
+    middle = case.vm.imports["middle"].interpreter
+    leaf = middle.imports["leaf"].interpreter
+    owners = (middle, leaf, *activations)
+    # Direct calls to contextual/NoContext exports need not allocate a new
+    # Interpreter. Check the actual imported owners and both explicit fresh
+    # activations were constructed with the caller's profile, not a VM count.
+    owner_ids = {id(owner) for owner in owners}
+    case.assertEqual(len(owner_ids), len(owners))
+    case.assertLessEqual(owner_ids, {id(call.args[0]) for call in constructor.call_args_list})
+    for call in constructor.call_args_list:
+        case.assertEqual(call.kwargs.get("compilation_profile"), profile)
+    for owner in owners:
+        case.assertEqual(owner.compilation_profile, profile)
+    # A sum could hide offsetting regressions in the two export bodies.
+    case.assertEqual(case.messages, [expected_output])
 
 
 class CompilationProfileTests(unittest.TestCase):
@@ -268,25 +303,7 @@ class CompilationProfileTests(unittest.TestCase):
                             + weighted_body(1) + "\nEndFunction\n"
                             "#If ExternalConnection Then\ninvalid !!!\n#EndIf\n",
                             encoding="utf-8")
-            (root / "Middle.bsl").write_text(
-                "// #Import Leaf.bsl\nFunction Value() Export\n"
-                "Return Leaf.ServerValue() + Leaf.NoContextValue();\nEndFunction\n",
-                encoding="utf-8")
-            original_init = Interpreter.__init__
-            with mock.patch.object(Interpreter, "__init__", autospec=True,
-                                   side_effect=original_init) as constructor:
-                self.vm.execute("// #Import Middle.bsl\nMessage(Middle.Value());",
-                                str(root / "Main.bsl"))
-                for has_context in (True, False):
-                    server = self.vm._new_server_activation(module_context=has_context)
-                    self.assertEqual(server.compilation_profile, "standalone")
-            self.assertGreaterEqual(constructor.call_count, 6)
-            for call in constructor.call_args_list:
-                self.assertEqual(call.kwargs.get("compilation_profile"), "standalone")
-            middle = self.vm.imports["middle"].interpreter
-            self.assertEqual(middle.compilation_profile, "standalone")
-            self.assertEqual(middle.imports["leaf"].interpreter.compilation_profile, "standalone")
-            self.assertEqual(self.messages, ["12"])
+            _assert_import_and_activation_profiles(self, root, "standalone", "10|2")
 
     def test_invalid_imported_condition_does_not_execute_module_or_root_effects(self):
         with tempfile.TemporaryDirectory(prefix="compilation-profile-") as temporary:
@@ -346,7 +363,7 @@ MANAGED_VALUES = {
 class ManagedCompilationProfileTests(unittest.TestCase):
     def setUp(self):
         self.messages = []
-        self.vm = Interpreter(self.messages.append, compilation_profile=MANAGED_PROFILE)
+        self.vm = Interpreter(self.messages.append, compilation_profile=MANAGED_PROFILE, allow_extensions=True)
         self.addCleanup(self.vm.close)
 
     def test_exact_public_identifier_and_read_only_properties(self):
@@ -477,25 +494,7 @@ class ManagedCompilationProfileTests(unittest.TestCase):
                 + weighted_body(0) + "\nEndFunction\n"
                 "&AtServerNoContext\nFunction NoContextValue() Export\n"
                 + weighted_body(1) + "\nEndFunction\n", encoding="utf-8")
-            (root / "Middle.bsl").write_text(
-                "// #Import Leaf.bsl\nFunction Value() Export\n"
-                "Return Leaf.ServerValue() + Leaf.NoContextValue();\nEndFunction\n",
-                encoding="utf-8")
-            original_init = Interpreter.__init__
-            with mock.patch.object(Interpreter, "__init__", autospec=True,
-                                   side_effect=original_init) as constructor:
-                self.vm.execute("// #Import Middle.bsl\nMessage(Middle.Value());",
-                                str(root / "Main.bsl"))
-                for has_context in (True, False):
-                    server = self.vm._new_server_activation(module_context=has_context)
-                    self.assertEqual(server.compilation_profile, MANAGED_PROFILE)
-            self.assertGreaterEqual(constructor.call_count, 6)
-            for call in constructor.call_args_list:
-                self.assertEqual(call.kwargs.get("compilation_profile"), MANAGED_PROFILE)
-            middle = self.vm.imports["middle"].interpreter
-            self.assertEqual(middle.compilation_profile, MANAGED_PROFILE)
-            self.assertEqual(middle.imports["leaf"].interpreter.compilation_profile, MANAGED_PROFILE)
-            self.assertEqual(self.messages, ["270"])
+            _assert_import_and_activation_profiles(self, root, MANAGED_PROFILE, "139|131")
 
     def test_explicit_profile_and_native_target_are_independent_of_host_and_environment(self):
         environment = {"YADINASSI_PREPROCESSOR_PROFILE": MANAGED_PROFILE,
@@ -525,7 +524,7 @@ class ManagedCompilationProfileTests(unittest.TestCase):
             (self.vm.execution_context, self.vm._has_module_context)))
         self.vm.execute('''
 #If Server Then
-Function Ordinary() Return 42; EndFunction
+Function Ordinary() Observe(); Return 42; EndFunction
 Observe();
 #EndIf
 &AtClientAtServerNoContext
@@ -546,13 +545,17 @@ Message(Dual()); Message(ServerCall()); Message(Detached());
         self.assertEqual(self.messages, ["both", "both", "both"])
         self.assertEqual(seen, [("client", True), ("client", False), ("server", False),
                                ("server", True), ("server", False), ("server", False)])
-        self.assertEqual(self.vm.routines["ordinary"].execution_context, "client")
-        self.assertNotIn("ordinary", self.vm.server_routines)
+        # The Server compilation symbol did not make Ordinary a server routine.
+        # Check real calls rather than the old visitor's routine registries.
+        self.assertEqual(self.vm.execute("Ordinary()"), Decimal(42))
+        self.assertEqual(seen[6:], [("client", True)])
+        self.vm.execute("&AtServer\nFunction Denied() Return Ordinary(); EndFunction")
+        with self.assertRaisesRegex(BSLRuntimeError, "клиентской подпрограммы с сервера"):
+            self.vm.execute("Denied()")
         self.assertEqual(self.vm._context_stack, ["client"])
         self.assertEqual(self.vm._module_context_stack, [True])
-        self.vm.execute("&AtServer\nFunction Denied() Return Ordinary(); EndFunction")
-        with self.assertRaisesRegex(BSLError, "клиентской подпрограммы с сервера"):
-            self.vm.execute("Denied()")
+        self.assertEqual(len(seen), 7)
+        self.assertEqual(self.messages, ["both", "both", "both"])
 
     def test_database_context_and_builtin_availability_are_not_selected_by_profile(self):
         with tempfile.TemporaryDirectory(prefix="managed-profile-db-") as temporary:
@@ -577,8 +580,12 @@ Message(Dual()); Message(ServerCall()); Message(Detached());
         self.assertIsNone(self.vm.database_context)
         with self.assertRaisesRegex(BSLRuntimeError, "db required for further code execution"):
             self.vm.execute("InfoBaseConnectionString()")
-        with self.assertRaises(BSLRuntimeError):
-            self.vm.execute("New Form")
+        # Forms require an explicitly activated configuration/metadata owner,
+        # not a standalone constructor (docs/configuration-forms.md).
+        with self.assertRaisesRegex(PythonDirectUnsupported, r"\bconstructor Form\b"):
+            self.vm.execute('FormEffect = 1; Message("must-not-run"); New Form;')
+        self.assertNotIn("formeffect", self.vm.variables)
+        self.assertEqual(self.messages, [])
 
     def test_unknown_and_combined_side_symbols_still_fail_before_effects(self):
         for unknown in ("UnknownProfileFlag", "FutureUnsupportedClient", "AtClientAtServer",

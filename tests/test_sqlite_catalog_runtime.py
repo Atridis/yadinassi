@@ -2,8 +2,8 @@ from pathlib import Path
 import sys,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from yadinassi import Interpreter
-from yadinassi.configuration_xml import import_configuration
-from yadinassi.database_context import SQLiteDBContext
+from yadinassi.configuration.configuration_xml import import_configuration
+from yadinassi.db.database_context import SQLiteDBContext
 from sqlite_catalog_fixture import configuration_files
 
 class SQLiteCatalogRuntimeTests(unittest.TestCase):
@@ -40,28 +40,29 @@ Try B.Write();Except Message("conflict");EndTry;Message(B.Text);Message(P.Ref.Te
                      'P=Catalogs.Products.CreateItem();Message(ValueToStringInternal(P));'):
             with self.subTest(code=code),self.assertRaises(Exception):self.execute(code)
 
-    def test_uncertain_commit_resolves_exact_intent_without_second_write(self):
+    def test_uncertain_commit_blocks_retry_but_preserves_committed_record(self):
         from unittest.mock import patch
-        from yadinassi.sqlite_catalog import _View
-        from yadinassi.catalog_backend import BackendError
+        from yadinassi.db.sqlite.sqlite_catalog import _View
+        from yadinassi.db.catalog.catalog_backend import BackendError
         vm=Interpreter(database_context=self.context)
         vm.execute('P=Catalogs.Products.CreateItem();P.Code="30";P.Text="original";')
         obj=vm.execute('P');commit=_View.commit
-        def lose_response(tx):
-            commit(tx)
+        def lose_response(tx, **kwargs):
+            commit(tx, **kwargs)
             raise BackendError('uncertain_commit')
-        with patch.object(_View,'commit',lose_response),self.assertRaises(BackendError):obj.write()
+        with patch.object(_View,'commit',lose_response),self.assertRaisesRegex(BackendError, "uncertain_commit"):obj.write()
         self.assertTrue(obj.is_new())
         self.assertTrue(obj.get_member('Ref').is_empty())
         with self.assertRaises(BackendError):obj.set_member('Text','changed')
-        with patch.object(_View,'commit',side_effect=AssertionError('must not recommit')):obj.write()
-        self.assertFalse(obj.is_new())
+        with patch.object(_View,'commit',side_effect=AssertionError('must not recommit')),self.assertRaisesRegex(BackendError, "uncertain_commit"):obj.write()
+        self.assertTrue(obj.is_new())
         self.assertEqual(vm.execute('Catalogs.Products.FindByCode("30").Text'),'original')
-        obj.set_member('Text','next');obj.write()
+        fresh=vm.execute('Catalogs.Products.FindByCode("30").GetObject()')
+        fresh.set_member('Text','next');fresh.write()
         self.assertEqual(vm.execute('Catalogs.Products.FindByCode("30").Text'),'next')
 
     def test_inactive_code_archive_cannot_execute_even_scalar_bsl(self):
-        from yadinassi.catalog_backend import BackendError
+        from yadinassi.db.catalog.catalog_backend import BackendError
         files=configuration_files();files['Catalogs/Products/Ext/ObjectModule.bsl']=b'Procedure BeforeWrite(Cancel)\nCancel=True;\nEndProcedure'
         archive=SQLiteDBContext.create(Path(self.temp.name)/'inactive.sqlite',import_configuration(files),activate=False)
         try:

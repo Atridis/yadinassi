@@ -3,8 +3,8 @@ from decimal import Decimal, localcontext
 import json
 import unittest
 
-from yadinassi.dates import BSLDate, MAX_TICKS
-from yadinassi.values import NULL
+from yadinassi.temporal.dates import BSLDate, MAX_TICKS
+from yadinassi.types.values import NULL
 from yadinassi.ui.protocol import (CatalogRef, MAX_LINE_BYTES, PROTOCOL, UIError,
     decode_line, decode_value, encode_line, encode_value, validate_request)
 

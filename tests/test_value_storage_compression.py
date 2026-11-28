@@ -6,12 +6,13 @@ from unittest.mock import patch
 import zlib
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.data_compression import BSLDeflation, compression_degree
-from yadinassi.file_io import BSLBinaryData
-from yadinassi.structures import BSLStructure
-from yadinassi.type_values import type_by_name, type_of
-from yadinassi.value_storage import BSLValueStorage, Snapshot, SnapshotError
-from yadinassi.values import BSLArray, BSLType
+from yadinassi.execution.direct.python_direct import PythonDirectUnsupported
+from yadinassi.streams.data_compression import BSLDeflation, compression_degree
+from yadinassi.streams.file_io import BSLBinaryData
+from yadinassi.collections.structures import BSLStructure
+from yadinassi.types.type_values import type_by_name, type_of
+from yadinassi.formats.storage.value_storage import BSLValueStorage, Snapshot, SnapshotError
+from yadinassi.types.values import BSLArray, BSLType
 
 
 def array(*values):
@@ -32,7 +33,18 @@ class ValueStorageCompressionTests(unittest.TestCase):
             self.assertIs(vm.variables['y'], BSLType.DEFLATION)
             self.assertIs(type_by_name('Deflation'), BSLType.DEFLATION)
             self.assertIs(type_of(BSLDeflation()), BSLType.DEFLATION)
-            with self.assertRaises(BSLError): vm.execute('New DataCompression;')
+            # Not an alias. A statically unknown constructor is rejected
+            # before any part of the source runs, not inside the BSL Try.
+            with self.assertRaisesRegex(PythonDirectUnsupported, 'constructor DataCompression'):
+                vm.execute('Touched=True; Try New DataCompression; Except Caught=True; EndTry;')
+            self.assertNotIn('touched', vm.variables)
+            self.assertNotIn('caught', vm.variables)
+            with self.assertRaisesRegex(ValueError, 'DataCompression'):
+                type_by_name('DataCompression')
+            # Dynamic lookup is an ordinary BSL operation and can be caught.
+            vm.execute('Caught=False; Try New("DataCompression"); Except Caught=True; EndTry;')
+            self.assertIs(vm.variables['caught'], True)
+            self.assertEqual(vm.execute('Stored=New ValueStorage("ok",New Deflation(9)); Stored.Get()'), 'ok')
         finally: vm.close()
 
     def test_integer_levels_and_default(self):
@@ -40,12 +52,16 @@ class ValueStorageCompressionTests(unittest.TestCase):
         self.assertEqual(compression_degree(None), 0)
         for level in range(-1, 10):
             with self.subTest(level=level):
-                settings = BSLDeflation(D(level))
-                self.assertEqual(compression_degree(settings), level)
-                self.assertEqual(BSLValueStorage('text', settings).get(), 'text')
+                for numeric in (level, D(level)):
+                    settings = BSLDeflation(numeric)
+                    self.assertEqual(compression_degree(settings), level)
+                    self.assertEqual(BSLValueStorage('text', settings).get(), 'text')
 
     def test_invalid_settings_and_levels(self):
-        for value in (True, False, 1, '9', D('-2'), D('10'), D('0.5'),
+        class ForeignInt(int):
+            pass
+
+        for value in (True, False, -2, 10, ForeignInt(1), '9', D('-2'), D('10'), D('0.5'),
                       D('NaN'), D('Infinity'), D('1e100000')):
             with self.subTest(kind=type(value).__name__), self.assertRaises(ValueError):
                 BSLDeflation(value)
@@ -61,13 +77,13 @@ class ValueStorageCompressionTests(unittest.TestCase):
         with self.assertRaises(ValueError): str(BSLType.DEFLATION)
 
     def test_settings_themselves_remain_nonportable(self):
-        from yadinassi.serialization import value_to_string_internal
+        from yadinassi.formats.storage.serialization import value_to_string_internal
         for value in (BSLDeflation(), BSLType.DEFLATION):
             with self.assertRaises(ValueError): value_to_string_internal(value)
             with self.assertRaises(SnapshotError): BSLValueStorage(value)
 
     def test_omitted_compression_and_degree_zero_do_not_compress(self):
-        with patch('yadinassi.value_storage.compress_payload', side_effect=AssertionError('no zlib')):
+        with patch('yadinassi.formats.storage.value_storage.compress_payload', side_effect=AssertionError('no zlib')):
             for settings in (None, BSLDeflation(D(0))):
                 self.assertEqual(BSLValueStorage('text', settings).get(), 'text')
                 self.assertEqual(BSLValueStorage(BSLBinaryData.from_bytes(b'bytes'), settings).get()._data, b'bytes')
@@ -107,35 +123,35 @@ class ValueStorageCompressionTests(unittest.TestCase):
         self.assertEqual(first.items[2].get().items, ['inner'])
 
     def test_logical_text_budget_is_enforced_before_compression(self):
-        with patch('yadinassi.value_storage.MAX_TEXT_UNITS', 4):
+        with patch('yadinassi.formats.storage.value_storage.MAX_TEXT_UNITS', 4):
             with self.assertRaises(SnapshotError): BSLValueStorage('😀😀x', BSLDeflation())
             self.assertEqual(BSLValueStorage('😀😀', BSLDeflation()).get(), '😀😀')
 
     def test_aggregate_text_budget_is_enforced_again_on_get(self):
         holder = BSLValueStorage(array('abc', 'def'), BSLDeflation())
-        with patch('yadinassi.value_storage.MAX_TEXT_UNITS', 5):
+        with patch('yadinassi.formats.storage.value_storage.MAX_TEXT_UNITS', 5):
             with self.assertRaises(SnapshotError): holder.get()
 
     def test_binary_capture_and_restore_budgets_are_unchanged(self):
         source = array(BSLBinaryData.from_bytes(b'ab'), BSLBinaryData.from_bytes(b'cd'))
         holder = BSLValueStorage(source, BSLDeflation())
-        with patch('yadinassi.value_storage.MAX_BINARY_BYTES', 3):
+        with patch('yadinassi.formats.storage.value_storage.MAX_BINARY_BYTES', 3):
             with self.assertRaises(SnapshotError): BSLValueStorage(source, BSLDeflation())
             with self.assertRaises(SnapshotError): holder.get()
 
     def test_compressed_byte_budget_applies_to_capture_and_restore(self):
         holder = BSLValueStorage('abc', BSLDeflation())
-        with patch('yadinassi.value_storage.MAX_COMPRESSED_BYTES', 1):
+        with patch('yadinassi.formats.storage.value_storage.MAX_COMPRESSED_BYTES', 1):
             with self.assertRaises(SnapshotError): BSLValueStorage('abc', BSLDeflation())
             with self.assertRaises(SnapshotError): holder.get()
 
     def test_compression_does_not_erase_node_depth_or_cycle_limits(self):
         root = array(array('value'))
         holder = BSLValueStorage(root, BSLDeflation())
-        with patch('yadinassi.value_storage.MAX_DEPTH', 1):
+        with patch('yadinassi.formats.storage.value_storage.MAX_DEPTH', 1):
             with self.assertRaises(SnapshotError): BSLValueStorage(root, BSLDeflation())
             with self.assertRaises(SnapshotError): holder.get()
-        with patch('yadinassi.value_storage.MAX_NODES', 2):
+        with patch('yadinassi.formats.storage.value_storage.MAX_NODES', 2):
             with self.assertRaises(SnapshotError): holder.get()
         root.items.append(root)
         with self.assertRaises(SnapshotError): BSLValueStorage(root, BSLDeflation())
@@ -158,7 +174,7 @@ class ValueStorageCompressionTests(unittest.TestCase):
     def test_deflate_bomb_is_bounded_by_declared_and_logical_lengths(self):
         packed = zlib.compress(b'a' * 100000)
         with self.assertRaises(SnapshotError): malformed(('binary_zlib', packed, 3)).get()
-        with patch('yadinassi.value_storage.MAX_BINARY_BYTES', 100):
+        with patch('yadinassi.formats.storage.value_storage.MAX_BINARY_BYTES', 100):
             with self.assertRaises(SnapshotError): malformed(('binary_zlib', packed, 100000)).get()
 
     def test_invalid_text_encoding_fails_without_publishing(self):
@@ -205,7 +221,7 @@ class ValueStorageCompressionTests(unittest.TestCase):
         finally: vm.close()
 
     def test_typed_table_metadata_indexes_and_compression_share_one_snapshot(self):
-        from yadinassi.type_descriptions import BSLTypeDescription
+        from yadinassi.types.type_descriptions import BSLTypeDescription
         from test_value_storage_typed_tables import table_with
         source = table_with(BSLTypeDescription('String'), ('large' * 1000,), title='Label', width=D(24))
         source.indexes.add('Item')
@@ -215,7 +231,9 @@ class ValueStorageCompressionTests(unittest.TestCase):
         self.assertEqual(first.rows[0].get(D(0)), 'large' * 1000)
         self.assertEqual(first.columns.items[0].title, 'Label')
         self.assertEqual(first.columns.items[0].width, D(24))
-        self.assertIs(first.indexes.items[0].table, first)
+        self.assertIs(first.indexes.table, first)
+        self.assertEqual(first.indexes.items, [(0,)])
+        self.assertEqual(first._search.cache, {})
         first.rows[0].set(D(0), 'new')
         self.assertEqual(second.rows[0].get(D(0)), 'large' * 1000)
 
@@ -228,5 +246,7 @@ class ValueStorageCompressionTests(unittest.TestCase):
         for before, after in zip(source.columns.items, result.columns.items):
             self.assertEqual(after.value_type.types, before.value_type.types)
             self.assertIsNotNone(after.value_type._query_scalar)
-        self.assertIs(result.indexes.items[0].table, result)
+        self.assertIs(result.indexes.table, result)
+        self.assertEqual(result.indexes.items, [(0, 1)])
+        self.assertEqual(result._search.cache, {})
         with self.assertRaises(ValueError): result.add()

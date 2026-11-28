@@ -1,12 +1,13 @@
 """Documented callback contract and local composition, not native captures."""
+from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
 import tempfile
 import unittest
 
 from yadinassi import BSLError, Interpreter
-from yadinassi.callbacks import BSLCallbackDescription
-from yadinassi.values import BSLType
+from yadinassi.application.callbacks import BSLCallbackDescription
+from yadinassi.types.values import BSLType
 
 
 SOURCE = '''
@@ -31,7 +32,7 @@ Count=0; Trace="";
 class CallbackTests(unittest.TestCase):
     def setUp(self):
         self.output = []
-        self.vm = Interpreter(self.output.append)
+        self.vm = Interpreter(self.output.append, allow_extensions=True)
         self.vm.execute(SOURCE, 'Handlers.bsl')
 
     def tearDown(self):
@@ -185,7 +186,7 @@ c=New CallbackDescription(N(),M(),E());
 Function One(Result) Export Return Result; EndFunction
 Function Three(Result, Extra, Tail=3) Export Return Result+Extra+Tail; EndFunction
 ''')
-        with self.assertRaisesRegex(BSLError, 'ожидает 1 аргументов'):
+        with self.assertRaisesRegex(BSLError, 'Неверное количество аргументов: one'):
             self.vm.execute('RunCallback(Describe("One"),1)')
         self.assertEqual(self.vm.execute('RunCallback(Describe("Three",2),1)'), Decimal(6))
 
@@ -219,13 +220,15 @@ Function Wrapper(Result, Extra) Export Return RunCallback(Extra,Result); EndFunc
                 self.vm.execute(expression)
 
     def test_wrong_module_and_name_types_and_unimported_strings(self):
-        for expression in ('New CallbackDescription(1,ThisObject)',
-                           'New CallbackDescription("Echo",1)',
-                           'New CallbackDescription("Echo",New Structure)',
-                           'New CallbackDescription("Echo","not.imported")',
-                           'New CallbackDescription(,,,,,1)'):
+        for expression in ('New CallbackDescription(1,ThisObject)', 'New CallbackDescription(,,,,,1)'):
             with self.subTest(expression=expression), self.assertRaises(BSLError):
                 self.vm.execute(expression)
+        for target in ('1', 'New Structure', '"not.imported"'):
+            with self.subTest(target=target):
+                self.vm.execute(f'D=New CallbackDescription("Echo",{target});')
+                message = 'не импортирован' if target.startswith('"') else 'текущего модуля'
+                with self.assertRaisesRegex(BSLError, message):
+                    self.vm.execute('RunCallback(D,1)')
 
     def test_complex_error_handler_is_rejected_not_silently_ignored(self):
         for tail in ('"Broken"', '"Broken",ThisObject', 'Undefined,ThisObject'):
@@ -257,8 +260,10 @@ Function Wrapper(Result, Extra) Export Return RunCallback(Extra,Result); EndFunc
         try:
             other.execute(SOURCE)
             self.vm.variables['foreign']=other._self_module
+            self.vm.execute('d=New CallbackDescription("Sum",foreign,1);')
+            self.assertIs(self.vm.execute('d.Module'), other._self_module)
             with self.assertRaisesRegex(BSLError, 'другого интерпретатора'):
-                self.vm.execute('New CallbackDescription("Sum",foreign,1)')
+                self.vm.execute('RunCallback(d,2)')
             self.vm.variables['foreign']=other.execute('Describe("Sum",1)')
             with self.assertRaisesRegex(BSLError, 'другого интерпретатора'):
                 self.vm.execute('RunCallback(foreign,2)')
@@ -273,7 +278,7 @@ Function Server(Val R,Val E) Export Return 8; EndFunction
 &AtClientAtServerNoContext
 Function NoContext(Val D) Return RunCallback(D,1); EndFunction
 ''')
-        with self.assertRaisesRegex(BSLError, 'на клиенте'):
+        with self.assertRaisesRegex(BSLError, 'подпрограмма через объект модуля'):
             self.vm.execute('RunCallback(Describe("Server"),1)')
         with self.assertRaisesRegex(BSLError, 'без контекста'):
             self.vm.execute('NoContext(Describe("Echo"))')
@@ -299,8 +304,10 @@ Function Receive(Val D) Return 1; EndFunction
             def __getattr__(self,name):
                 raise AssertionError('Python reflection must not happen')
         self.vm.variables['trap']=Trap()
-        with self.assertRaises(BSLError):
-            self.vm.execute('New CallbackDescription("anything",trap)')
+        self.vm.execute('d=New CallbackDescription("anything",trap);')
+        self.assertIs(self.vm.execute('d.Module'), self.vm.variables['trap'])
+        with self.assertRaisesRegex(BSLError, 'текущего модуля'):
+            self.vm.execute('RunCallback(d,1)')
 
     def test_eval_execute_and_bound_function_value_use_same_dispatch(self):
         self.vm.execute('c=Describe("Sum",4); dispatch=RunCallback; '
@@ -323,6 +330,21 @@ Function Receive(Val D) Return 1; EndFunction
         self.assertEqual([self.vm.variables[n] for n in ('a1','b1','a2')],
                          [Decimal(12),Decimal(22),Decimal(13)])
         self.assertIs(self.vm.execute('da.Module'), self.vm.imports['a'])
+
+    def test_imported_factory_returns_own_exported_prepared_callback(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'Call.bsl').write_text(
+                'Var Seen; Seen=0; '
+                'Procedure Store(V,E) Export Seen=V+E; EndProcedure '
+                'Function Current() Export Return Seen; EndFunction '
+                'Function Descriptor() Export Return New CallbackDescription("Store",ThisObject,5); EndFunction',
+                encoding='utf-8')
+            self.vm.execute('// #Import Call.bsl\nD=Call.Descriptor();', str(root/'Main.bsl'))
+            plan = self.vm.prepare('R=RunCallback(D,7); Value=Call.Current();')
+            self.vm.execute_prepared(plan)
+            self.assertIsNone(self.vm.variables['r'])
+            self.assertEqual(self.vm.variables['value'], 12)
 
     def test_imported_descriptor_factory_and_cross_module_chain_use_owner_state(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -347,8 +369,12 @@ Function Make(E) Export Return New CallbackDescription("Step",ThisObject,E); End
                             'c=New CallbackDescription("Sum","pAcKaGe.a",4); answer=RunCallback(c,6);',
                             str(root/'Main.bsl'))
             self.assertEqual(self.vm.variables['answer'], Decimal(10))
-            with self.assertRaises(BSLError):
-                self.vm.execute('New CallbackDescription("Sum","../A.bsl")')
+            self.vm.execute('bad=New CallbackDescription("Sum","../A.bsl");')
+            with self.assertRaisesRegex(BSLError, 'не импортирован'):
+                self.vm.execute('RunCallback(bad,6)')
+            self.assertIs(self.vm.execute('bad.Module'), self.vm.variables['bad'].module)
+            with self.assertRaisesRegex(BSLError, 'не является модулем оповещения'):
+                self.vm.execute('New CallbackDescription("Sum",Package)')
 
     def test_async_function_handler_returns_promise_and_existing_await_result(self):
         self.vm.execute('''
@@ -439,3 +465,47 @@ Async Procedure Work(R,E) Export t=Await 0; Raise "procedure callback"; EndProce
                 self.vm.execute('ValueToStringInternal('+value+')')
         with self.assertRaises(BSLError):
             self.vm.execute('ValueToStringInternal(New TypeDescription("CallbackDescription"))')
+
+
+class PassiveCallbackBoundaryTests(unittest.TestCase):
+    def test_passive_members_preserve_error_timing_and_never_gain_protocol(self):
+        for full in (False, True):
+            with self.subTest(full=full):
+                output = []
+                with closing(Interpreter(output.append, allow_extensions=full)) as vm:
+                    vm.execute("""
+                        Function Mark() Message("rhs"); Return 7; EndFunction
+                        c = New CallbackDescription("Keep", Undefined, 3);
+                        Try c.ИмяПроцедуры = Mark(); Except write = ErrorInfo().Description; EndTry;
+                        Try c.ProcedureName(Mark()); Except call = ErrorInfo().Description; EndTry;
+                        Try c.__class__; Except private = ErrorInfo().Description; EndTry;
+                        Try c[0]; Except indexed = ErrorInfo().Description; EndTry;
+                        Try For Each item In c Do Message("iterated"); EndDo;
+                        Except iterated = ErrorInfo().Description; EndTry;
+                        kept = c.ProcedureName; original = c.AdditionalParameters;
+                    """, "passive-callback.bsl")
+                    self.assertEqual(output, ["rhs"])
+                    self.assertIn("недоступно для записи", vm.variables["write"])
+                    self.assertIn("Метод объекта не обнаружен", vm.variables["call"])
+                    self.assertIn("Поле объекта не обнаружено", vm.variables["private"])
+                    self.assertTrue(vm.variables["indexed"])
+                    self.assertTrue(vm.variables["iterated"])
+                    self.assertEqual(vm.variables["kept"], "Keep")
+                    self.assertEqual(vm.variables["original"], Decimal(3))
+
+    def test_client_only_descriptor_rejects_at_server_before_constructor_arguments(self):
+        with closing(Interpreter()) as vm:
+            vm.execute("""
+                &AtServer
+                Function Probe() Raise "evaluated argument"; EndFunction
+                &AtServer
+                Function TryMake()
+                    Try
+                        Value = New ОписаниеОповещения(Probe());
+                    Except
+                        Return ErrorInfo().Description;
+                    EndTry;
+                    Return "constructed";
+                EndFunction
+            """, "client-only-callback.bsl")
+            self.assertIn("только на клиенте", vm.execute("TryMake()"))
